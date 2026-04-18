@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      String   @default("LIVE_HOST") // ADMIN | LIVE_HOST | CLIENT
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  liveHost LiveHost?
+  client   Client?
+}
+
+model LiveHost {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName String
+  workingDays Int     @default(5)
+  isActive    Boolean @default(true)
+
+  // Part-time fields
+  type        String  @default("FULL_TIME") // FULL_TIME | PART_TIME
+  hourlyRate  Float   @default(40)
+  contactNo   String?
+  icNo        String?
+  bankName    String?
+  bankAccount String?
+
+  sessions    Session[]
+  kpiConfigs  KPIConfig[]
+  preferences HostPreference?
+}
+
+model Client {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  brands Brand[]
+}
+
+model Room {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  isActive Boolean @default(true)
+  notes    String?
+
+  sessions Session[]
+}
+
+model Brand {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  platform String  @default("BOTH") // TIKTOK | SHOPEE | BOTH
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+  color    String  @default("#6366f1")
+  isActive Boolean @default(true)
+
+  sessions   Session[]
+  kpiConfigs KPIConfig[]
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  roomId     String
+  room       Room     @relation(fields: [roomId], references: [id])
+  liveHostId String
+  liveHost   LiveHost @relation(fields: [liveHostId], references: [id])
+  brandId    String
+  brand      Brand    @relation(fields: [brandId], references: [id])
+  platform   String   @default("TIKTOK") // TIKTOK | SHOPEE
+
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  isCampaignDay  Boolean  @default(false)
+  notes          String?
+
+  // Filled when import data is matched
+  actualStart           DateTime?
+  actualEnd             DateTime?
+  actualDurationMinutes Int?
+  gmv                   Float?
+  grossRevenue          Float?
+  adsCost               Float?
+  status                String    @default("PENDING") // PENDING | COMPLETED | MISSED
+  punctuality           String?   // EARLY | ON_TIME | LATE
+
+  // Engagement metrics (from TikTok/Shopee raw export)
+  viewers              Int?
+  peakViewers          Int?
+  views                Int?      // TikTok total view count (vs unique viewers)
+  productClicks        Int?
+  productImpressions   Int?      // TikTok product impression count
+  ctr                  Float?    // Click-through rate (impressions → clicks)
+  ctor                 Float?    // Click-to-Order Rate as decimal e.g. 0.032 = 3.2%
+  addToCart            Int?
+  ordersPlaced         Int?      // Orders placed (before confirmation)
+  ordersConfirmed      Int?
+  itemsSold            Int?      // Items sold (confirmed)
+  itemsSoldPlaced      Int?      // Items sold (placed, Shopee)
+  salesPlaced          Float?    // GMV from placed orders (Shopee)
+  likes                Int?
+  shares               Int?
+  comments             Int?
+  newFollowers         Int?
+  avgViewDurationSec   Int?      // Average view duration in seconds
+  engagedViewers       Int?      // Shopee engaged viewers
+
+  externalRef       String?   @unique // used by bulk-import scripts for deduplication
+
+  importedSessionId String?         @unique
+  importedSession   ImportedSession? @relation(fields: [importedSessionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ImportedSession {
+  id              String   @id @default(cuid())
+  platform        String   // TIKTOK | SHOPEE
+  rawTitle        String
+  hostName        String?
+  startTime       DateTime
+  durationSeconds Int
+  gmv             Float
+  uploadBatchId   String
+
+  matchedSession Session?
+
+  uploadBatch UploadBatch @relation(fields: [uploadBatchId], references: [id])
+  createdAt   DateTime    @default(now())
+}
+
+model UploadBatch {
+  id        String   @id @default(cuid())
+  platform  String
+  fileName  String
+  period    String
+  rowCount  Int
+  createdAt DateTime @default(now())
+
+  importedSessions ImportedSession[]
+}
+
+model KPIConfig {
+  id         String   @id @default(cuid())
+  liveHostId String
+  liveHost   LiveHost @relation(fields: [liveHostId], references: [id])
+  brandId    String
+  brand      Brand    @relation(fields: [brandId], references: [id])
+  month      Int
+  year       Int
+
+  tier1KpiNormal   Float @default(0)
+  tier2KpiNormal   Float @default(0)
+  tier1KpiCampaign Float @default(0)
+  tier2KpiCampaign Float @default(0)
+
+  baseCommissionRate Float @default(0)
+  tier1Rate          Float @default(0)
+  tier2Rate          Float @default(0)
+
+  @@unique([liveHostId, brandId, month, year])
+}
+
+model CommissionRule {
+  id                    String  @id @default(cuid())
+  name                  String  @default("Default")
+  lateSessionsThreshold Int     @default(5)
+  lateDeductionPct      Float   @default(0.5)
+  hoursDeficitThreshold Float   @default(5.0)
+  hoursDeductionPct     Float   @default(0.5)
+  earlyThresholdMinutes Int     @default(5)
+  isDefault             Boolean @default(false)
+}
+
+model HostPreference {
+  id              String   @id @default(cuid())
+  liveHostId      String   @unique
+  liveHost        LiveHost @relation(fields: [liveHostId], references: [id], onDelete: Cascade)
+  preferredSlots  String   @default("[]") // JSON: ["08:00","14:00","20:00"]
+  preferredBrands String   @default("[]") // JSON: ["brandId1","brandId2"]
+  offDays         String   @default("[]") // JSON: ["2026-04-20","2026-04-21"]
+  updatedAt       DateTime @updatedAt
+}
