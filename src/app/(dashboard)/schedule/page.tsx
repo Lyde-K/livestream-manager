@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload } from "lucide-react";
+import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
 import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
@@ -59,6 +59,7 @@ export default function SchedulePage() {
     scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "",
   });
   const [saving, setSaving] = useState(false);
+  const [is24h, setIs24h] = useState(true);
   const [emailLoading, setEmailLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -87,6 +88,18 @@ export default function SchedulePage() {
   }
 
   useEffect(() => { loadMeta(); }, []);
+
+  // Restore time-format preference from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("scheduleTimeFormat24h");
+    if (saved === "false") setIs24h(false);
+  }, []);
+
+  function toggleTimeFormat() {
+    const next = !is24h;
+    setIs24h(next);
+    localStorage.setItem("scheduleTimeFormat24h", String(next));
+  }
 
   useEffect(() => {
     if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
@@ -284,6 +297,15 @@ export default function SchedulePage() {
             style={suggestOpen ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}}>
             <Sparkles size={14} /> Suggest Slots {suggestOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </Button>
+          <button
+            onClick={toggleTimeFormat}
+            title={`Switch to ${is24h ? "12-hour" : "24-hour"} format`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-card)" }}
+          >
+            <Clock size={13} />
+            {is24h ? "24h" : "12h"}
+          </button>
           <Button variant="outline" onClick={exportSessionsExcel} title="Export visible sessions to Excel">
             <Download size={14} /> Export Excel
           </Button>
@@ -451,19 +473,26 @@ export default function SchedulePage() {
           eventContent={(arg) => {
             const s: Session = arg.event.extendedProps.session;
             const isMonth = arg.view.type === "dayGridMonth";
+            const timeFmt = is24h ? "HH:mm" : "h:mm a";
             if (isMonth) {
-              const timeLabel = format(parseISO(s.scheduledStart), "HH:mm");
+              const timeLabel = format(parseISO(s.scheduledStart), timeFmt);
+              const endLabel  = format(parseISO(s.scheduledEnd),   timeFmt);
               return (
-                <div className="px-1.5 py-0.5 w-full truncate leading-tight" title={`${s.brand.name} · ${s.liveHost.displayName} · ${timeLabel}`}>
+                <div className="px-1.5 py-0.5 w-full truncate leading-tight"
+                  title={`${s.brand.name} · ${s.liveHost.displayName} · ${timeLabel}–${endLabel}`}>
                   <div className="font-semibold truncate text-[11px]">{s.brand.name}</div>
                   <div className="opacity-80 truncate text-[10px]">{timeLabel} · {s.liveHost.displayName}</div>
                 </div>
               );
             }
+            // Week / Day view — show start–end time range
+            const timeLabel = format(parseISO(s.scheduledStart), timeFmt);
+            const endLabel  = format(parseISO(s.scheduledEnd),   timeFmt);
             return (
               <div className="px-1 py-0.5 truncate leading-tight">
                 <div className="font-semibold truncate">{s.brand.name}</div>
-                <div className="opacity-80 truncate text-[10px]">{s.liveHost.displayName} · {s.room.name}</div>
+                <div className="opacity-80 truncate text-[10px]">{timeLabel}–{endLabel}</div>
+                <div className="opacity-60 truncate text-[10px]">{s.liveHost.displayName}</div>
               </div>
             );
           }}
@@ -485,15 +514,15 @@ export default function SchedulePage() {
             <div className="grid grid-cols-2 gap-3">
               <InfoRow label="Room" value={detailSession.room.name} />
               <InfoRow label="Platform" value={detailSession.platform} />
-              <InfoRow label="Scheduled Start" value={format(new Date(detailSession.scheduledStart), "dd MMM yyyy HH:mm")} />
-              <InfoRow label="Scheduled End" value={format(new Date(detailSession.scheduledEnd), "HH:mm")} />
+              <InfoRow label="Scheduled Start" value={format(new Date(detailSession.scheduledStart), is24h ? "dd MMM yyyy HH:mm" : "dd MMM yyyy h:mm a")} />
+              <InfoRow label="Scheduled End"   value={format(new Date(detailSession.scheduledEnd),   is24h ? "HH:mm" : "h:mm a")} />
               <InfoRow label="Duration (scheduled)" value={(() => {
                 const ms = new Date(detailSession.scheduledEnd).getTime() - new Date(detailSession.scheduledStart).getTime();
                 const h = Math.floor(ms / 3600000);
                 const m = Math.round((ms % 3600000) / 60000);
                 return m > 0 ? `${h}h ${m}m` : `${h}h`;
               })()} />
-              {detailSession.actualStart && <InfoRow label="Actual Start" value={format(new Date(detailSession.actualStart), "HH:mm")} />}
+              {detailSession.actualStart && <InfoRow label="Actual Start" value={format(new Date(detailSession.actualStart), is24h ? "HH:mm" : "h:mm a")} />}
               {(detailSession as any).actualDurationMinutes != null && (
                 <InfoRow label="Actual Duration" value={(() => {
                   const min = (detailSession as any).actualDurationMinutes as number;

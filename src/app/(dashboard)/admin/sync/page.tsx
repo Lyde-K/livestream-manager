@@ -4,65 +4,85 @@ import { Button } from "@/components/ui/button";
 import { Copy, Check, RefreshCw, Link2, Zap, ExternalLink } from "lucide-react";
 
 const TIKTOK_COLS = [
-  { col: "A", name: "Livestream", note: "Paste from TikTok export" },
-  { col: "B", name: "Start time", note: "Paste from TikTok export" },
-  { col: "C", name: "Duration", note: "Seconds — paste from export" },
-  { col: "D", name: "Gross revenue", note: "Paste from TikTok export" },
-  { col: "E", name: "Direct GMV", note: "Paste from TikTok export" },
-  { col: "F", name: "Items sold", note: "Paste from TikTok export" },
-  { col: "G", name: "Customers", note: "Paste from TikTok export" },
-  { col: "H", name: "Avg. price", note: "Paste from TikTok export" },
-  { col: "I", name: "Orders paid for", note: "Paste from TikTok export" },
-  { col: "J", name: "GMV/1K shows", note: "Paste from TikTok export" },
-  { col: "K", name: "GMV/1K views", note: "Paste from TikTok export" },
-  { col: "L", name: "Views", note: "Paste from TikTok export" },
-  { col: "M", name: "Viewers", note: "Paste from TikTok export" },
-  { col: "N", name: "Peak viewers", note: "Paste from TikTok export" },
-  { col: "O", name: "New followers", note: "Paste from TikTok export" },
-  { col: "P", name: "Avg. view duration", note: "Paste from TikTok export" },
-  { col: "Q", name: "Likes", note: "Paste from TikTok export" },
-  { col: "R", name: "Comments", note: "Paste from TikTok export" },
-  { col: "S", name: "Shares", note: "Paste from TikTok export" },
-  { col: "T", name: "Product impressions", note: "Paste from TikTok export" },
-  { col: "U", name: "Product clicks", note: "Paste from TikTok export" },
-  { col: "V", name: "CTR", note: "Paste from TikTok export" },
-  { col: "W", name: "CTOR (SKU orders)", note: "Paste from TikTok export" },
-  { col: "X", name: "Ads Cost", note: "✏️ Manual entry (RM)" },
-  { col: "Y", name: "Campaign", note: "✏️ yes / no" },
-  { col: "Z", name: "Host", note: "✏️ Display name e.g. WANI" },
-  { col: "AA", name: "Brand", note: "✏️ e.g. Dettol MY" },
+  // ── Manual columns (fill first) ───────────────────────────────────────────
+  { col: "A", name: "Brand",    note: "✏️ e.g. Dettol MY" },
+  { col: "B", name: "Host",     note: "✏️ Display name e.g. WANI" },
+  { col: "C", name: "Hours",    note: "✏️ Hours worked e.g. 2.5" },
+  { col: "D", name: "Campaign", note: "✏️ yes / no" },
+  { col: "E", name: "Ads Cost", note: "✏️ Manual entry (RM)" },
+  // ── Exported columns (paste from TikTok export) ───────────────────────────
+  { col: "F",  name: "Livestream",          note: "Paste from TikTok export" },
+  { col: "G",  name: "Start time",          note: "Paste from TikTok export" },
+  { col: "H",  name: "Duration",            note: "Seconds — paste from export" },
+  { col: "I",  name: "Gross revenue",       note: "Paste from TikTok export" },
+  { col: "J",  name: "Direct GMV",          note: "Paste from TikTok export" },
+  { col: "K",  name: "Items sold",          note: "Paste from TikTok export" },
+  { col: "L",  name: "Customers",           note: "Paste from TikTok export" },
+  { col: "M",  name: "Avg. price",          note: "Paste from TikTok export" },
+  { col: "N",  name: "Orders paid for",     note: "Paste from TikTok export" },
+  { col: "O",  name: "GMV/1K shows",        note: "Paste from TikTok export" },
+  { col: "P",  name: "GMV/1K views",        note: "Paste from TikTok export (= GPM)" },
+  { col: "Q",  name: "Views",               note: "Paste from TikTok export" },
+  { col: "R",  name: "Viewers",             note: "Paste from TikTok export" },
+  { col: "S",  name: "Peak viewers",        note: "Paste from TikTok export" },
+  { col: "T",  name: "New followers",       note: "Paste from TikTok export" },
+  { col: "U",  name: "Avg. view duration",  note: "Paste from TikTok export" },
+  { col: "V",  name: "Likes",               note: "Paste from TikTok export" },
+  { col: "W",  name: "Comments",            note: "Paste from TikTok export" },
+  { col: "X",  name: "Shares",              note: "Paste from TikTok export" },
+  { col: "Y",  name: "Product impressions", note: "Paste from TikTok export" },
+  { col: "Z",  name: "Product clicks",      note: "Paste from TikTok export" },
+  { col: "AA", name: "CTR",                 note: "Paste from TikTok export" },
+  { col: "AB", name: "CTOR",                note: "Paste from TikTok export" },
 ];
 
 const SHOPEE_COLS = [
-  { col: "A", name: "Data Period", note: "Paste from Shopee export" },
-  { col: "B", name: "User Id", note: "Paste from Shopee export" },
-  { col: "C", name: "No.", note: "Paste from Shopee export" },
-  { col: "D", name: "Livestream Name", note: "Paste from Shopee export" },
-  { col: "E", name: "Start Time", note: "Paste from Shopee export" },
-  { col: "F", name: "Duration", note: "Paste from Shopee export" },
-  { col: "G", name: "Engaged Viewers", note: "Paste from Shopee export" },
-  { col: "H", name: "Comments", note: "Paste from Shopee export" },
-  { col: "I", name: "ATC", note: "Add-to-cart — paste from export" },
-  { col: "J", name: "Avg. Viewing Duration", note: "Paste from Shopee export" },
-  { col: "K", name: "Viewers", note: "Paste from Shopee export" },
-  { col: "L", name: "Orders(Placed Order)", note: "Paste from Shopee export" },
-  { col: "M", name: "Orders(Confirmed Order)", note: "Paste from Shopee export" },
-  { col: "N", name: "Items Sold(Placed Order)", note: "Paste from Shopee export" },
-  { col: "O", name: "Items Sold(Confirmed Order)", note: "Paste from Shopee export" },
-  { col: "P", name: "Sales(Placed Order)", note: "Paste from Shopee export" },
-  { col: "Q", name: "Sales(Confirmed Order)", note: "GMV — paste from export" },
-  { col: "R", name: "Campaign", note: "✏️ yes / no" },
-  { col: "S", name: "Host", note: "✏️ Display name e.g. WANI" },
-  { col: "T", name: "Brand", note: "✏️ e.g. Dettol MY" },
+  // ── Manual columns (fill first) ───────────────────────────────────────────
+  { col: "A", name: "Brand",    note: "✏️ e.g. Dettol MY" },
+  { col: "B", name: "Host",     note: "✏️ Display name e.g. WANI" },
+  { col: "C", name: "Hours",    note: "✏️ Hours worked e.g. 2.5" },
+  { col: "D", name: "Campaign", note: "✏️ yes / no" },
+  // ── Exported columns (paste from Shopee export) ───────────────────────────
+  { col: "E",  name: "Livestream Name",           note: "Paste from Shopee export" },
+  { col: "F",  name: "Start Time",                note: "Paste from Shopee export" },
+  { col: "G",  name: "Duration",                  note: "HH:MM:SS — paste from export" },
+  { col: "H",  name: "Engaged Viewers",           note: "Paste from Shopee export" },
+  { col: "I",  name: "Comments",                  note: "Paste from Shopee export" },
+  { col: "J",  name: "ATC",                       note: "Add-to-cart — paste from export" },
+  { col: "K",  name: "Avg. Viewing Duration",     note: "Paste from Shopee export" },
+  { col: "L",  name: "Viewers",                   note: "Paste from Shopee export" },
+  { col: "M",  name: "Orders(Placed Order)",      note: "Paste from Shopee export" },
+  { col: "N",  name: "Orders(Confirmed Order)",   note: "Paste from Shopee export" },
+  { col: "O",  name: "Items Sold(Placed Order)",  note: "Paste from Shopee export" },
+  { col: "P",  name: "Items Sold(Confirmed Order)", note: "Paste from Shopee export" },
+  { col: "Q",  name: "Sales(Placed Order)",       note: "Paste from Shopee export" },
+  { col: "R",  name: "Sales(Confirmed Order)",    note: "GMV — paste from export" },
 ];
 
 const GAS_TEMPLATE = `/**
  * 13 Media · Google Sheets → App Sync (TikTok + Shopee)
  * Paste into Extensions > Apps Script, then run syncAll().
  * Schedule via ⏱ Triggers for auto-sync every 15 minutes.
+ *
+ * TikTok tab layout  — 28 cols (A–AB):
+ *   A:Brand  B:Host  C:Hours  D:Campaign  E:Ads Cost
+ *   F:Livestream  G:Start time  H:Duration(sec)  I:Gross revenue
+ *   J:Direct GMV  K:Items sold  L:Customers  M:Avg. price
+ *   N:Orders paid for  O:GMV/1K shows  P:GMV/1K views(GPM)
+ *   Q:Views  R:Viewers  S:Peak viewers  T:New followers
+ *   U:Avg. view duration  V:Likes  W:Comments  X:Shares
+ *   Y:Product impressions  Z:Product clicks  AA:CTR  AB:CTOR
+ *
+ * Shopee tab layout  — 18 cols (A–R):
+ *   A:Brand  B:Host  C:Hours  D:Campaign
+ *   E:Livestream Name  F:Start Time  G:Duration(HH:MM:SS)
+ *   H:Engaged Viewers  I:Comments  J:ATC  K:Avg. Viewing Duration
+ *   L:Viewers  M:Orders(Placed)  N:Orders(Confirmed)
+ *   O:Items Sold(Placed)  P:Items Sold(Confirmed)
+ *   Q:Sales(Placed)  R:Sales(Confirmed/GMV)
  */
 
-const APP_URL = "https://your-app-url.com";  // ← replace with your app URL
+const APP_URL = "https://your-app-url.vercel.app";  // ← base URL only, no path e.g. https://livestream-manager-beryl.vercel.app
 const API_KEY = "PASTE_YOUR_SYNC_KEY_HERE";  // ← paste SHEETS_SYNC_KEY from .env
 
 function syncAll() {
@@ -78,48 +98,52 @@ function syncTikTok() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) { Logger.log("No TikTok data rows."); return; }
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 27).getValues(); // A–AA
+  const data = sheet.getRange(2, 1, lastRow - 1, 28).getValues(); // A–AB
   const rows = [];
 
   for (const r of data) {
-    const startTime = r[1]; // B: Start time
+    // Manual cols first: A=0 Brand, B=1 Host, C=2 Hours, D=3 Campaign, E=4 Ads Cost
+    // Exported cols:     F=5 Livestream, G=6 Start time, H=7 Duration, ...
+    const startTime = r[6]; // G: Start time
     if (!startTime) continue;
 
+    // Always send DD-MM-YYYY HH:mm so the server knows the timezone (MYT = +08:00).
+    // Using formatDate in the script timezone avoids any silent UTC conversion.
     let startStr = "";
     if (startTime instanceof Date) {
-      startStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+      startStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "dd-MM-yyyy HH:mm");
     } else {
-      startStr = String(startTime).trim();
+      startStr = String(startTime).trim(); // already DD-MM-YYYY HH:mm from platform export
     }
 
-    const durationSec = r[2] ? Number(r[2]) : null;
-
     rows.push({
-      platform: "TIKTOK",
-      title:            String(r[0]  || "").trim(),
-      startTime:        startStr,
-      durationSec:      durationSec,
-      grossRevenue:     parseRM(r[3]),
-      gmv:              parseRM(r[4]),
-      itemsSold:        toInt(r[5]),
-      customers:        toInt(r[6]),
-      ordersPaid:       toInt(r[8]),
-      views:            toInt(r[11]),
-      viewers:          toInt(r[12]),
-      peakViewers:      toInt(r[13]),
-      newFollowers:     toInt(r[14]),
-      avgViewDuration:  String(r[15] || "").trim(),
-      likes:            toInt(r[16]),
-      comments:         toInt(r[17]),
-      shares:           toInt(r[18]),
-      productImpressions: toInt(r[19]),
-      productClicks:    toInt(r[20]),
-      ctr:              toFloat(r[21]),
-      ctor:             toFloat(r[22]),
-      adsCost:          parseRM(r[23]),
-      campaign:         String(r[24] || "").trim().toLowerCase() === "yes",
-      host:             String(r[25] || "").trim(),
-      brand:            String(r[26] || "").trim(),
+      platform:           "TIKTOK",
+      brand:              String(r[0]  || "").trim(),
+      host:               String(r[1]  || "").trim(),
+      hours:              toFloat(r[2]),
+      campaign:           String(r[3]  || "").trim().toLowerCase() === "yes",
+      adsCost:            parseRM(r[4]),
+      title:              String(r[5]  || "").trim(),
+      startTime:          startStr,
+      durationSec:        r[7]  ? Number(r[7])  : null,
+      grossRevenue:       parseRM(r[8]),
+      gmv:                parseRM(r[9]),
+      itemsSold:          toInt(r[10]),
+      customers:          toInt(r[11]),
+      ordersPaid:         toInt(r[13]),
+      gmv1kViews:         toFloat(r[15]),
+      views:              toInt(r[16]),
+      viewers:            toInt(r[17]),
+      peakViewers:        toInt(r[18]),
+      newFollowers:       toInt(r[19]),
+      avgViewDuration:    String(r[20] || "").trim(),
+      likes:              toInt(r[21]),
+      comments:           toInt(r[22]),
+      shares:             toInt(r[23]),
+      productImpressions: toInt(r[24]),
+      productClicks:      toInt(r[25]),
+      ctr:                toFloat(r[26]),
+      ctor:               toFloat(r[27]),
     });
   }
 
@@ -134,46 +158,51 @@ function syncShopee() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) { Logger.log("No Shopee data rows."); return; }
 
-  const data = sheet.getRange(2, 1, lastRow - 1, 20).getValues(); // A–T
+  const data = sheet.getRange(2, 1, lastRow - 1, 18).getValues(); // A–R
   const rows = [];
 
   for (const r of data) {
-    const startTime = r[4]; // E: Start Time
+    // Manual cols first: A=0 Brand, B=1 Host, C=2 Hours, D=3 Campaign
+    // Exported cols:     E=4 Livestream Name, F=5 Start Time, G=6 Duration, ...
+    const startTime = r[5]; // F: Start Time
     if (!startTime) continue;
 
     let startStr = "";
     if (startTime instanceof Date) {
-      startStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+      startStr = Utilities.formatDate(startTime, Session.getScriptTimeZone(), "dd-MM-yyyy HH:mm");
     } else {
-      startStr = String(startTime).trim();
+      startStr = String(startTime).trim(); // already DD-MM-YYYY HH:mm from platform export
     }
 
     // Duration HH:MM:SS → seconds
-    const durStr = String(r[5] || "").trim();
+    const durStr = String(r[6] || "").trim();
     let durationSec = null;
     if (durStr) {
       const parts = durStr.split(":").map(Number);
       if (parts.length === 3) durationSec = parts[0]*3600 + parts[1]*60 + parts[2];
+      else if (parts.length === 2) durationSec = parts[0]*60 + parts[1];
     }
 
     rows.push({
-      platform:       "SHOPEE",
-      title:          String(r[3] || "").trim(),
-      startTime:      startStr,
-      durationSec:    durationSec,
-      engagedViewers: toInt(r[6]),
-      comments:       toInt(r[7]),
-      addToCart:      toInt(r[8]),
-      viewers:        toInt(r[10]),
-      ordersPlaced:   toInt(r[11]),
-      ordersConfirmed: toInt(r[12]),
-      itemsSoldPlaced: toInt(r[13]),
-      itemsSold:      toInt(r[14]),
-      salesPlaced:    parseRM(r[15]),
-      gmv:            parseRM(r[16]),
-      campaign:       String(r[17] || "").trim().toLowerCase() === "yes",
-      host:           String(r[18] || "").trim(),
-      brand:          String(r[19] || "").trim(),
+      platform:        "SHOPEE",
+      brand:           String(r[0]  || "").trim(),
+      host:            String(r[1]  || "").trim(),
+      hours:           toFloat(r[2]),
+      campaign:        String(r[3]  || "").trim().toLowerCase() === "yes",
+      title:           String(r[4]  || "").trim(),
+      startTime:       startStr,
+      durationSec:     durationSec,
+      engagedViewers:  toInt(r[7]),
+      comments:        toInt(r[8]),
+      addToCart:       toInt(r[9]),
+      avgViewDuration: String(r[10] || "").trim(),
+      viewers:         toInt(r[11]),
+      ordersPlaced:    toInt(r[12]),
+      ordersConfirmed: toInt(r[13]),
+      itemsSoldPlaced: toInt(r[14]),
+      itemsSold:       toInt(r[15]),
+      salesPlaced:     parseRM(r[16]),
+      gmv:             parseRM(r[17]),
     });
   }
 
@@ -191,8 +220,13 @@ function postRows(rows, label) {
   };
 
   const response = UrlFetchApp.fetch(APP_URL + "/api/sync/sheets", options);
-  const result = JSON.parse(response.getContentText());
+  const statusCode = response.getResponseCode();
+  const rawText = response.getContentText();
 
+  // Always log raw response so you can see what the API returned if parsing fails
+  Logger.log(label + " HTTP " + statusCode + " → " + rawText.substring(0, 500));
+
+  const result = JSON.parse(rawText);
   Logger.log(label + " sync: " + JSON.stringify(result));
   SpreadsheetApp.getUi().alert(
     label + " sync complete! ✅\\n\\n" +
@@ -304,8 +338,8 @@ export default function SyncPage() {
             Row 1 = headers (exactly as below). Row 2+ = data.
           </p>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            🔵 Columns A–W (TikTok) / A–Q (Shopee) = copy-paste directly from platform export, <strong>no editing needed</strong>.
-            <span style={{ color: "var(--accent)" }}> Purple rows = manual fill by your team</span> (2–4 extra columns at the end).
+            <span style={{ color: "var(--accent)" }}>Purple rows (A–E for TikTok, A–D for Shopee) = fill these first.</span>{" "}
+            Then paste the platform export starting from the next column — no reformatting needed.
           </p>
 
           {/* Tab selector */}
@@ -321,13 +355,13 @@ export default function SyncPage() {
 
           {tab === "tiktok" && (
             <div className="space-y-2">
-              <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>TikTok tab — {TIKTOK_COLS.length} columns (A–AA)</p>
+              <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>TikTok tab — {TIKTOK_COLS.length} columns (A–AB) · 5 manual + 23 exported</p>
               <ColTable cols={TIKTOK_COLS} />
             </div>
           )}
           {tab === "shopee" && (
             <div className="space-y-2">
-              <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>Shopee tab — {SHOPEE_COLS.length} columns (A–T)</p>
+              <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>Shopee tab — {SHOPEE_COLS.length} columns (A–R) · 4 manual + 14 exported</p>
               <ColTable cols={SHOPEE_COLS} />
             </div>
           )}
@@ -397,10 +431,10 @@ export default function SyncPage() {
         </div>
         <div className="grid gap-2 text-sm" style={{ color: "var(--text-secondary)" }}>
           {[
-            ["1. Export from TikTok/Shopee", "Go to your TikTok/Shopee dashboard → export the livestream CSV/XLSX for the date range"],
-            ["2. Paste into the sheet", "Open the Google Sheet → select the right tab (TikTok or Shopee) → paste starting from Row 2, Column A. The columns match exactly — no reformatting needed."],
-            ["3. Fill the extra columns", "For TikTok: fill X (Ads Cost), Y (Campaign), Z (Host display name), AA (Brand name). For Shopee: fill R (Campaign), S (Host), T (Brand)."],
-            ["4. Auto-sync picks it up", "The 15-min trigger syncs new rows automatically. Or click Run → syncAll() for instant sync."],
+            ["1. Fill manual columns first", "For each session: fill A (Brand), B (Host), C (Hours worked), D (Campaign yes/no). TikTok also needs E (Ads Cost). These go in Row 2 onwards."],
+            ["2. Export from TikTok/Shopee", "Go to your platform dashboard → export the livestream report for the date range."],
+            ["3. Paste export data after the manual columns", "TikTok: paste starting from Column F. Shopee: paste starting from Column E. The export columns match exactly — no reformatting needed."],
+            ["4. Auto-sync picks it up", "The 15-min trigger syncs new rows automatically. Or click Run → syncAll() for instant sync. Punctuality is calculated automatically."],
           ].map(([label, desc]) => (
             <div key={label} className="flex gap-2">
               <span className="font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{label}:</span>
