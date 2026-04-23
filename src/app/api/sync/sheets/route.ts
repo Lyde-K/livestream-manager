@@ -171,8 +171,11 @@ export async function POST(req: NextRequest) {
         ? actualDurationMinutes * 60 * 1000
         : row.durationSec ? row.durationSec * 1000 : 2 * 3600 * 1000;
 
-      const dateStr  = actualStart.toISOString().slice(0, 10);
-      const startStr = actualStart.toISOString().slice(11, 16);
+      // Build externalRef using SGT (UTC+8) wall-clock time so it matches
+      // the human-readable date in the sheet, regardless of server timezone.
+      const sgtIso  = new Date(actualStart.getTime() + 8 * 3600_000).toISOString();
+      const dateStr  = sgtIso.slice(0, 10);   // "2026-04-18"
+      const startStr = sgtIso.slice(11, 16);  // "11:04"
       const externalRef = `GS-${platform}-${dateStr}-${host.displayName}-${brand.name}-${startStr}`;
 
       // ── Punctuality: match in-memory using pre-loaded PENDING sessions ──────

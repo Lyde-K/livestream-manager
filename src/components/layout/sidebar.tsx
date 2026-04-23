@@ -6,9 +6,9 @@ import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/components/theme-provider";
 import {
-  LayoutDashboard, Calendar, Upload, BarChart3,
+  LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
-  UserCheck, Sun, Moon, ChevronRight, Menu, X, Wallet, RefreshCw,
+  UserCheck, Sun, Moon, ChevronRight, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench,
 } from "lucide-react";
 
 interface NavItem { label: string; href: string; icon: React.ElementType; roles: string[]; }
@@ -18,16 +18,18 @@ const navItems: NavItem[] = [
   { label: "Schedule",       href: "/schedule",        icon: Calendar,        roles: ["ADMIN"] },
   { label: "My Schedule",    href: "/my-schedule",     icon: Calendar,        roles: ["LIVE_HOST"] },
   { label: "Brand Schedule", href: "/client-brand",    icon: Calendar,        roles: ["CLIENT"] },
-  { label: "Import Data",    href: "/import",          icon: Upload,          roles: ["ADMIN"] },
   { label: "Performance",    href: "/performance",     icon: BarChart3,       roles: ["ADMIN"] },
   { label: "My Performance", href: "/my-performance",  icon: TrendingUp,      roles: ["LIVE_HOST"] },
+  { label: "Leaderboard",    href: "/leaderboard",     icon: Trophy,          roles: ["ADMIN","LIVE_HOST"] },
   { label: "Rooms",          href: "/admin/rooms",     icon: DoorOpen,        roles: ["ADMIN"] },
   { label: "Live Hosts",     href: "/admin/hosts",     icon: Users,           roles: ["ADMIN"] },
   { label: "Brands",         href: "/admin/brands",    icon: Building2,       roles: ["ADMIN"] },
   { label: "Clients",        href: "/admin/clients",   icon: UserCheck,       roles: ["ADMIN"] },
   { label: "KPI Settings",   href: "/admin/kpi",       icon: Award,           roles: ["ADMIN"] },
   { label: "Payroll",        href: "/admin/payroll",   icon: Wallet,          roles: ["ADMIN"] },
-  { label: "Sheets Sync",   href: "/admin/sync",      icon: RefreshCw,       roles: ["ADMIN"] },
+  { label: "Sheets Sync",    href: "/admin/sync",      icon: RefreshCw,       roles: ["ADMIN"] },
+  { label: "Sync Errors",   href: "/admin/sync-log",     icon: AlertTriangle,   roles: ["ADMIN"] },
+  { label: "Fix Duplicates", href: "/admin/fix-duplicates", icon: Wrench,          roles: ["ADMIN"] },
 ];
 
 interface SidebarProps { role: string; userName: string; }
