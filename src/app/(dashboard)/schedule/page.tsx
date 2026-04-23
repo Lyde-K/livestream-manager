@@ -10,8 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2 } from "lucide-react";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from "date-fns";
+import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload } from "lucide-react";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
 import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
 
@@ -60,6 +60,10 @@ export default function SchedulePage() {
   });
   const [saving, setSaving] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<{ summary: { created: number; updated: number; skipped: number }; } | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -204,6 +208,39 @@ export default function SchedulePage() {
     else alert(`Error: ${data.error}`);
   }
 
+  async function exportSessionsExcel() {
+    const cal = calRef.current;
+    if (!cal) return;
+    const view = cal.getApi().view;
+    const params = new URLSearchParams({ start: view.activeStart.toISOString(), end: view.activeEnd.toISOString() });
+    const res = await fetch(`/api/export/sessions?${params}`);
+    if (!res.ok) { alert("Export failed"); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sessions-${format(view.activeStart, "yyyy-MM-dd")}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importSessionsExcel() {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportResult(null);
+    const fd = new FormData();
+    fd.append("file", importFile);
+    const res = await fetch("/api/import/sessions", { method: "POST", body: fd });
+    const data = await res.json();
+    setImportLoading(false);
+    if (data.ok) {
+      setImportResult(data);
+      if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+    } else {
+      alert(`Import failed: ${data.error}`);
+    }
+  }
+
   const handleDatesSet = useCallback((arg: { startStr: string; endStr: string }) => {
     setViewRange({ start: arg.startStr, end: arg.endStr });
   }, []);
@@ -246,6 +283,13 @@ export default function SchedulePage() {
           <Button variant="outline" onClick={() => { setSuggestOpen(v => !v); if (!suggestResult) loadSuggestions(); }}
             style={suggestOpen ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}}>
             <Sparkles size={14} /> Suggest Slots {suggestOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </Button>
+          <Button variant="outline" onClick={exportSessionsExcel} title="Export visible sessions to Excel">
+            <Download size={14} /> Export Excel
+          </Button>
+          <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null); setImportFile(null); }}
+            title="Re-upload amended Excel to sync sessions">
+            <Upload size={14} /> Import Excel
           </Button>
           <Button variant="outline" onClick={exportMonthEmail} loading={emailLoading}>
             <Mail size={14} /> Email to Clients
@@ -398,7 +442,7 @@ export default function SchedulePage() {
           height="calc(100vh - 310px)"
           events={calEvents}
           selectable selectMirror editable dayMaxEvents={5}
-          slotMinTime="06:00:00" slotMaxTime="02:00:00" scrollTime="08:00:00"
+          slotMinTime="06:00:00" slotMaxTime="26:00:00" scrollTime="08:00:00"
           allDaySlot={false} nowIndicator
           select={handleDateSelect}
           eventClick={handleEventClick}
@@ -408,16 +452,18 @@ export default function SchedulePage() {
             const s: Session = arg.event.extendedProps.session;
             const isMonth = arg.view.type === "dayGridMonth";
             if (isMonth) {
+              const timeLabel = format(parseISO(s.scheduledStart), "HH:mm");
               return (
-                <div className="px-1.5 py-0.5 w-full truncate leading-tight flex items-center gap-1" title={`${s.brand.name} · ${s.liveHost.user.name}`}>
-                  <span className="font-semibold truncate text-[11px]">{s.brand.name}</span>
+                <div className="px-1.5 py-0.5 w-full truncate leading-tight" title={`${s.brand.name} · ${s.liveHost.displayName} · ${timeLabel}`}>
+                  <div className="font-semibold truncate text-[11px]">{s.brand.name}</div>
+                  <div className="opacity-80 truncate text-[10px]">{timeLabel} · {s.liveHost.displayName}</div>
                 </div>
               );
             }
             return (
               <div className="px-1 py-0.5 truncate leading-tight">
                 <div className="font-semibold truncate">{s.brand.name}</div>
-                <div className="opacity-80 truncate text-[10px]">{s.liveHost.user.name} · {s.room.name}</div>
+                <div className="opacity-80 truncate text-[10px]">{s.liveHost.displayName} · {s.room.name}</div>
               </div>
             );
           }}
@@ -475,6 +521,52 @@ export default function SchedulePage() {
           </div>
         </Modal>
       )}
+
+      {/* Import Excel Modal */}
+      <Modal open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); }} title="Import Sessions from Excel" size="md">
+        <div className="space-y-4">
+          <div className="rounded-lg px-3 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
+            <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>How it works</p>
+            <ol className="list-decimal list-inside space-y-1 text-xs">
+              <li>Click <strong>Export Excel</strong> to download the current view&apos;s sessions.</li>
+              <li>Amend Date, Start/End Times, Host/Brand/Room IDs, Platform, Notes in the file.</li>
+              <li>Save and upload the amended file here to sync changes.</li>
+            </ol>
+            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>Rows with a Session ID will be <strong>updated</strong>. Rows without an ID will create new sessions.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+              Select Excel File (.xlsx)
+            </label>
+            <input
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); }}
+              className="block w-full text-sm rounded-lg px-3 py-2 cursor-pointer"
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+            />
+          </div>
+
+          {importResult && (
+            <div className="rounded-lg px-3 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-success, #86efac)" }}>
+              <p className="font-semibold mb-1" style={{ color: "var(--accent)" }}>✓ Import complete</p>
+              <div className="flex gap-4 text-xs">
+                <span><strong style={{ color: "#22c55e" }}>{importResult.summary.created}</strong> created</span>
+                <span><strong style={{ color: "var(--accent)" }}>{importResult.summary.updated}</strong> updated</span>
+                <span><strong style={{ color: "var(--text-muted)" }}>{importResult.summary.skipped}</strong> skipped</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1" style={{ borderTop: "1px solid var(--border)" }}>
+            <Button variant="secondary" onClick={() => { setImportOpen(false); setImportResult(null); }}>Close</Button>
+            <Button onClick={importSessionsExcel} loading={importLoading} disabled={!importFile}>
+              <Upload size={14} /> Upload &amp; Sync
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Bulk Auto-Schedule Modal */}
       {bulkOpen && (

@@ -4,74 +4,72 @@ import { redirect } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
 import {
   Users, Building2, DoorOpen, Calendar, TrendingUp, Clock,
-  AlertCircle, CheckCircle2, ArrowUpRight, Upload
+  CheckCircle2, ArrowUpRight, Medal, RefreshCw, BarChart2,
 } from "lucide-react";
 import { PlatformBadge } from "@/components/ui/platform-badge";
-import { format, startOfMonth, endOfMonth, startOfDay, endOfDay } from "date-fns";
+import { MonthSelector } from "@/components/ui/month-selector";
+import { format, startOfMonth, endOfMonth, startOfDay, endOfDay, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 
-async function getAdminStats() {
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+// ── Data fetching ─────────────────────────────────────────────────────────────
 
-  // Find the month with completed sessions — current month first, then look back up to 6 months
-  let displayMonth = now.getMonth(); // 0-indexed
-  let displayYear = now.getFullYear();
-  let monthSessions: Awaited<ReturnType<typeof prisma.session.findMany>> = [];
-  let isFallback = false;
+async function fetchAdminStats(month: number, year: number) {
+  const monthStart = startOfMonth(new Date(year, month, 1));
+  const monthEnd   = endOfMonth(new Date(year, month, 1));
 
-  for (let offset = 0; offset <= 6; offset++) {
-    const targetDate = new Date(now.getFullYear(), now.getMonth() - offset, 1);
-    const mStart = startOfMonth(targetDate);
-    const mEnd = endOfMonth(targetDate);
-    const sessions = await prisma.session.findMany({
-      where: { scheduledStart: { gte: mStart, lte: mEnd } },
+  const [monthSessions, totalHosts, totalRooms, totalBrands, recentImports, lastSyncedSession] = await Promise.all([
+    prisma.session.findMany({
+      where: { scheduledStart: { gte: monthStart, lte: monthEnd } },
       include: { brand: true },
+    }),
+    prisma.liveHost.count({ where: { isActive: true } }),
+    prisma.room.count({ where: { isActive: true } }),
+    prisma.brand.count({ where: { isActive: true } }),
+    prisma.uploadBatch.findMany({ orderBy: { createdAt: "desc" }, take: 3 }),
+    prisma.session.findFirst({
+      where: { status: "COMPLETED" },
+      orderBy: { updatedAt: "desc" },
+      select: { updatedAt: true },
+    }),
+  ]);
+
+  const completedSessions = monthSessions.filter(s => s.status === "COMPLETED");
+  const monthGMV    = completedSessions.reduce((sum, s) => sum + (s.gmv ?? 0), 0);
+  const totalAdsCost = completedSessions.reduce((sum, s) => sum + (s.adsCost ?? 0), 0);
+
+  // Brand GMV breakdown (all brands, sorted by GMV)
+  const brandMap = new Map<string, { name: string; color: string; gmv: number; adsCost: number; sessions: number; hours: number }>();
+  for (const s of completedSessions) {
+    const cur = brandMap.get(s.brandId) ?? { name: s.brand.name, color: s.brand.color, gmv: 0, adsCost: 0, sessions: 0, hours: 0 };
+    brandMap.set(s.brandId, {
+      ...cur,
+      gmv: cur.gmv + (s.gmv ?? 0),
+      adsCost: cur.adsCost + (s.adsCost ?? 0),
+      sessions: cur.sessions + 1,
+      hours: cur.hours + (s.actualDurationMinutes ?? 0) / 60,
     });
-    const completedInMonth = sessions.filter((s) => s.status === "COMPLETED");
-    if (completedInMonth.length > 0 || offset === 0) {
-      monthSessions = sessions;
-      displayMonth = targetDate.getMonth();
-      displayYear = targetDate.getFullYear();
-      if (offset > 0) isFallback = true;
-      if (completedInMonth.length > 0) break;
-    }
   }
-
-  const monthStart = startOfMonth(new Date(displayYear, displayMonth, 1));
-  const monthEnd = endOfMonth(new Date(displayYear, displayMonth, 1));
-
-  const [totalHosts, totalRooms, totalBrands, todaySessions, recentImports] =
-    await Promise.all([
-      prisma.liveHost.count({ where: { isActive: true } }),
-      prisma.room.count({ where: { isActive: true } }),
-      prisma.brand.count({ where: { isActive: true } }),
-      prisma.session.findMany({
-        where: { scheduledStart: { gte: todayStart, lte: todayEnd } },
-        include: { liveHost: { include: { user: true } }, room: true, brand: true },
-        orderBy: { scheduledStart: "asc" },
-      }),
-      prisma.uploadBatch.findMany({ orderBy: { createdAt: "desc" }, take: 3 }),
-    ]);
-
-  // Re-fetch monthSessions with all required fields if needed (already done above)
-  const completedSessions = monthSessions.filter((s) => s.status === "COMPLETED");
-  const monthGMV = completedSessions.reduce((sum, s) => sum + (s.gmv || 0), 0);
-  const totalAdsCost = completedSessions.reduce((sum, s) => sum + (s.adsCost || 0), 0);
-  const lateCount = monthSessions.filter((s) => s.punctuality === "LATE").length;
-
-  // Format display month label e.g. "March 2026"
-  const displayMonthLabel = format(new Date(displayYear, displayMonth, 1), "MMMM yyyy");
+  const brandBreakdown = [...brandMap.values()]
+    .sort((a, b) => b.gmv - a.gmv)
+    .map(b => ({ ...b, gmvPerHour: b.hours > 0 ? b.gmv / b.hours : 0, netRevenue: b.gmv - b.adsCost }));
+  const topBrands = brandBreakdown.slice(0, 3);
 
   return {
-    totalHosts, totalRooms, totalBrands, todaySessions,
+    totalHosts, totalRooms, totalBrands, recentImports,
     monthSessionCount: monthSessions.length,
     completedCount: completedSessions.length,
-    monthGMV, totalAdsCost, lateCount, recentImports,
-    displayMonth, displayYear, displayMonthLabel, isFallback,
-    monthStart, monthEnd,
+    monthGMV, totalAdsCost, topBrands, brandBreakdown,
+    lastSyncedAt: lastSyncedSession?.updatedAt ?? null,
   };
+}
+
+function getAdminStats(month: number, year: number) {
+  return unstable_cache(
+    () => fetchAdminStats(month, year),
+    ["admin-stats", String(month), String(year)],
+    { revalidate: 30 },
+  )();
 }
 
 async function getLiveHostStats(userId: string) {
@@ -79,9 +77,9 @@ async function getLiveHostStats(userId: string) {
   if (!host) return null;
   const now = new Date();
   const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
+  const monthEnd   = endOfMonth(now);
   const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  const todayEnd   = endOfDay(now);
 
   const [todaySessions, monthSessions] = await Promise.all([
     prisma.session.findMany({
@@ -95,61 +93,62 @@ async function getLiveHostStats(userId: string) {
     }),
   ]);
 
-  const completedSessions = monthSessions.filter((s) => s.status === "COMPLETED");
-  const totalGMV = completedSessions.reduce((sum, s) => sum + (s.gmv || 0), 0);
-  const totalHours = completedSessions.reduce((sum, s) => sum + (s.actualDurationMinutes || 0) / 60, 0);
-  const lateCount = monthSessions.filter((s) => s.punctuality === "LATE").length;
+  const completedSessions = monthSessions.filter(s => s.status === "COMPLETED");
+  const totalGMV   = completedSessions.reduce((sum, s) => sum + (s.gmv ?? 0), 0);
+  const totalHours = completedSessions.reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0) / 60, 0);
+  const lateCount  = monthSessions.filter(s => s.punctuality === "LATE").length;
 
   return { host, todaySessions, monthSessions, completedSessions, totalGMV, totalHours, lateCount };
 }
 
-export default async function DashboardPage() {
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default async function DashboardPage(props: {
+  searchParams: Promise<{ month?: string; year?: string }>;
+}) {
   const session = await auth();
   if (!session) redirect("/login");
   const user = session.user as { id: string; name: string; role: string };
 
   if (user.role === "ADMIN") {
-    const stats = await getAdminStats();
+    const sp    = await props.searchParams;
+    const now   = new Date();
+    const month = sp.month !== undefined ? parseInt(sp.month) : now.getMonth();
+    const year  = sp.year  !== undefined ? parseInt(sp.year)  : now.getFullYear();
+    const isMTD = month === now.getMonth() && year === now.getFullYear();
+
+    const stats = await getAdminStats(month, year);
     const completionRate = stats.monthSessionCount > 0
       ? Math.round((stats.completedCount / stats.monthSessionCount) * 100)
       : 0;
 
+    const displayMonthLabel = format(new Date(year, month, 1), "MMMM yyyy");
+    const medals = ["🥇", "🥈", "🥉"];
+
     return (
       <div className="space-y-6 animate-in">
+
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
-              Dashboard
-            </h1>
+            <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Dashboard</h1>
             <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-              {format(new Date(), "EEEE, d MMMM yyyy")}
+              {format(now, "EEEE, d MMMM yyyy")}
             </p>
-            {stats.isFallback && (
-              <p className="text-xs mt-1 px-2 py-0.5 rounded-full inline-block" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                Showing {stats.displayMonthLabel} · No sessions yet this month
-              </p>
-            )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <MonthSelector month={month} year={year} isMTD={isMTD} />
             <Link
               href="/schedule"
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg"
               style={{ background: "var(--accent)", color: "#fff" }}
             >
               <Calendar size={14} /> Schedule
             </Link>
-            <Link
-              href="/import"
-              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
-              style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
-            >
-              <Upload size={14} /> Import
-            </Link>
           </div>
         </div>
 
-        {/* Stat Cards */}
+        {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Link href="/admin/hosts">
             <GradientStatCard icon={Users} label="Active Hosts" value={stats.totalHosts} sub="live hosts" gradient="metric-card-indigo" />
@@ -161,162 +160,199 @@ export default async function DashboardPage() {
             <GradientStatCard icon={Building2} label="Brands" value={stats.totalBrands} sub="active brands" gradient="metric-card-violet" />
           </Link>
           <Link href="/performance">
-            <GradientStatCard icon={TrendingUp} label="Month GMV" value={formatCurrency(stats.monthGMV)} sub={`${stats.completedCount}/${stats.monthSessionCount} sessions`} gradient="metric-card-emerald" />
+            <GradientStatCard
+              icon={TrendingUp}
+              label={isMTD ? "MTD GMV" : "Month GMV"}
+              value={formatCurrency(stats.monthGMV)}
+              sub={`${stats.completedCount} sessions · ${completionRate}% done`}
+              gradient="metric-card-emerald"
+            />
           </Link>
         </div>
 
-        {/* Secondary stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <MiniStatCard
-            label="Completion Rate"
-            value={`${completionRate}%`}
-            trend={completionRate >= 80 ? "good" : "warn"}
-          />
-          <MiniStatCard
-            label="Late Sessions"
-            value={stats.lateCount}
-            trend={stats.lateCount > 5 ? "bad" : "good"}
-            sub={stats.lateCount > 5 ? "⚠ Deduction risk" : "✓ Within limit"}
-          />
-          <MiniStatCard
-            label="Today's Sessions"
-            value={stats.todaySessions.length}
-            sub="scheduled"
-          />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Today's Sessions — takes 2 cols */}
-          <div className="lg:col-span-2 section-card">
+        {/* Top 3 Brands + Month Summary row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Top 3 Brands — compact */}
+          <div className="section-card">
             <div className="section-card-header">
-              <h2>Today&apos;s Sessions</h2>
-              <Link
-                href="/schedule"
-                className="flex items-center gap-1 text-xs font-medium"
-                style={{ color: "var(--accent)" }}
-              >
-                View all <ArrowUpRight size={11} />
+              <h2 className="flex items-center gap-1.5 text-sm">
+                <Medal size={13} style={{ color: "var(--warning)" }} />
+                Top Brands
+              </h2>
+              <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
+                <ArrowUpRight size={11} />
               </Link>
             </div>
-            <div>
-              {stats.todaySessions.length === 0 ? (
-                <div className="empty-state">
-                  <Calendar size={28} className="mx-auto mb-2 opacity-30" />
-                  No sessions scheduled today
-                </div>
-              ) : (
-                stats.todaySessions.slice(0, 10).map((s) => (
-                  <div key={s.id} className="session-row">
-                    <div
-                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                      style={{ background: s.brand.color }}
-                    />
+            {stats.topBrands.length === 0 ? (
+              <div className="empty-state py-4 text-xs">No completed sessions yet.</div>
+            ) : (
+              <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                {stats.topBrands.map((b, i) => (
+                  <div key={b.name} className="flex items-center gap-2 px-3 py-2">
+                    <span className="text-base w-5 text-center flex-shrink-0 leading-none">{medals[i]}</span>
+                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm truncate" style={{ color: "var(--text-primary)" }}>
-                        {s.liveHost.user.name}
-                      </div>
-                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {s.brand.name} · {s.room.name}
-                      </div>
+                      <p className="font-semibold text-xs truncate" style={{ color: "var(--text-primary)" }}>{b.name}</p>
+                      <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                        {b.sessions}sess · {b.hours.toFixed(1)}h
+                      </p>
                     </div>
-                    <div className="text-right text-xs flex-shrink-0" style={{ color: "var(--text-secondary)" }}>
-                      <div className="font-medium">{format(new Date(s.scheduledStart), "HH:mm")}</div>
-                      <div style={{ color: "var(--text-muted)" }}>→ {format(new Date(s.scheduledEnd), "HH:mm")}</div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="font-bold text-xs" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</p>
+                      {b.gmvPerHour > 0 && (
+                        <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                          {formatCurrency(b.gmvPerHour)}/hr
+                        </p>
+                      )}
                     </div>
-                    <StatusPill status={s.status} punctuality={s.punctuality} />
                   </div>
-                ))
-              )}
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Month Summary — compact 2-col grid */}
+          <div className="section-card">
+            <div className="section-card-header">
+              <h2 className="text-sm">Month Summary</h2>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>{displayMonthLabel}{isMTD ? " MTD" : ""}</span>
+            </div>
+            <div className="px-3 py-2 space-y-0">
+              <CompactKV label="Sessions" value={`${stats.completedCount} / ${stats.monthSessionCount}`} />
+              <CompactKV label="GMV" value={formatCurrency(stats.monthGMV)} highlight />
+              <CompactKV label="Ads Cost" value={formatCurrency(stats.totalAdsCost)} />
+              <CompactKV label="Net Revenue" value={formatCurrency(stats.monthGMV - stats.totalAdsCost)} highlight />
+              <div className="pt-2">
+                <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>
+                  <span>Completion</span><span className="font-semibold">{completionRate}%</span>
+                </div>
+                <div className="progress-track" style={{ height: "4px" }}>
+                  <div className="progress-fill" style={{ width: `${completionRate}%`, background: completionRate >= 80 ? "var(--success)" : "var(--warning)" }} />
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Right column */}
-          <div className="space-y-4">
-            {/* Month summary */}
-            <div className="section-card">
-              <div className="section-card-header">
-                <h2>Month Summary</h2>
-                {stats.isFallback && (
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>{stats.displayMonthLabel}</span>
-                )}
-              </div>
-              <div className="p-4 space-y-1">
-                <div className="kv-row">
-                  <span className="kv-label"><CheckCircle2 size={13} style={{ color: "var(--success)" }} /> Completed</span>
-                  <span className="kv-value">{stats.completedCount} / {stats.monthSessionCount}</span>
-                </div>
-                <div className="kv-row">
-                  <span className="kv-label"><AlertCircle size={13} style={{ color: stats.lateCount > 5 ? "var(--danger)" : "var(--warning)" }} /> Late sessions</span>
-                  <span className="kv-value" style={{ color: stats.lateCount > 5 ? "var(--danger)" : "var(--text-primary)" }}>{stats.lateCount}</span>
-                </div>
-                <div className="kv-row">
-                  <span className="kv-label"><TrendingUp size={13} style={{ color: "var(--accent)" }} /> Total GMV</span>
-                  <span className="kv-value">{formatCurrency(stats.monthGMV)}</span>
-                </div>
-                <div className="kv-row">
-                  <span className="kv-label"><TrendingUp size={13} style={{ color: "var(--text-muted)" }} /> Ads Cost</span>
-                  <span className="kv-value">{formatCurrency(stats.totalAdsCost)}</span>
-                </div>
-                <div className="pt-3">
-                  <div className="flex justify-between text-xs mb-1.5" style={{ color: "var(--text-muted)" }}>
-                    <span>Completion</span><span>{completionRate}%</span>
-                  </div>
-                  <div className="progress-track">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${completionRate}%`, background: completionRate >= 80 ? "var(--success)" : "var(--warning)" }}
-                    />
-                  </div>
-                </div>
-              </div>
+          {/* Recent Syncs — now shows GSheets sync + file imports */}
+          <div className="section-card">
+            <div className="section-card-header">
+              <h2 className="flex items-center gap-1.5 text-sm">
+                <RefreshCw size={12} style={{ color: "var(--accent)" }} />
+                Recent Syncs
+              </h2>
+              <Link href="/admin/sync" className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+                Sync now
+              </Link>
             </div>
-
-            {/* Recent Imports */}
-            <div className="section-card">
-              <div className="section-card-header">
-                <h2>Recent Imports</h2>
-                <Link href="/import" className="text-xs font-medium" style={{ color: "var(--accent)" }}>+ Import</Link>
-              </div>
-              <div className="p-4">
-                {stats.recentImports.length === 0 ? (
-                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    No imports yet.{" "}
-                    <Link href="/import" style={{ color: "var(--accent)" }} className="hover:underline">
-                      Upload data
-                    </Link>
+            <div className="px-3 py-2 space-y-2">
+              {/* Google Sheet sync */}
+              <div className="rounded-lg px-2.5 py-2" style={{ background: "var(--bg-subtle)" }}>
+                <p className="text-[10px] font-medium mb-0.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Google Sheet Sync</p>
+                {stats.lastSyncedAt ? (
+                  <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                    {formatDistanceToNow(new Date(stats.lastSyncedAt), { addSuffix: true })}
                   </p>
                 ) : (
-                  <div className="space-y-2.5">
-                    {stats.recentImports.map((b) => (
-                      <div key={b.id} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>No syncs yet</p>
+                )}
+                {stats.lastSyncedAt && (
+                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    {format(new Date(stats.lastSyncedAt), "d MMM yyyy, HH:mm")}
+                  </p>
+                )}
+              </div>
+              {/* File imports */}
+              {stats.recentImports.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium mb-1 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>File Imports</p>
+                  <div className="space-y-1.5">
+                    {stats.recentImports.map(b => (
+                      <div key={b.id} className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
                           <PlatformBadge platform={b.platform} showName={false} size="xs" />
-                          <span className="truncate max-w-[120px] text-xs" style={{ color: "var(--text-secondary)" }}>
+                          <span className="truncate max-w-[100px] text-[10px]" style={{ color: "var(--text-secondary)" }}>
                             {b.fileName}
                           </span>
                         </div>
-                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>{b.rowCount} rows</span>
+                        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{b.rowCount}r</span>
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {/* Analytics — Brand breakdown */}
+        <div className="section-card">
+          <div className="section-card-header">
+            <h2 className="flex items-center gap-1.5 text-sm">
+              <BarChart2 size={13} style={{ color: "var(--accent)" }} />
+              Analytics — {displayMonthLabel}{isMTD ? " (MTD)" : ""}
+            </h2>
+            <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
+              Full analytics <ArrowUpRight size={11} />
+            </Link>
+          </div>
+          {stats.brandBreakdown.length === 0 ? (
+            <div className="empty-state py-6 text-xs">No completed sessions yet for this period.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table text-xs w-full">
+                <thead>
+                  <tr>
+                    <th className="text-left">Brand</th>
+                    <th className="text-right">Sessions</th>
+                    <th className="text-right">Hours</th>
+                    <th className="text-right">GMV</th>
+                    <th className="text-right">GMV/hr</th>
+                    <th className="text-right">Ads Cost</th>
+                    <th className="text-right">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.brandBreakdown.map((b, i) => (
+                    <tr key={b.name}>
+                      <td>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm">{medals[i] ?? ""}</span>
+                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
+                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>{b.name}</span>
+                        </div>
+                      </td>
+                      <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.sessions}</td>
+                      <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.hours.toFixed(1)}h</td>
+                      <td className="text-right font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</td>
+                      <td className="text-right" style={{ color: "var(--text-secondary)" }}>
+                        {b.gmvPerHour > 0 ? formatCurrency(b.gmvPerHour) : "—"}
+                      </td>
+                      <td className="text-right" style={{ color: "var(--text-muted)" }}>
+                        {b.adsCost > 0 ? formatCurrency(b.adsCost) : "—"}
+                      </td>
+                      <td className="text-right" style={{ color: b.netRevenue >= 0 ? "var(--success)" : "var(--danger)" }}>
+                        {b.gmv > 0 ? formatCurrency(b.netRevenue) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
       </div>
     );
   }
 
+  // ── LIVE HOST view ──────────────────────────────────────────────────────────
   if (user.role === "LIVE_HOST") {
     const stats = await getLiveHostStats(user.id);
-    if (!stats) {
-      return (
-        <div className="p-8 text-center" style={{ color: "var(--text-secondary)" }}>
-          No live host profile found. Contact admin.
-        </div>
-      );
-    }
+    if (!stats) return (
+      <div className="p-8 text-center" style={{ color: "var(--text-secondary)" }}>
+        No live host profile found. Contact admin.
+      </div>
+    );
     return (
       <div className="space-y-6 animate-in">
         <div>
@@ -329,10 +365,10 @@ export default async function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <GradientStatCard icon={Calendar} label="Today" value={stats.todaySessions.length} sub="sessions" gradient="metric-card-indigo" />
-          <GradientStatCard icon={CheckCircle2} label="Completed" value={stats.completedSessions.length} sub="this month" gradient="metric-card-emerald" />
-          <GradientStatCard icon={Clock} label="Hours" value={`${stats.totalHours.toFixed(1)}h`} sub="this month" gradient="metric-card-sky" />
-          <GradientStatCard icon={TrendingUp} label="My GMV" value={formatCurrency(stats.totalGMV)} sub="this month" gradient="metric-card-amber" />
+          <GradientStatCard icon={Calendar}     label="Today"     value={stats.todaySessions.length}        sub="sessions"    gradient="metric-card-indigo" />
+          <GradientStatCard icon={CheckCircle2} label="Completed" value={stats.completedSessions.length}    sub="this month"  gradient="metric-card-emerald" />
+          <GradientStatCard icon={Clock}        label="Hours"     value={`${stats.totalHours.toFixed(1)}h`} sub="this month"  gradient="metric-card-sky" />
+          <GradientStatCard icon={TrendingUp}   label="My GMV"    value={formatCurrency(stats.totalGMV)}    sub="this month"  gradient="metric-card-amber" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -347,7 +383,7 @@ export default async function DashboardPage() {
               {stats.todaySessions.length === 0 ? (
                 <div className="empty-state">No sessions today</div>
               ) : (
-                stats.todaySessions.map((s) => (
+                stats.todaySessions.map(s => (
                   <div key={s.id} className="session-row">
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.brand.color }} />
                     <div className="flex-1 min-w-0">
@@ -381,7 +417,7 @@ export default async function DashboardPage() {
     );
   }
 
-  // CLIENT
+  // ── CLIENT view ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 animate-in">
       <div>
@@ -392,11 +428,7 @@ export default async function DashboardPage() {
         <Calendar size={40} className="mx-auto mb-3" style={{ color: "var(--accent)" }} />
         <h2 className="font-semibold mb-1" style={{ color: "var(--text-primary)" }}>Your Brand Schedule</h2>
         <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>View and export your upcoming livestream sessions.</p>
-        <Link
-          href="/client-brand"
-          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium"
-          style={{ background: "var(--accent)", color: "#fff" }}
-        >
+        <Link href="/client-brand" className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium" style={{ background: "var(--accent)", color: "#fff" }}>
           <Calendar size={14} /> View Schedule
         </Link>
       </div>
@@ -404,18 +436,23 @@ export default async function DashboardPage() {
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-function GradientStatCard({
-  icon: Icon, label, value, sub, gradient,
-}: {
+function CompactKV({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between py-1.5" style={{ borderBottom: "1px solid var(--border)" }}>
+      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</span>
+      <span className="text-xs font-semibold" style={{ color: highlight ? "var(--text-primary)" : "var(--text-secondary)" }}>{value}</span>
+    </div>
+  );
+}
+
+function GradientStatCard({ icon: Icon, label, value, sub, gradient }: {
   icon: React.ElementType; label: string; value: string | number; sub?: string; gradient: string;
 }) {
   return (
     <div className={`${gradient} rounded-xl p-5 text-white shadow-md relative overflow-hidden transition-transform hover:scale-[1.02] hover:shadow-lg cursor-pointer`}>
-      <div className="absolute right-3 top-3 opacity-20">
-        <Icon size={36} />
-      </div>
+      <div className="absolute right-3 top-3 opacity-20"><Icon size={36} /></div>
       <div className="text-xs font-medium opacity-80 uppercase tracking-wider">{label}</div>
       <div className="text-2xl font-bold mt-1.5 leading-none">{value}</div>
       {sub && <div className="text-xs opacity-70 mt-1.5">{sub}</div>}
@@ -423,49 +460,31 @@ function GradientStatCard({
   );
 }
 
-function MiniStatCard({ label, value, sub, trend }: { label: string; value: string | number; sub?: string; trend?: "good" | "warn" | "bad" }) {
-  const trendColor = trend === "good" ? "var(--success)" : trend === "bad" ? "var(--danger)" : trend === "warn" ? "var(--warning)" : "var(--text-primary)";
-  return (
-    <div className="section-card p-4">
-      <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{label}</div>
-      <div className="text-xl font-bold" style={{ color: trendColor }}>{value}</div>
-      {sub && <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</div>}
-    </div>
-  );
-}
-
 function StatusPill({ status, punctuality }: { status: string; punctuality?: string | null }) {
-  if (status === "PENDING") {
-    return <span className="badge badge-secondary">Pending</span>;
-  }
-  if (status === "MISSED") {
-    return <span className="badge badge-danger">Missed</span>;
-  }
-  if (punctuality === "LATE") return <span className="badge badge-warning">Late</span>;
+  if (status === "PENDING") return <span className="badge badge-secondary">Pending</span>;
+  if (status === "MISSED")  return <span className="badge badge-danger">Missed</span>;
+  if (punctuality === "LATE")  return <span className="badge badge-warning">Late</span>;
   if (punctuality === "EARLY") return <span className="badge badge-default">Early</span>;
   return <span className="badge badge-success">On Time</span>;
 }
 
 function PunctualityBar({ sessions }: { sessions: { punctuality: string | null; status: string }[] }) {
-  const done = sessions.filter((s) => s.status === "COMPLETED");
-  const early = done.filter((s) => s.punctuality === "EARLY").length;
-  const onTime = done.filter((s) => s.punctuality === "ON_TIME").length;
-  const late = done.filter((s) => s.punctuality === "LATE").length;
-  const total = done.length || 1;
+  const done   = sessions.filter(s => s.status === "COMPLETED");
+  const early  = done.filter(s => s.punctuality === "EARLY").length;
+  const onTime = done.filter(s => s.punctuality === "ON_TIME").length;
+  const late   = done.filter(s => s.punctuality === "LATE").length;
+  const total  = done.length || 1;
   return (
     <div className="space-y-3">
       {[
-        { label: "Early", count: early, color: "var(--accent)" },
+        { label: "Early",   count: early,  color: "var(--accent)" },
         { label: "On Time", count: onTime, color: "var(--success)" },
-        { label: "Late", count: late, color: "var(--warning)" },
-      ].map((row) => (
+        { label: "Late",    count: late,   color: "var(--warning)" },
+      ].map(row => (
         <div key={row.label} className="flex items-center gap-3">
           <div className="w-14 text-xs" style={{ color: "var(--text-muted)" }}>{row.label}</div>
           <div className="flex-1 progress-track">
-            <div
-              className="progress-fill"
-              style={{ width: `${(row.count / total) * 100}%`, background: row.color }}
-            />
+            <div className="progress-fill" style={{ width: `${(row.count / total) * 100}%`, background: row.color }} />
           </div>
           <div className="w-5 text-xs text-right" style={{ color: "var(--text-secondary)" }}>{row.count}</div>
         </div>

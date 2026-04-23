@@ -211,7 +211,7 @@ export default function PerformancePage() {
 
       {/* ── Main tabs ── */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--bg-subtle)" }}>
-        {([["analytics","Analytics"],["hosts","Host Performance"],["adscost","Ads Cost"]] as [MainTab,string][]).map(([t,l]) => (
+        {([["analytics","Analytics"],["hosts","Host Performance"],["adscost","Sessions Ads Cost"]] as [MainTab,string][]).map(([t,l]) => (
           <button key={t} onClick={()=>setMainTab(t)} className="px-4 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
             style={{ background: mainTab===t?"var(--sidebar-active)":"transparent", color: mainTab===t?"#fff":"var(--text-secondary)" }}>
             {l}
