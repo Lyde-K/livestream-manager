@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, CheckCircle2, RefreshCw, Trash2, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RefreshCw, Trash2, Info, Flame } from "lucide-react";
 import type { DuplicatePair } from "@/app/api/admin/sessions/duplicates/route";
 
 function sgt(iso: string) {
@@ -19,14 +19,24 @@ export default function FixDuplicatesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [done, setDone]         = useState(false);
 
+  // Clear-all state
+  const [syncedCount, setSyncedCount]   = useState<number | null>(null);
+  const [clearing, setClearing]         = useState(false);
+  const [clearDone, setClearDone]       = useState(false);
+  const [clearDeleted, setClearDeleted] = useState(0);
+
   const load = useCallback(async () => {
     setLoading(true);
     setDone(false);
-    const res = await fetch("/api/admin/sessions/duplicates");
-    const data = await res.json();
-    setPairs(data.pairs ?? []);
-    // Pre-select all "wrong" IDs by default
-    setSelected(new Set((data.pairs ?? []).map((p: DuplicatePair) => p.wrongId)));
+    const [dupRes, countRes] = await Promise.all([
+      fetch("/api/admin/sessions/duplicates"),
+      fetch("/api/admin/sessions/clear-synced"),
+    ]);
+    const dupData   = await dupRes.json();
+    const countData = await countRes.json();
+    setPairs(dupData.pairs ?? []);
+    setSelected(new Set((dupData.pairs ?? []).map((p: DuplicatePair) => p.wrongId)));
+    setSyncedCount(countData.count ?? 0);
     setLoading(false);
   }, []);
 
@@ -61,6 +71,22 @@ export default function FixDuplicatesPage() {
     await load();
   }
 
+  async function clearAllSynced() {
+    const msg = `This will permanently delete ALL ${syncedCount ?? "?"} Google Sheets synced sessions.\n\nThis cannot be undone. You'll need to resync from Google Sheets.\n\nType DELETE to confirm.`;
+    const input = prompt(msg);
+    if (input !== "DELETE") return;
+    setClearing(true);
+    const res = await fetch("/api/admin/sessions/clear-synced", {
+      method: "DELETE",
+      headers: { "x-confirm-clear": "yes-delete-all-synced" },
+    });
+    const data = await res.json();
+    setClearDeleted(data.deleted ?? 0);
+    setClearing(false);
+    setClearDone(true);
+    await load();
+  }
+
   return (
     <div className="space-y-5 animate-in max-w-5xl">
       {/* Header */}
@@ -77,11 +103,11 @@ export default function FixDuplicatesPage() {
         <Info size={15} className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent)" }} />
         <div className="text-sm space-y-1" style={{ color: "var(--text-secondary)" }}>
           <p><strong style={{ color: "var(--text-primary)" }}>Why did this happen?</strong> Before the timezone fix, session times from Google Sheets were treated as UTC instead of MYT (+08:00), inflating every timestamp by 8 hours. The fix corrected new imports — but each corrected session got a new <code>externalRef</code>, creating a duplicate alongside the old (shifted) one.</p>
-          <p><strong style={{ color: "var(--text-primary)" }}>What to do:</strong> The table shows pairs. The <span style={{ color: "var(--danger)" }}>Wrong (old)</span> row is pre-checked for deletion. Review, uncheck anything you want to keep, then click <strong>Delete Selected</strong>.</p>
+          <p><strong style={{ color: "var(--text-primary)" }}>What to do:</strong> Use <strong>Clear All Synced & Resync</strong> below for the cleanest reset, or manually review pairs and delete the wrong ones.</p>
         </div>
       </div>
 
-      {/* Done banner */}
+      {/* Done banner — bulk delete */}
       {done && deleted > 0 && (
         <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
           <CheckCircle2 size={16} style={{ color: "var(--success)" }} />
@@ -90,6 +116,42 @@ export default function FixDuplicatesPage() {
           </span>
         </div>
       )}
+
+      {/* Done banner — clear all */}
+      {clearDone && (
+        <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
+          <CheckCircle2 size={16} style={{ color: "var(--success)" }} />
+          <span className="text-sm font-medium" style={{ color: "#166534" }}>
+            ✓ {clearDeleted} synced session{clearDeleted !== 1 ? "s" : ""} cleared. You can now trigger a fresh sync from Google Sheets.
+          </span>
+        </div>
+      )}
+
+      {/* ── Danger Zone: Clear all synced ─────────────────────────────── */}
+      <div className="rounded-xl px-4 py-4 space-y-3" style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.25)" }}>
+        <div className="flex items-center gap-2">
+          <Flame size={14} style={{ color: "var(--danger)" }} />
+          <span className="text-sm font-semibold" style={{ color: "var(--danger)" }}>Danger Zone — Clear All Synced Data</span>
+        </div>
+        <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+          Wipes <strong style={{ color: "var(--text-primary)" }}>every session imported from Google Sheets</strong> (all records whose ID starts with <code>GS-</code>).
+          Use this for a clean slate before a full resync. Manually created sessions are untouched.
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono px-2 py-1 rounded" style={{ background: "rgba(239,68,68,0.1)", color: "var(--danger)" }}>
+            {loading ? "…" : `${syncedCount ?? 0} synced session${syncedCount !== 1 ? "s" : ""} in database`}
+          </span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={clearAllSynced}
+            loading={clearing}
+            disabled={loading || (syncedCount ?? 0) === 0}
+          >
+            <Trash2 size={13} /> Clear All Synced &amp; Resync
+          </Button>
+        </div>
+      </div>
 
       {/* Loading */}
       {loading && (
