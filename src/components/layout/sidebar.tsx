@@ -8,7 +8,7 @@ import { useTheme } from "@/components/theme-provider";
 import {
   LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
-  UserCheck, Sun, Moon, ChevronRight, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench,
+  UserCheck, Sun, Moon, ChevronRight, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench, UsersRound,
 } from "lucide-react";
 
 interface NavItem { label: string; href: string; icon: React.ElementType; roles: string[]; }
@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { label: "Performance",    href: "/performance",     icon: BarChart3,       roles: ["ADMIN"] },
   { label: "My Performance", href: "/my-performance",  icon: TrendingUp,      roles: ["LIVE_HOST"] },
   { label: "Leaderboard",    href: "/leaderboard",     icon: Trophy,          roles: ["ADMIN","LIVE_HOST"] },
+  { label: "Staff Accounts", href: "/admin/users",     icon: UsersRound,      roles: ["ADMIN"] },
   { label: "Rooms",          href: "/admin/rooms",     icon: DoorOpen,        roles: ["ADMIN"] },
   { label: "Live Hosts",     href: "/admin/hosts",     icon: Users,           roles: ["ADMIN"] },
   { label: "Brands",         href: "/admin/brands",    icon: Building2,       roles: ["ADMIN"] },
