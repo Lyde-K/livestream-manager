@@ -234,7 +234,16 @@ export async function POST(req: NextRequest) {
         actualDurationMinutes,
         actualStart,
         actualEnd:          scheduledEnd,
-        isCampaignDay:      row.campaign === true || ["YES", "CAMPAIGN", "TRUE", "1"].includes(String(row.campaign ?? "").toUpperCase()),
+        // Campaign  → "Campaign" | "YES" | "TRUE" | "1" | true
+        // BAU/Non-campaign → "BAU" | "NO" | "FALSE" | "0" | "" | false
+        isCampaignDay:      ((): boolean => {
+          if (row.campaign === true)  return true;
+          if (row.campaign === false) return false;
+          const v = String(row.campaign ?? "").toUpperCase().trim();
+          if (["YES", "CAMPAIGN", "TRUE", "1"].includes(v)) return true;
+          if (["NO", "BAU", "FALSE", "0", ""].includes(v))  return false;
+          return false; // unknown value → treat as BAU
+        })(),
         punctuality,
         // Only overwrite notes if the sheet provides one — preserve manual app notes
         ...(row.notes ? { notes: row.notes } : {}),
