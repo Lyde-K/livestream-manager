@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "No rows provided" }, { status: 400 });
 
   const [allHosts, allBrands, defaultRoom, commissionRule] = await Promise.all([
-    prisma.liveHost.findMany({ where: { isActive: true } }),
+    prisma.liveHost.findMany(), // include inactive hosts — they may still appear in historical sheet data
     prisma.brand.findMany(),
     prisma.room.findFirst(),
     prisma.commissionRule.findFirst({ orderBy: { isDefault: "desc" } }),
