@@ -7,18 +7,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const data = await req.json();
+  const { roomId, liveHostId, brandId, platform, scheduledStart, scheduledEnd, isCampaignDay, notes, slotColor } = await req.json();
   const updated = await prisma.session.update({
     where: { id },
     data: {
-      roomId: data.roomId,
-      liveHostId: data.liveHostId,
-      brandId: data.brandId,
-      platform: data.platform,
-      scheduledStart: new Date(data.scheduledStart),
-      scheduledEnd: new Date(data.scheduledEnd),
-      isCampaignDay: data.isCampaignDay,
-      notes: data.notes,
+      // Allow explicit null to unset host/room, or a value to set it
+      liveHostId: liveHostId ?? null,
+      roomId: roomId ?? null,
+      brandId,
+      platform,
+      scheduledStart: new Date(scheduledStart),
+      scheduledEnd: new Date(scheduledEnd),
+      isCampaignDay,
+      notes: notes ?? null,
+      ...(slotColor !== undefined ? { slotColor } : {}),
     },
     include: { room: true, brand: true, liveHost: { include: { user: true } } },
   });

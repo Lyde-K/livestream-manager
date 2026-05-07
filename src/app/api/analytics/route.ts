@@ -11,15 +11,22 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const start = searchParams.get("start");
   const end = searchParams.get("end");
+  const sessionType = searchParams.get("type"); // "BAU" | "CAMPAIGN" | null (all)
   if (!start || !end) return Response.json({ error: "start and end required" }, { status: 400 });
 
   const startDate = new Date(start + "T00:00:00");
   const endDate = new Date(end + "T23:59:59");
 
+  const campaignFilter =
+    sessionType === "BAU" ? { isCampaignDay: false } :
+    sessionType === "CAMPAIGN" ? { isCampaignDay: true } :
+    {};
+
   const sessions = await prisma.session.findMany({
     where: {
       status: "COMPLETED",
       scheduledStart: { gte: startDate, lte: endDate },
+      ...campaignFilter,
     },
     include: {
       brand: true,
@@ -77,18 +84,18 @@ export async function GET(req: NextRequest) {
     .map((b) => ({ ...b, avgCTOR: b.ctorCount > 0 ? b.ctorSum / b.ctorCount : null }))
     .sort((a, b) => b.gmv - a.gmv);
 
-  // ── By host ───────────────────────────────────────────────────────────────
+  // ── By host (only sessions with an assigned host) ────────────────────────
   const byHostMap = new Map<string, {
     hostId: string; hostName: string; displayName: string; type: string;
     gmv: number; viewers: number; sessions: number; hours: number;
   }>();
-  for (const s of sessions) {
-    const key = s.liveHostId;
+  for (const s of sessions.filter(s => s.liveHostId != null)) {
+    const key = s.liveHostId!;
     const cur = byHostMap.get(key) ?? {
-      hostId: s.liveHostId,
-      hostName: s.liveHost.user.name,
-      displayName: s.liveHost.displayName,
-      type: s.liveHost.type,
+      hostId: s.liveHostId!,
+      hostName: s.liveHost?.user.name ?? "Unassigned",
+      displayName: s.liveHost?.displayName ?? "—",
+      type: s.liveHost?.type ?? "—",
       gmv: 0, viewers: 0, sessions: 0, hours: 0,
     };
     byHostMap.set(key, {
@@ -127,9 +134,17 @@ export async function GET(req: NextRequest) {
   }
   const byCountry = Array.from(countryMap.values()).sort((a, b) => b.gmv - a.gmv);
 
+  // ── BAU / Campaign breakdown ──────────────────────────────────────────────
+  const bauSessions = sessions.filter(s => !s.isCampaignDay);
+  const campaignSessions = sessions.filter(s => s.isCampaignDay);
+  const byType = {
+    bau: { sessions: bauSessions.length, gmv: bauSessions.reduce((s, x) => s + (x.gmv ?? 0), 0) },
+    campaign: { sessions: campaignSessions.length, gmv: campaignSessions.reduce((s, x) => s + (x.gmv ?? 0), 0) },
+  };
+
   return Response.json({
     totalGMV, totalViewers, totalOrders, avgCTOR,
     sessionCount: sessions.length,
-    byDate, byBrand, byHost, byPlatform, byCountry,
+    byDate, byBrand, byHost, byPlatform, byCountry, byType,
   });
 }

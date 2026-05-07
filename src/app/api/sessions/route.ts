@@ -50,17 +50,18 @@ export async function POST(req: NextRequest) {
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const data = await req.json();
+  const { roomId, liveHostId, brandId, platform, scheduledStart, scheduledEnd, isCampaignDay, notes, slotColor } = await req.json();
   const newSession = await prisma.session.create({
     data: {
-      roomId: data.roomId,
-      liveHostId: data.liveHostId,
-      brandId: data.brandId,
-      platform: data.platform,
-      scheduledStart: new Date(data.scheduledStart),
-      scheduledEnd: new Date(data.scheduledEnd),
-      isCampaignDay: data.isCampaignDay || false,
-      notes: data.notes || null,
+      ...(liveHostId ? { liveHostId } : {}),
+      ...(roomId ? { roomId } : {}),
+      brandId,
+      platform,
+      scheduledStart: new Date(scheduledStart),
+      scheduledEnd: new Date(scheduledEnd),
+      isCampaignDay: isCampaignDay ?? false,
+      notes: notes || null,
+      ...(slotColor ? { slotColor } : {}),
     },
     include: {
       room: true,

@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, RefreshCw, Link2, Zap, ExternalLink } from "lucide-react";
+import { Copy, Check, RefreshCw, Link2, Zap, Clock } from "lucide-react";
 
 const TIKTOK_COLS = [
   // ── Manual columns (fill first) ───────────────────────────────────────────
@@ -301,10 +301,25 @@ function ColTable({ cols, highlight }: { cols: typeof TIKTOK_COLS; highlight?: n
   );
 }
 
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 export default function SyncPage() {
   const [tab, setTab] = useState<"tiktok" | "shopee">("tiktok");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok?: boolean; error?: string } | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/sync/status").then(r => r.json()).then(d => setLastSyncAt(d.lastSyncAt));
+  }, []);
 
   async function testConnection() {
     setTesting(true); setTestResult(null);
@@ -317,11 +332,20 @@ export default function SyncPage() {
 
   return (
     <div className="space-y-6 animate-in max-w-4xl">
-      <div>
-        <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Google Sheets Sync</h1>
-        <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-          Your team fills TikTok &amp; Shopee data in Google Sheets — the app syncs automatically every 15 min.
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Google Sheets Sync</h1>
+          <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
+            Your team fills TikTok &amp; Shopee data in Google Sheets — run sync manually or via GAS trigger.
+          </p>
+        </div>
+        {lastSyncAt && (
+          <div className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg flex-shrink-0"
+            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
+            <Clock size={12} />
+            Last synced: <strong style={{ color: "var(--text-secondary)" }}>{formatRelativeTime(lastSyncAt)}</strong>
+          </div>
+        )}
       </div>
 
       {/* Step 1 — Create sheet */}
@@ -405,22 +429,21 @@ export default function SyncPage() {
         </div>
       </div>
 
-      {/* Step 3 — Auto trigger */}
+      {/* Step 3 — Run sync */}
       <div className="section-card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
             style={{ background: "var(--accent)", color: "#fff" }}>3</span>
-          <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Set auto-sync every 15 minutes</h2>
+          <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Run sync manually</h2>
         </div>
-        <ol className="text-sm space-y-1 ml-8 list-decimal list-inside" style={{ color: "var(--text-secondary)" }}>
-          <li>In Apps Script, click the <strong>⏱ Triggers</strong> (clock) icon in the left panel</li>
-          <li>Click <strong>+ Add Trigger</strong></li>
-          <li>Function: <strong>syncAll</strong> · Event source: <strong>Time-driven</strong> · Type: <strong>Minutes timer</strong> · Interval: <strong>Every 15 minutes</strong></li>
-          <li>Save — Google will ask for permission to run on your behalf</li>
-        </ol>
-        <p className="text-sm ml-8" style={{ color: "var(--text-muted)" }}>
-          Syncing is safe to run repeatedly — rows are matched by platform + start time + host + brand, never duplicated.
-        </p>
+        <div className="ml-8 space-y-3">
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Preferred: run sync on-demand from Apps Script — open your sheet, go to <strong>Extensions → Apps Script</strong>, then click <strong>Run → syncAll()</strong>.
+          </p>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            <strong>Optional auto-trigger:</strong> If you want automatic syncing, set a time-driven trigger in Apps Script (⏱ icon → + Add Trigger → function: <code className="px-1 rounded text-xs" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>syncAll</code> → every 15 minutes). Syncing is safe to run repeatedly — rows are matched by platform + start time + host + brand and never duplicated.
+          </p>
+        </div>
       </div>
 
       {/* Workflow */}

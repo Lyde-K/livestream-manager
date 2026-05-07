@@ -1,5 +1,6 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,27 +12,59 @@ interface ModalProps {
   size?: "sm" | "md" | "lg" | "xl";
 }
 
-export function Modal({ open, onClose, title, children, size = "md" }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  size = "md",
+}: ModalProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
+
+    const html = document.documentElement;
+    const prevOverflow = html.style.overflow;
+    html.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", h);
+      html.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  const sizes = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-2xl" };
+  const sizes = {
+    sm: "max-w-sm",
+    md: "max-w-md",
+    lg: "max-w-lg",
+    xl: "max-w-2xl",
+  };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const node = (
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
       <div
         className="absolute inset-0 backdrop-blur-sm"
         style={{ background: "rgba(0,0,0,.45)" }}
         onClick={onClose}
       />
       <div
-        className={cn("relative w-full modal-in rounded-xl overflow-hidden", sizes[size])}
+        className={cn(
+          "relative w-full modal-in rounded-xl flex flex-col max-h-[90vh]",
+          sizes[size],
+        )}
         style={{
           background: "var(--bg-card)",
           border: "1px solid var(--border)",
@@ -40,23 +73,34 @@ export function Modal({ open, onClose, title, children, size = "md" }: ModalProp
       >
         {title && (
           <div
-            className="flex items-center justify-between px-5 py-3.5 border-b"
+            className="flex items-center justify-between px-5 py-3.5 border-b shrink-0"
             style={{ borderColor: "var(--border)" }}
           >
-            <h2 className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h2>
+            <h2
+              className="text-[14px] font-semibold"
+              style={{ color: "var(--text-primary)" }}
+            >
+              {title}
+            </h2>
             <button
               onClick={onClose}
-              className="rounded-md p-1 transition-colors cursor-pointer"
+              className="rounded-md p-1 transition-colors cursor-pointer hover:[background:var(--bg-hover)]"
               style={{ color: "var(--text-muted)" }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+              aria-label="Close"
             >
               <X size={16} />
             </button>
           </div>
         )}
-        <div className="p-5">{children}</div>
+        <div
+          className="p-5 overflow-y-auto"
+          style={{ scrollBehavior: "smooth" }}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
+
+  return createPortal(node, document.body);
 }

@@ -119,17 +119,17 @@ export async function POST(req: NextRequest) {
     .map(r => parseDT(r.startTime))
     .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
 
-  let pendingSessions: { id: string; liveHostId: string; brandId: string; scheduledStart: Date }[] = [];
+  let pendingSessions: { id: string; liveHostId: string | null; brandId: string; scheduledStart: Date; externalRef: string | null }[] = [];
   if (parsedTimes.length > 0) {
-    const minTime = new Date(Math.min(...parsedTimes.map(d => d.getTime())) - 90 * 60 * 1000);
-    const maxTime = new Date(Math.max(...parsedTimes.map(d => d.getTime())) + 90 * 60 * 1000);
+    const minTime = new Date(Math.min(...parsedTimes.map(d => d.getTime())) - 120 * 60 * 1000);
+    const maxTime = new Date(Math.max(...parsedTimes.map(d => d.getTime())) + 120 * 60 * 1000);
     pendingSessions = await prisma.session.findMany({
       where: { status: "PENDING", scheduledStart: { gte: minTime, lte: maxTime } },
-      select: { id: true, liveHostId: true, brandId: true, scheduledStart: true },
+      select: { id: true, liveHostId: true, brandId: true, scheduledStart: true, externalRef: true },
     });
   }
 
-  const results = { upserted: 0, skipped: 0, errors: [] as string[] };
+  const results = { upserted: 0, skipped: 0, errors: [] as string[], markedMissed: 0 };
 
   // Collect sync log errors to batch-insert at the end
   const syncLogErrors: Parameters<typeof prisma.syncLog.create>[0]["data"][] = [];
@@ -180,20 +180,21 @@ export async function POST(req: NextRequest) {
 
       // ── Punctuality: match in-memory using pre-loaded PENDING sessions ──────
       let punctuality: string | null = null;
-      const windowStart = actualStart.getTime() - 90 * 60 * 1000;
-      const windowEnd   = actualStart.getTime() + 90 * 60 * 1000;
+      const windowStart = actualStart.getTime() - 120 * 60 * 1000;
+      const windowEnd   = actualStart.getTime() + 120 * 60 * 1000;
       const candidates = pendingSessions.filter(s =>
-        s.liveHostId === host.id &&
+        (s.liveHostId === null || s.liveHostId === host.id) &&
         s.brandId === brand.id &&
         s.scheduledStart.getTime() >= windowStart &&
         s.scheduledStart.getTime() <= windowEnd
       );
+      let closestPending: typeof candidates[0] | null = null;
       if (candidates.length > 0) {
-        const closest = candidates.reduce((best, s) =>
+        closestPending = candidates.reduce((best, s) =>
           Math.abs(s.scheduledStart.getTime() - actualStart.getTime()) <
           Math.abs(best.scheduledStart.getTime() - actualStart.getTime()) ? s : best
         );
-        punctuality = computePunctuality(actualStart, closest.scheduledStart, earlyThresholdMinutes);
+        punctuality = computePunctuality(actualStart, closestPending.scheduledStart, earlyThresholdMinutes);
       }
 
       // ── avg view duration: "HH:MM:SS" or "MM:SS" → seconds ─────────────────
@@ -233,30 +234,45 @@ export async function POST(req: NextRequest) {
         actualDurationMinutes,
         actualStart,
         actualEnd:          scheduledEnd,
-        isCampaignDay:      row.campaign ?? false,
+        isCampaignDay:      row.campaign === true || ["YES", "CAMPAIGN", "TRUE", "1"].includes(String(row.campaign ?? "").toUpperCase()),
         punctuality,
-        notes:              row.notes || null,
+        // Only overwrite notes if the sheet provides one — preserve manual app notes
+        ...(row.notes ? { notes: row.notes } : {}),
       };
 
-      await prisma.session.upsert({
-        where: { externalRef },
-        update: {
-          liveHostId: host.id, brandId: brand.id,
-          platform, scheduledStart: actualStart, scheduledEnd,
-          status: "COMPLETED", ...metrics,
-        },
-        create: {
-          externalRef,
-          roomId: defaultRoom?.id ?? "",
-          liveHostId: host.id,
-          brandId: brand.id,
-          platform,
-          scheduledStart: actualStart,
-          scheduledEnd,
-          status: "COMPLETED",
-          ...metrics,
-        },
-      });
+      // If a manually-created (no externalRef) PENDING session matches this sync
+      // row, update it directly instead of creating a duplicate new record.
+      if (closestPending && !closestPending.externalRef) {
+        await prisma.session.update({
+          where: { id: closestPending.id },
+          data: {
+            externalRef,
+            liveHostId: host.id, brandId: brand.id,
+            platform, scheduledStart: actualStart, scheduledEnd,
+            status: "COMPLETED", ...metrics,
+          },
+        });
+      } else {
+        await prisma.session.upsert({
+          where: { externalRef },
+          update: {
+            liveHostId: host.id, brandId: brand.id,
+            platform, scheduledStart: actualStart, scheduledEnd,
+            status: "COMPLETED", ...metrics,
+          },
+          create: {
+            externalRef,
+            roomId: defaultRoom?.id ?? "",
+            liveHostId: host.id,
+            brandId: brand.id,
+            platform,
+            scheduledStart: actualStart,
+            scheduledEnd,
+            status: "COMPLETED",
+            ...metrics,
+          },
+        });
+      }
 
       results.upserted++;
     } catch (e) {
@@ -271,10 +287,30 @@ export async function POST(req: NextRequest) {
     await prisma.syncLog.createMany({ data: syncLogErrors, skipDuplicates: true });
   }
 
+  // Mark past PENDING sessions (> 6 hours ago) as MISSED if they weren't synced
+  const cutoff = new Date(Date.now() - 6 * 3600_000);
+  const missedResult = await prisma.session.updateMany({
+    where: {
+      status: "PENDING",
+      scheduledEnd: { lt: cutoff },
+      brandId: { in: allBrands.map(b => b.id) },
+    },
+    data: { status: "MISSED" },
+  });
+  results.markedMissed = missedResult.count;
+
+  // Record last sync timestamp
+  await prisma.appSettings.upsert({
+    where: { id: "singleton" },
+    update: { lastSyncAt: new Date() },
+    create: { id: "singleton", lastSyncAt: new Date() },
+  });
+
   return Response.json({
     ok: true,
     upserted: results.upserted,
     skipped: results.skipped,
+    markedMissed: results.markedMissed,
     errors: results.errors.slice(0, 20),
   });
 

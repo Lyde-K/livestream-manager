@@ -5,10 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { PlatformBadge, CountryFlag, stripCountry, detectCountry } from "@/components/ui/platform-badge";
-import { Plus, Pencil, Building2, Filter } from "lucide-react";
+import { Plus, Pencil, Building2, Camera } from "lucide-react";
 
 interface Client { id: string; user: { name: string }; }
-interface Brand { id: string; name: string; platform: string; color: string; isActive: boolean; client: { user: { name: string } } | null; }
+interface Brand { id: string; name: string; platform: string; color: string; isActive: boolean; logoUrl: string | null; hasLivestream: boolean; hasAffiliate: boolean; client: { user: { name: string } } | null; }
 
 const BRAND_COLORS = ["#6366f1","#ec4899","#f59e0b","#10b981","#3b82f6","#ef4444","#8b5cf6","#06b6d4","#84cc16","#f97316","#14b8a6","#a855f7"];
 
@@ -17,20 +17,23 @@ export default function BrandsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Brand | null>(null);
-  const [form, setForm] = useState({ name: "", platform: "TIKTOK", color: "#6366f1", clientId: "" });
+  const [form, setForm] = useState({ name: "", platform: "TIKTOK", color: "#6366f1", clientId: "", hasLivestream: true, hasAffiliate: false });
   const [loading, setLoading] = useState(false);
   const [platformTab, setPlatformTab] = useState<"ALL" | "TIKTOK" | "SHOPEE" | "BOTH">("ALL");
 
   async function load() {
-    const [b, c] = await Promise.all([fetch("/api/brands"), fetch("/api/clients")]);
+    const [b, c] = await Promise.all([
+      fetch("/api/brands", { cache: "no-store" }),
+      fetch("/api/clients", { cache: "no-store" }),
+    ]);
     setBrands(await b.json());
     setClients(await c.json());
   }
 
   useEffect(() => { load(); }, []);
 
-  function openCreate() { setEditing(null); setForm({ name: "", platform: "TIKTOK", color: "#6366f1", clientId: "" }); setOpen(true); }
-  function openEdit(b: Brand) { setEditing(b); setForm({ name: b.name, platform: b.platform, color: b.color, clientId: "" }); setOpen(true); }
+  function openCreate() { setEditing(null); setForm({ name: "", platform: "TIKTOK", color: "#6366f1", clientId: "", hasLivestream: true, hasAffiliate: false }); setOpen(true); }
+  function openEdit(b: Brand) { setEditing(b); setForm({ name: b.name, platform: b.platform, color: b.color, clientId: "", hasLivestream: b.hasLivestream, hasAffiliate: b.hasAffiliate }); setOpen(true); }
 
   async function save() {
     setLoading(true);
@@ -58,6 +61,20 @@ export default function BrandsPage() {
   const sgBrands = filtered.filter((b) => detectCountry(b.name) === "SG");
   const otherBrands = filtered.filter((b) => detectCountry(b.name) === null);
 
+  const [uploadingBrandId, setUploadingBrandId] = useState<string | null>(null);
+
+  async function handleLogoUpload(brandId: string, file: File) {
+    setUploadingBrandId(brandId);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("type", "brand");
+    fd.append("id", brandId);
+    const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+    setUploadingBrandId(null);
+    if (res.ok) load();
+    else { const d = await res.json(); alert(`Upload failed: ${d.error}`); }
+  }
+
   function BrandGrid({ items }: { items: Brand[] }) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -68,8 +85,24 @@ export default function BrandsPage() {
             style={{ opacity: brand.isActive ? 1 : 0.5 }}
           >
             <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: brand.color + "20" }}>
-                <Building2 size={18} style={{ color: brand.color }} />
+              <div className="relative group w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: brand.color + "20" }}>
+                {brand.logoUrl
+                  ? <img src={brand.logoUrl} alt={brand.name} className="w-9 h-9 rounded-lg object-cover" />
+                  : <Building2 size={18} style={{ color: brand.color }} />
+                }
+                <label
+                  className="absolute inset-0 rounded-lg flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ background: "rgba(0,0,0,0.45)" }}
+                  title="Upload logo"
+                >
+                  {uploadingBrandId === brand.id
+                    ? <span className="text-[9px] text-white">…</span>
+                    : <Camera size={11} color="white" />
+                  }
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) { handleLogoUpload(brand.id, f); e.target.value = ""; } }} />
+                </label>
               </div>
               <PlatformBadge platform={brand.platform} showName size="sm" />
             </div>
@@ -80,6 +113,14 @@ export default function BrandsPage() {
             {brand.client && (
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>{brand.client.user.name}</div>
             )}
+            <div className="mt-1.5 flex gap-1 flex-wrap">
+              {brand.hasLivestream && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>📺 LS</span>
+              )}
+              {brand.hasAffiliate && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: "color-mix(in oklab, var(--accent) 18%, transparent)", color: "var(--accent)" }}>🤝 AF</span>
+              )}
+            </div>
             <div className="mt-3 flex gap-1.5 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
               <Button size="sm" variant="ghost" className="flex-1 text-xs" onClick={() => openEdit(brand)}>
                 <Pencil size={12} /> Edit
@@ -183,6 +224,31 @@ export default function BrandsPage() {
                 <option value="">No client</option>
                 {clients.map((c) => <option key={c.id} value={c.id}>{c.user.name}</option>)}
               </Select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Services</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, hasLivestream: !form.hasLivestream })}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+                style={form.hasLivestream
+                  ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" }
+                  : { background: "var(--bg-subtle)", color: "var(--text-secondary)", borderColor: "var(--border)" }}
+              >
+                📺 Livestream
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, hasAffiliate: !form.hasAffiliate })}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+                style={form.hasAffiliate
+                  ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" }
+                  : { background: "var(--bg-subtle)", color: "var(--text-secondary)", borderColor: "var(--border)" }}
+              >
+                🤝 Affiliate
+              </button>
             </div>
           </div>
           <div>

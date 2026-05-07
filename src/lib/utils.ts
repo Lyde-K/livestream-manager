@@ -6,7 +6,20 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(amount: number): string {
-  return `RM ${amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+  return `RM\u00A0${Math.round(amount).toLocaleString("en-US")}`;
+}
+
+export function formatCurrencyDetailed(amount: number): string {
+  const formatted = amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `RM ${formatted}`;
+}
+
+export function formatCurrencyCompact(amount: number): string {
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000) return `RM ${(amount / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  if (abs >= 10_000) return `RM ${(amount / 1_000).toFixed(0)}K`;
+  if (abs >= 1_000) return `RM ${(amount / 1_000).toFixed(1)}K`;
+  return `RM ${Math.round(amount).toLocaleString("en-US")}`;
 }
 
 export function formatDuration(minutes: number): string {

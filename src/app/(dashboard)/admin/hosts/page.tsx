@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Users, ChevronDown, ChevronRight, Phone, CreditCard, Banknote, Settings2 } from "lucide-react";
+import { Plus, Pencil, Users, ChevronDown, ChevronRight, Phone, CreditCard, Banknote, Settings2, Camera } from "lucide-react";
 import Link from "next/link";
 
 interface Host {
@@ -19,6 +19,7 @@ interface Host {
   icNo: string | null;
   bankName: string | null;
   bankAccount: string | null;
+  avatarUrl: string | null;
   user: { id: string; name: string; email: string };
 }
 
@@ -35,7 +36,7 @@ export default function HostsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetch("/api/hosts");
+    const res = await fetch("/api/hosts", { cache: "no-store" });
     setHosts(await res.json());
   }
 
@@ -90,10 +91,8 @@ export default function HostsPage() {
         <Button onClick={openCreate}><Plus size={15} /> Add Host</Button>
       </div>
 
-      <HostTable rows={fullTime} title="Full-Time Hosts" expandedId={expandedId} setExpandedId={setExpandedId} openEdit={openEdit} toggleActive={toggleActive} />
-      {partTime.length > 0 && (
-        <HostTable rows={partTime} title="Part-Time / Freelance" expandedId={expandedId} setExpandedId={setExpandedId} openEdit={openEdit} toggleActive={toggleActive} />
-      )}
+      <HostTable rows={fullTime} title="Full-Time Hosts" expandedId={expandedId} setExpandedId={setExpandedId} openEdit={openEdit} toggleActive={toggleActive} onAvatarUploaded={load} />
+      <HostTable rows={partTime} title="Part-Time / Freelance" expandedId={expandedId} setExpandedId={setExpandedId} openEdit={openEdit} toggleActive={toggleActive} onAvatarUploaded={load} />
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit Host" : "Add Live Host"}>
         <div className="space-y-3">
@@ -184,9 +183,24 @@ interface HostTableProps {
   setExpandedId: (id: string | null) => void;
   openEdit: (h: Host) => void;
   toggleActive: (h: Host) => void;
+  onAvatarUploaded: () => void;
 }
 
-function HostTable({ rows, title, expandedId, setExpandedId, openEdit, toggleActive }: HostTableProps) {
+function HostTable({ rows, title, expandedId, setExpandedId, openEdit, toggleActive, onAvatarUploaded }: HostTableProps) {
+  const [uploadingId, setUploadingId] = React.useState<string | null>(null);
+
+  async function handleAvatarUpload(hostId: string, file: File) {
+    setUploadingId(hostId);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("type", "host");
+    fd.append("id", hostId);
+    const res = await fetch("/api/upload/image", { method: "POST", body: fd });
+    setUploadingId(null);
+    if (res.ok) onAvatarUploaded();
+    else { const d = await res.json(); alert(`Upload failed: ${d.error}`); }
+  }
+
   return (
     <div className="section-card">
       <div className="section-card-header">
@@ -220,9 +234,28 @@ function HostTable({ rows, title, expandedId, setExpandedId, openEdit, toggleAct
               <tr>
                 <td className="font-medium">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                      style={{ background: "var(--accent-light)", color: "var(--accent-text)" }}>
-                      {h.user.name.charAt(0)}
+                    <div className="relative group flex-shrink-0">
+                      {h.avatarUrl
+                        ? <img src={h.avatarUrl} alt={h.user.name} className="w-7 h-7 rounded-full object-cover" />
+                        : (
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                            style={{ background: "var(--accent-light)", color: "var(--accent-text)" }}>
+                            {h.user.name.charAt(0)}
+                          </div>
+                        )
+                      }
+                      <label
+                        className="absolute inset-0 rounded-full flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ background: "rgba(0,0,0,0.45)" }}
+                        title="Upload photo"
+                      >
+                        {uploadingId === h.id
+                          ? <span className="text-[9px] text-white">…</span>
+                          : <Camera size={11} color="white" />
+                        }
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) { handleAvatarUpload(h.id, f); e.target.value = ""; } }} />
+                      </label>
                     </div>
                     {h.user.name}
                   </div>

@@ -36,8 +36,8 @@ export async function POST(req: NextRequest) {
         <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${format(new Date(s.scheduledStart), "dd MMM yyyy")}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${format(new Date(s.scheduledStart), "HH:mm")} – ${format(new Date(s.scheduledEnd), "HH:mm")}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${s.brandName}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${s.liveHost.user.name}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${s.room.name}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${s.liveHost?.user.name ?? "—"}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${s.room?.name ?? "—"}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;">${(s as { platform: string }).platform}</td>
       </tr>`).join("");
 

@@ -28,6 +28,8 @@ model LiveHost {
   workingDays Int     @default(5)
   isActive    Boolean @default(true)
 
+  avatarUrl   String?
+
   // Part-time fields
   type        String  @default("FULL_TIME") // FULL_TIME | PART_TIME
   hourlyRate  Float   @default(40)
@@ -66,17 +68,127 @@ model Brand {
   client   Client? @relation(fields: [clientId], references: [id])
   color    String  @default("#6366f1")
   isActive Boolean @default(true)
+  logoUrl  String?
+
+  hasLivestream Boolean @default(true)
+  hasAffiliate  Boolean @default(false)
 
   sessions   Session[]
   kpiConfigs KPIConfig[]
+  intelConfigs IntelligenceConfig[]
+
+  affiliateImports      AffiliateImport[]
+  affiliateCreatorStats AffiliateCreatorStat[]
+  affiliateProductStats AffiliateProductStat[]
+  affiliateSampleCosts  AffiliateSampleCost[]
+  affiliateProductCosts AffiliateProductCost[]
+  gmvTargets            MonthlyGMVTarget[]
+}
+
+model AffiliateImport {
+  id         String   @id @default(cuid())
+  brandId    String
+  brand      Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  period     String   // "YYYY-MM"
+  kind       String   // "CREATOR" | "PRODUCT"
+  source     String   // "XLSX" | "SHEET"
+  rowCount   Int
+  importedAt DateTime @default(now())
+  importedBy String?
+
+  @@index([brandId, period])
+}
+
+model AffiliateCreatorStat {
+  id                   String   @id @default(cuid())
+  brandId              String
+  brand                Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  period               String   // "YYYY-MM"
+  creatorName          String
+  gmv                  Decimal  @db.Decimal(14, 2)
+  refunds              Decimal  @db.Decimal(14, 2)
+  attributedOrders     Int
+  itemsSold            Int
+  itemsRefunded        Int
+  aov                  Decimal  @db.Decimal(14, 2)
+  avgDailyProductsSold Decimal  @db.Decimal(10, 2)
+  videos               Int
+  liveStreams          Int
+  estCommission        Decimal  @db.Decimal(14, 2)
+  samplesShipped       Int
+  roi                  Decimal? @db.Decimal(10, 2)
+  rank                 Int?
+  label                String?  // STAR | A | B | F
+  updatedAt            DateTime @updatedAt
+
+  @@unique([brandId, period, creatorName])
+  @@index([brandId, period])
+  @@index([creatorName])
+}
+
+model AffiliateProductStat {
+  id                        String   @id @default(cuid())
+  brandId                   String
+  brand                     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  period                    String
+  productId                 String
+  productName               String
+  category                  String?
+  gmv                       Decimal  @db.Decimal(14, 2)
+  refunds                   Decimal  @db.Decimal(14, 2)
+  itemsSold                 Int
+  itemsRefunded             Int
+  attributedOrders          Int
+  avgDailyCustomers         Int
+  avgDailyCreatorsWithSales Int
+  avgDailyCreatorsPosted    Int
+  avgDailyVideosWithSales   Int
+  avgDailyLivesWithSales    Int
+  videos                    Int
+  liveStreams               Int
+  estCommission             Decimal  @db.Decimal(14, 2)
+  samplesShipped            Int
+  roi                       Decimal? @db.Decimal(10, 2)
+  tier                      String?  // EXCEPTIONAL | AVERAGE | UNDERPERFORMING
+  updatedAt                 DateTime @updatedAt
+
+  @@unique([brandId, period, productId])
+  @@index([brandId, period])
+}
+
+model AffiliateSampleCost {
+  id        String   @id @default(cuid())
+  brandId   String
+  brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  period    String
+  unitCost  Decimal  @db.Decimal(10, 2)
+  notes     String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([brandId, period])
+}
+
+model AffiliateProductCost {
+  id          String   @id @default(cuid())
+  brandId     String
+  brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  period      String
+  productId   String
+  productName String
+  unitCost    Decimal  @db.Decimal(10, 2)
+  notes       String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([brandId, period, productId])
+  @@index([brandId, period])
 }
 
 model Session {
   id         String   @id @default(cuid())
-  roomId     String
-  room       Room     @relation(fields: [roomId], references: [id])
-  liveHostId String
-  liveHost   LiveHost @relation(fields: [liveHostId], references: [id])
+  roomId     String?  // nullable — filled by auto-assign or sync
+  room       Room?    @relation(fields: [roomId], references: [id])
+  liveHostId String?  // nullable — brand-only slot until auto-assigned or synced
+  liveHost   LiveHost? @relation(fields: [liveHostId], references: [id])
   brandId    String
   brand      Brand    @relation(fields: [brandId], references: [id])
   platform   String   @default("TIKTOK") // TIKTOK | SHOPEE
@@ -84,6 +196,7 @@ model Session {
   scheduledStart DateTime
   scheduledEnd   DateTime
   isCampaignDay  Boolean  @default(false)
+  slotColor      String?  // per-slot display colour (manual slot builder)
   notes          String?
 
   // Filled when import data is matched
@@ -122,8 +235,15 @@ model Session {
   importedSessionId String?         @unique
   importedSession   ImportedSession? @relation(fields: [importedSessionId], references: [id])
 
+  insight SessionInsight?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([scheduledStart, status])
+  @@index([liveHostId, scheduledStart])
+  @@index([brandId, scheduledStart])
+  @@index([status])
 }
 
 model ImportedSession {
@@ -185,6 +305,20 @@ model CommissionRule {
   isDefault             Boolean @default(false)
 }
 
+model SyncLog {
+  id        String   @id @default(cuid())
+  platform  String   // TIKTOK | SHOPEE
+  rawHost   String   // value typed in the sheet
+  rawBrand  String   // value typed in the sheet
+  startTime String   // raw start time string from sheet
+  errorType String   // HOST_NOT_FOUND | BRAND_NOT_FOUND | BOTH_NOT_FOUND | INVALID_DATE
+  message   String
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([resolved, createdAt])
+}
+
 model HostPreference {
   id              String   @id @default(cuid())
   liveHostId      String   @unique
@@ -193,4 +327,119 @@ model HostPreference {
   preferredBrands String   @default("[]") // JSON: ["brandId1","brandId2"]
   offDays         String   @default("[]") // JSON: ["2026-04-20","2026-04-21"]
   updatedAt       DateTime @updatedAt
+}
+
+model SessionInsight {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  session     Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  score       Int                                   // 0-100
+  status      String                                // EXCEPTIONAL | GOOD | AVERAGE | MIXED | UNDERPERFORMING
+  funnelStage String                                // TRAFFIC | ENGAGEMENT | PRODUCT | CONVERSION | AOV | PROFIT | NONE
+  flags       Json                                  // [{type, direction, metric, value, threshold, deviation}]
+  reasoning   String   @default("")                 // Claude-generated narrative
+  causes      Json     @default("[]")               // string[]
+  actionPlan  Json     @default("[]")               // string[]
+  priority    String   @default("MEDIUM")           // HIGH | MEDIUM | LOW
+  analysisDepth String @default("FULL")             // FULL | LIMITED
+  benchmarkSource String @default("BRAND_PLATFORM") // BRAND_PLATFORM | PLATFORM_FALLBACK
+  signature   String                                // hash(benchmarkSnapshot + configVersion)
+  hasNarrative Boolean @default(false)              // true once Claude narration was generated
+
+  generatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([funnelStage])
+  @@index([signature])
+}
+
+model IntelligenceConfig {
+  id              String   @id @default(cuid())
+  scope           String                           // GLOBAL | BRAND
+  brandId         String?
+  brand           Brand?   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  // Percentile thresholds
+  lowPercentile   Float    @default(0.15)
+  highPercentile  Float    @default(0.85)
+
+  // Tier resolution
+  exceptionalMinTriggers     Int     @default(3)
+  underperformingMinTriggers Int     @default(3)
+  goodMinTriggers            Int     @default(1)
+  mixedMinEachSide           Int     @default(2)
+  enableMixedTier            Boolean @default(true)
+
+  // Absolute business-rule floors (TikTok)
+  roasLowFloor          Float @default(1.5)
+  roasHighCeiling       Float @default(5.0)
+  profitPerHourLowFloor Float @default(0)
+
+  // Limited-data scope
+  limitedAnalysisMinTriggers Int @default(1)
+  excludeMinDurationMinutes  Int @default(5)
+
+  // Per-metric enable toggles - JSON: { gmvPerHour: true, ctr: true, ... }
+  enabledMetrics Json @default("{}")
+
+  // Primary metric for tier classification
+  tierPrimaryMetric String @default("gmv")
+
+  // Cohort
+  cohortDays    Int @default(90)
+  cohortMinSize Int @default(5)
+
+  configVersion String              // hash, auto-rotated when admin saves
+  updatedBy     String?             // userId
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@unique([scope, brandId])
+  @@index([scope])
+}
+
+model NarrationLog {
+  id          String   @id @default(cuid())
+  sessionId   String
+  cost        Float?   // estimated USD cents
+  inputTokens Int?
+  outputTokens Int?
+  cacheReadTokens Int?
+  cacheWriteTokens Int?
+  model       String
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model MonthlyHoursTarget {
+  id          String @id @default(cuid())
+  type        String // "HOST" | "BRAND"
+  referenceId String // liveHostId or brandId
+  month       Int
+  year        Int
+  targetHours Float  @default(0)
+
+  @@unique([type, referenceId, month, year])
+  @@index([month, year])
+}
+
+model MonthlyGMVTarget {
+  id      String @id @default(cuid())
+  brandId String
+  brand   Brand  @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  month   Int    // 0–11 (JS month index)
+  year    Int
+  target  Float  @default(0)
+
+  @@unique([brandId, month, year])
+  @@index([brandId])
+}
+
+model AppSettings {
+  id         String    @id @default("singleton")
+  lastSyncAt DateTime?
+  updatedAt  DateTime  @updatedAt
 }

@@ -51,10 +51,10 @@ export async function GET(req: NextRequest) {
       format(new Date(s.scheduledStart), "dd MMM yyyy"),
       format(new Date(s.scheduledStart), "HH:mm"),
       format(new Date(s.scheduledEnd), "HH:mm"),
-      s.liveHost.user.name,
+      s.liveHost?.user.name ?? "Unassigned",
       s.brand.name,
       s.platform,
-      s.room.name,
+      s.room?.name ?? "—",
       s.status,
     ];
     if (i % 2 === 0) {

@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
     `DTSTAMP:${toICSDate(new Date())}`,
     `DTSTART:${toICSDate(new Date(s.scheduledStart))}`,
     `DTEND:${toICSDate(new Date(s.scheduledEnd))}`,
-    `SUMMARY:${s.brand.name} Livestream — ${s.room.name}`,
-    `DESCRIPTION:Platform: ${s.platform}\\nRoom: ${s.room.name}\\nHost: ${s.liveHost.user.name}`,
-    `LOCATION:${s.room.name}`,
+    `SUMMARY:${s.brand.name} Livestream — ${s.room?.name ?? "TBD"}`,
+    `DESCRIPTION:Platform: ${s.platform}\\nRoom: ${s.room?.name ?? "TBD"}\\nHost: ${s.liveHost?.user.name ?? "Unassigned"}`,
+    `LOCATION:${s.room?.name ?? "TBD"}`,
     "END:VEVENT",
   ].join("\r\n")).join("\r\n");
 

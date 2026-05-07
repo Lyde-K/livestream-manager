@@ -34,7 +34,10 @@ interface AnalyticsData {
   byHost: { hostId: string; hostName: string; displayName: string; type: string; gmv: number; viewers: number; sessions: number; hours: number }[];
   byPlatform: { platform: string; gmv: number; sessions: number; viewers: number }[];
   byCountry: { country: string; gmv: number; sessions: number; viewers: number }[];
+  byType?: { bau: { sessions: number; gmv: number }; campaign: { sessions: number; gmv: number } };
 }
+
+type SessionTypeFilter = "ALL" | "BAU" | "CAMPAIGN";
 
 interface ChartBar { label: string; sublabel?: string; value: number; sessions?: number; viewers?: number; date?: string; color?: string; }
 
@@ -139,6 +142,7 @@ export default function PerformancePage() {
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [hostTypeFilter, setHostTypeFilter] = useState<"all"|"full"|"part">("all");
+  const [sessionType, setSessionType] = useState<SessionTypeFilter>("ALL");
 
   // ── Host performance state (existing) ────────────────────────────────────
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -160,10 +164,11 @@ export default function PerformancePage() {
     if (mainTab !== "analytics") return;
     setAnalyticsLoading(true);
     const s = format(start,"yyyy-MM-dd"), e = format(end,"yyyy-MM-dd");
-    fetch(`/api/analytics?start=${s}&end=${e}`)
+    const typeParam = sessionType !== "ALL" ? `&type=${sessionType}` : "";
+    fetch(`/api/analytics?start=${s}&end=${e}${typeParam}`)
       .then(r => r.json()).then(d => { setAnalyticsData(d); setAnalyticsLoading(false); })
       .catch(() => setAnalyticsLoading(false));
-  }, [mainTab, start.toISOString(), end.toISOString()]);
+  }, [mainTab, start.toISOString(), end.toISOString(), sessionType]);
 
   // Fetch host stats
   useEffect(() => {
@@ -254,6 +259,16 @@ export default function PerformancePage() {
                   <Input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} className="w-36 text-sm"/>
                 </div>
               )}
+              {/* Session type filter */}
+              <div className="ml-auto flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
+                {(["ALL", "BAU", "CAMPAIGN"] as SessionTypeFilter[]).map(t => (
+                  <button key={t} onClick={() => setSessionType(t)}
+                    className="px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
+                    style={{ background: sessionType===t?"var(--sidebar-active)":"transparent", color: sessionType===t?"#fff":"var(--text-secondary)" }}>
+                    {t === "ALL" ? "All" : t === "BAU" ? "BAU" : "Campaign"}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -274,6 +289,24 @@ export default function PerformancePage() {
                 <AnalKPICard icon={ShoppingCart} label="Orders Confirmed" value={analyticsData.totalOrders.toLocaleString()} color="#8b5cf6" />
                 <AnalKPICard icon={CheckCircle2} label="Sessions" value={String(analyticsData.sessionCount)} color="var(--text-secondary)" />
               </div>
+
+              {/* BAU / Campaign breakdown — shown when viewing ALL sessions */}
+              {sessionType === "ALL" && analyticsData.byType && (analyticsData.byType.bau.sessions > 0 || analyticsData.byType.campaign.sessions > 0) && (
+                <div className="flex items-center gap-4 px-4 py-2.5 rounded-lg text-xs" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                  <span style={{ color: "var(--text-muted)" }} className="font-medium">Breakdown:</span>
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    BAU: <strong style={{ color: "var(--text-primary)" }}>{analyticsData.byType.bau.sessions} sessions</strong>
+                    {" / "}
+                    <strong style={{ color: "var(--text-primary)" }}>{formatCurrency(analyticsData.byType.bau.gmv)} GMV</strong>
+                  </span>
+                  <span style={{ color: "var(--border)" }}>|</span>
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    Campaign: <strong style={{ color: "var(--warning)" }}>{analyticsData.byType.campaign.sessions} sessions</strong>
+                    {" / "}
+                    <strong style={{ color: "var(--warning)" }}>{formatCurrency(analyticsData.byType.campaign.gmv)} GMV</strong>
+                  </span>
+                </div>
+              )}
 
               {/* Bar chart */}
               {chartBars.length > 0 && (

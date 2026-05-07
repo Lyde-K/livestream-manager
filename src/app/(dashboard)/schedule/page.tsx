@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock } from "lucide-react";
+import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
 import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
@@ -29,11 +29,26 @@ interface SuggestResult {
 interface Room { id: string; name: string; }
 interface Host { id: string; displayName: string; user: { name: string }; }
 interface Brand { id: string; name: string; color: string; platform: string; }
+
+interface HoursRow { id: string; name: string; displayName?: string; color?: string; scheduled: number; target: number; }
+interface HoursData { month: number; year: number; hosts: HoursRow[]; brands: HoursRow[]; }
 interface Session {
-  id: string; roomId: string; liveHostId: string; brandId: string; platform: string;
+  id: string; roomId: string | null; liveHostId: string | null; brandId: string; platform: string;
   scheduledStart: string; scheduledEnd: string; isCampaignDay: boolean; notes: string | null;
+  slotColor: string | null;
   status: string; punctuality: string | null; gmv: number | null; actualStart: string | null;
-  room: Room; brand: Brand; liveHost: { user: { name: string }; displayName: string };
+  room: Room | null; brand: Brand; liveHost: { user: { name: string }; displayName: string } | null;
+}
+
+// Helpers to keep all times in MYT (UTC+8) — the server runs in UTC so we
+// must append the offset before sending and convert back when pre-filling edits.
+function toMYT(dt: string) {
+  return dt.length === 16 ? `${dt}:00+08:00` : dt;
+}
+function toInputMYT(iso: string) {
+  const d = new Date(iso);
+  const myt = new Date(d.getTime() + 8 * 3600_000);
+  return myt.toISOString().slice(0, 16);
 }
 
 const PUNCTUALITY_COLORS: Record<string, string> = {
@@ -61,6 +76,7 @@ export default function SchedulePage() {
   const [saving, setSaving] = useState(false);
   const [is24h, setIs24h] = useState(true);
   const [emailLoading, setEmailLoading] = useState(false);
+  const [assignLoading, setAssignLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -71,6 +87,9 @@ export default function SchedulePage() {
   const [suggestLoading, setSuggestLoading] = useState(false);
   const [suggestResult, setSuggestResult] = useState<SuggestResult | null>(null);
   const [suggestFilter, setSuggestFilter] = useState("");
+  const [hoursOpen, setHoursOpen] = useState(false);
+  const [hoursData, setHoursData] = useState<HoursData | null>(null);
+  const [hoursLoading, setHoursLoading] = useState(false);
 
   async function loadMeta() {
     const [r, h, b] = await Promise.all([fetch("/api/rooms"), fetch("/api/hosts"), fetch("/api/brands")]);
@@ -112,13 +131,14 @@ export default function SchedulePage() {
       const bgColor = s.status === "COMPLETED"
         ? (s.punctuality ? PUNCTUALITY_COLORS[s.punctuality] : PUNCTUALITY_COLORS.default)
         : s.status === "MISSED" ? "#ef4444"
-        : s.brand.color;
+        : s.liveHostId ? s.brand.color
+        : (s.slotColor ?? s.brand.color);
       const durationMs = new Date(s.scheduledEnd).getTime() - new Date(s.scheduledStart).getTime();
       const durationHours = Math.round((durationMs / 3600000) * 10) / 10;
       const durationLabel = durationHours % 1 === 0 ? `${durationHours}h` : `${durationHours}h`;
       return {
         id: s.id,
-        title: `${s.liveHost.user.name} · ${durationLabel}`,
+        title: `${s.liveHost?.user.name ?? "Unassigned"} · ${durationLabel}`,
         start: s.scheduledStart,
         end: s.scheduledEnd,
         backgroundColor: bgColor,
@@ -145,9 +165,11 @@ export default function SchedulePage() {
     setDetailSession(null);
     setEditing(s);
     setForm({
-      roomId: s.roomId, liveHostId: s.liveHostId, brandId: s.brandId,
-      platform: s.platform, scheduledStart: s.scheduledStart.slice(0, 16),
-      scheduledEnd: s.scheduledEnd.slice(0, 16), isCampaignDay: s.isCampaignDay, notes: s.notes || "",
+      roomId: s.roomId ?? "", liveHostId: s.liveHostId ?? "", brandId: s.brandId,
+      platform: s.platform,
+      scheduledStart: toInputMYT(s.scheduledStart),
+      scheduledEnd: toInputMYT(s.scheduledEnd),
+      isCampaignDay: s.isCampaignDay, notes: s.notes || "",
     });
     setOpen(true);
   }
@@ -156,7 +178,15 @@ export default function SchedulePage() {
     setSaving(true);
     const url = editing ? `/api/sessions/${editing.id}` : "/api/sessions";
     const method = editing ? "PUT" : "POST";
-    await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...form,
+        scheduledStart: toMYT(form.scheduledStart),
+        scheduledEnd: toMYT(form.scheduledEnd),
+      }),
+    });
     setSaving(false);
     setOpen(false);
     if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
@@ -182,11 +212,40 @@ export default function SchedulePage() {
     setSuggestLoading(false);
   }
 
+  async function loadHours(month?: number, year?: number) {
+    setHoursLoading(true);
+    const cal = calRef.current;
+    const now = cal ? cal.getApi().getDate() : new Date();
+    const m = month ?? (now.getMonth() + 1);
+    const y = year ?? now.getFullYear();
+    const res = await fetch(`/api/hours-targets?month=${m}&year=${y}`);
+    setHoursData(await res.json());
+    setHoursLoading(false);
+  }
+
   function applyToSchedule(s: Suggestion) {
     const [h, m] = s.suggestedSlot.split(":");
     const startDt = `${s.date}T${h.padStart(2,"0")}:${m}`;
     const endH = String(parseInt(h) + 2).padStart(2, "0");
     const endDt = `${s.date}T${endH}:${m}`;
+
+    // Conflict check: is this host already scheduled at this time?
+    const proposedStart = new Date(toMYT(startDt)).getTime();
+    const proposedEnd = new Date(toMYT(endDt)).getTime();
+    const conflict = sessions.find(existing =>
+      existing.liveHostId === s.hostId &&
+      new Date(existing.scheduledStart).getTime() < proposedEnd &&
+      new Date(existing.scheduledEnd).getTime() > proposedStart
+    );
+    if (conflict) {
+      const conflictStart = toInputMYT(conflict.scheduledStart);
+      alert(
+        `${s.hostName} already has a session on ${s.date} at ${conflictStart.slice(11, 16)}.\n` +
+        `Please choose a different host or time.`
+      );
+      return;
+    }
+
     // Pre-fill preferred brand if only one
     const brandId = s.preferredBrandIds.length === 1 ? s.preferredBrandIds[0] : "";
     setEditing(null);
@@ -202,6 +261,27 @@ export default function SchedulePage() {
     });
     setDetailSession(null);
     setOpen(true);
+  }
+
+  async function autoAssignHosts() {
+    setAssignLoading(true);
+    const cal = calRef.current;
+    const now = cal ? cal.getApi().getDate() : new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const res = await fetch("/api/schedule/assign-hosts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month, year }),
+    });
+    const data = await res.json();
+    setAssignLoading(false);
+    if (res.ok) {
+      alert(`Assigned ${data.assigned} of ${data.total} unassigned slots!`);
+      if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+    } else {
+      alert(`Error: ${data.error}`);
+    }
   }
 
   async function exportMonthEmail() {
@@ -278,17 +358,22 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-4 animate-in">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Schedule</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
             Click a time slot to add a session. Click a session to view details.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Desktop action bar */}
+        <div className="hidden lg:flex items-center gap-2 flex-wrap">
           <Button variant="outline" onClick={() => setBulkOpen(true)}
             style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
             <Wand2 size={14} /> Auto-Schedule
+          </Button>
+          <Button variant="outline" onClick={autoAssignHosts} loading={assignLoading}
+            style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
+            <Users size={14} /> Assign Hosts
           </Button>
           <Button variant="outline" onClick={() => setManualOpen(true)}>
             <CalendarPlus size={14} /> Manual Slot
@@ -296,6 +381,10 @@ export default function SchedulePage() {
           <Button variant="outline" onClick={() => { setSuggestOpen(v => !v); if (!suggestResult) loadSuggestions(); }}
             style={suggestOpen ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}}>
             <Sparkles size={14} /> Suggest Slots {suggestOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </Button>
+          <Button variant="outline" onClick={() => { setHoursOpen(v => !v); if (!hoursData) loadHours(); }}
+            style={hoursOpen ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}}>
+            <BarChart2 size={14} /> Hours {hoursOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </Button>
           <button
             onClick={toggleTimeFormat}
@@ -306,11 +395,10 @@ export default function SchedulePage() {
             <Clock size={13} />
             {is24h ? "24h" : "12h"}
           </button>
-          <Button variant="outline" onClick={exportSessionsExcel} title="Export visible sessions to Excel">
+          <Button variant="outline" onClick={exportSessionsExcel}>
             <Download size={14} /> Export Excel
           </Button>
-          <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null); setImportFile(null); }}
-            title="Re-upload amended Excel to sync sessions">
+          <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null); setImportFile(null); }}>
             <Upload size={14} /> Import Excel
           </Button>
           <Button variant="outline" onClick={exportMonthEmail} loading={emailLoading}>
@@ -323,6 +411,72 @@ export default function SchedulePage() {
           }}>
             <Plus size={14} /> Add Session
           </Button>
+        </div>
+        {/* Mobile action bar */}
+        <div className="lg:hidden w-full space-y-2">
+          {/* Primary row */}
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={() => {
+                setEditing(null);
+                setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "" });
+                setOpen(true);
+              }}
+            >
+              <Plus size={14} /> Add Session
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={() => setBulkOpen(true)}
+              style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
+              <Wand2 size={14} /> Auto-Schedule
+            </Button>
+          </div>
+          {/* Secondary row */}
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={autoAssignHosts} loading={assignLoading}
+              style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
+              <Users size={14} /> Assign Hosts
+            </Button>
+            <Button variant="outline" className="flex-1" onClick={() => setManualOpen(true)}>
+              <CalendarPlus size={14} /> Manual Slot
+            </Button>
+            <Button variant="outline" className="flex-1"
+              onClick={() => { setSuggestOpen(v => !v); if (!suggestResult) loadSuggestions(); }}
+              style={suggestOpen ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}}>
+              <Sparkles size={14} /> Suggest {suggestOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </Button>
+          </div>
+          {/* Utility row — horizontal scroll */}
+          <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
+            <button
+              onClick={toggleTimeFormat}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-card)" }}
+            >
+              <Clock size={13} /> {is24h ? "24h" : "12h"}
+            </button>
+            <button
+              onClick={exportSessionsExcel}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-card)" }}
+            >
+              <Download size={13} /> Export
+            </button>
+            <button
+              onClick={() => { setImportOpen(true); setImportResult(null); setImportFile(null); }}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-card)" }}
+            >
+              <Upload size={13} /> Import
+            </button>
+            <button
+              onClick={exportMonthEmail}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+              style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-card)" }}
+            >
+              <Mail size={13} /> Email
+            </button>
+          </div>
         </div>
       </div>
 
@@ -424,32 +578,45 @@ export default function SchedulePage() {
         </div>
       )}
 
+      {/* Hours Tracker Panel */}
+      {hoursOpen && (
+        <HoursTrackerPanel
+          data={hoursData}
+          loading={hoursLoading}
+          onRefresh={(m, y) => loadHours(m, y)}
+          onTargetSaved={(m, y) => loadHours(m, y)}
+        />
+      )}
+
       {/* Filters + Legend */}
-      <div className="section-card p-3 flex items-center gap-3 flex-wrap">
-        <Filter size={14} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
-        <Select value={filterHost} onChange={(e) => setFilterHost(e.target.value)} className="w-40">
-          <option value="">All Hosts</option>
-          {hosts.map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
-        </Select>
-        <Select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} className="w-40">
-          <option value="">All Brands</option>
-          {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </Select>
-        <Select value={filterRoom} onChange={(e) => setFilterRoom(e.target.value)} className="w-36">
-          <option value="">All Rooms</option>
-          {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </Select>
-        {(filterHost || filterBrand || filterRoom) && (
-          <Button size="sm" variant="ghost" onClick={() => { setFilterHost(""); setFilterBrand(""); setFilterRoom(""); }}>
-            Clear
-          </Button>
-        )}
-        <div className="ml-auto flex items-center gap-3 text-xs flex-wrap" style={{ color: "var(--text-muted)" }}>
+      <div className="section-card p-3 space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter size={14} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
+          <Select value={filterHost} onChange={(e) => setFilterHost(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
+            <option value="">All Hosts</option>
+            {hosts.map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
+          </Select>
+          <Select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
+            <option value="">All Brands</option>
+            {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </Select>
+          <Select value={filterRoom} onChange={(e) => setFilterRoom(e.target.value)} className="flex-1 min-w-[100px] lg:w-36 lg:flex-none">
+            <option value="">All Rooms</option>
+            {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </Select>
+          {(filterHost || filterBrand || filterRoom) && (
+            <Button size="sm" variant="ghost" onClick={() => { setFilterHost(""); setFilterBrand(""); setFilterRoom(""); }}>
+              Clear
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: "var(--text-muted)" }}>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "var(--text-muted)" }} />Scheduled</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />Early</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#6366f1" }} />Early</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />On Time</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />Late</span>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />Missed</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "var(--accent-yellow)" }} />Brand Slot (unassigned)</span>
         </div>
       </div>
 
@@ -479,9 +646,9 @@ export default function SchedulePage() {
               const endLabel  = format(parseISO(s.scheduledEnd),   timeFmt);
               return (
                 <div className="px-1.5 py-0.5 w-full truncate leading-tight"
-                  title={`${s.brand.name} · ${s.liveHost.displayName} · ${timeLabel}–${endLabel}`}>
+                  title={`${s.brand.name} · ${s.liveHost?.displayName ?? "Unassigned"} · ${timeLabel}–${endLabel}`}>
                   <div className="font-semibold truncate text-[11px]">{s.brand.name}</div>
-                  <div className="opacity-80 truncate text-[10px]">{timeLabel} · {s.liveHost.displayName}</div>
+                  <div className="opacity-80 truncate text-[10px]">{timeLabel} · {s.liveHost?.displayName ?? "—"}</div>
                 </div>
               );
             }
@@ -492,7 +659,7 @@ export default function SchedulePage() {
               <div className="px-1 py-0.5 truncate leading-tight">
                 <div className="font-semibold truncate">{s.brand.name}</div>
                 <div className="opacity-80 truncate text-[10px]">{timeLabel}–{endLabel}</div>
-                <div className="opacity-60 truncate text-[10px]">{s.liveHost.displayName}</div>
+                <div className="opacity-60 truncate text-[10px]">{s.liveHost?.displayName ?? "Unassigned"}</div>
               </div>
             );
           }}
@@ -505,14 +672,14 @@ export default function SchedulePage() {
           <div className="space-y-4">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: detailSession.brand.color }} />
-              <span className="font-semibold text-base" style={{ color: "var(--text-primary)" }}>{detailSession.liveHost.user.name}</span>
+              <span className="font-semibold text-base" style={{ color: "var(--text-primary)" }}>{detailSession.liveHost?.user.name ?? "Unassigned"}</span>
               <span style={{ color: "var(--text-muted)" }}>·</span>
               <span style={{ color: "var(--text-secondary)" }}>{detailSession.brand.name}</span>
               <PunctualityBadge status={detailSession.status} punctuality={detailSession.punctuality} />
               {detailSession.isCampaignDay && <Badge variant="warning">Campaign Day</Badge>}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <InfoRow label="Room" value={detailSession.room.name} />
+              <InfoRow label="Room" value={detailSession.room?.name ?? "—"} />
               <InfoRow label="Platform" value={detailSession.platform} />
               <InfoRow label="Scheduled Start" value={format(new Date(detailSession.scheduledStart), is24h ? "dd MMM yyyy HH:mm" : "dd MMM yyyy h:mm a")} />
               <InfoRow label="Scheduled End"   value={format(new Date(detailSession.scheduledEnd),   is24h ? "HH:mm" : "h:mm a")} />
@@ -619,7 +786,7 @@ export default function SchedulePage() {
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit Session" : "New Session"} size="lg">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Live Host</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Live Host <span className="font-normal text-xs" style={{ color: "var(--text-muted)" }}>(optional)</span></label>
             <Select value={form.liveHostId} onChange={(e) => setForm({ ...form, liveHostId: e.target.value })}>
               <option value="">Select host…</option>
               {hosts.map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
@@ -633,7 +800,7 @@ export default function SchedulePage() {
             </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Room</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Room <span className="font-normal text-xs" style={{ color: "var(--text-muted)" }}>(optional)</span></label>
             <Select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
               <option value="">Select room…</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -985,140 +1152,232 @@ function CalendarPreview({ month, year, sessions }: { month: number; year: numbe
 
 // ── Manual Slot Modal ─────────────────────────────────────────────────────────
 
-function ManualSlotModal({ hosts, brands, rooms, onClose, onCreated }: BulkScheduleModalProps) {
+interface TimeSlotRow { id: string; startTime: string; durationH: string; color: string; }
+
+const SLOT_COLORS = ["#F97316","#1677FF","#6366F1","#FFC21A","#22C55E","#EC4899","#14B8A6","#F59E0B"];
+
+function calcEndTime(startTime: string, durationH: string): string {
+  const [sh, sm] = startTime.split(":").map(Number);
+  const t = sh * 60 + sm + Number(durationH) * 60;
+  return `${String(Math.floor(t / 60) % 24).padStart(2,"0")}:${String(t % 60).padStart(2,"0")}`;
+}
+
+let tsIdCounter = 0;
+function newTimeSlot(startTime = "20:00", durationH = "2"): TimeSlotRow {
+  const color = SLOT_COLORS[tsIdCounter % SLOT_COLORS.length];
+  return { id: String(tsIdCounter++), startTime, durationH, color };
+}
+
+function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCreated }: BulkScheduleModalProps) {
   const now = new Date();
-  const [hostId, setHostId] = useState("");
   const [brandId, setBrandId] = useState("");
-  const [roomId, setRoomId] = useState(rooms[0]?.id || "");
   const [platform, setPlatform] = useState("TIKTOK");
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [startTime, setStartTime] = useState("20:00");
-  const [durationH, setDurationH] = useState("2");
+  const [timeSlots, setTimeSlots] = useState<TimeSlotRow[]>(() => [newTimeSlot()]);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
 
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-
-  const endTimeStr = (() => {
-    const [sh, sm] = startTime.split(":").map(Number);
-    const t = sh * 60 + sm + Number(durationH) * 60;
-    return `${String(Math.floor(t / 60) % 24).padStart(2,"0")}:${String(t % 60).padStart(2,"0")}`;
-  })();
+  const dowLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
   const monthStart = startOfMonth(new Date(year, month - 1));
   const monthEnd = endOfMonth(new Date(year, month - 1));
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-  function toggleDate(dateStr: string) {
-    setSelectedDates(prev => {
-      const next = new Set(prev);
-      next.has(dateStr) ? next.delete(dateStr) : next.add(dateStr);
-      return next;
-    });
-  }
-
-  // Build calendar grid (Mon-based)
   const weeks: (Date | null)[][] = [];
   let week: (Date | null)[] = [];
   const firstDow = (getDay(monthStart) + 6) % 7;
   for (let i = 0; i < firstDow; i++) week.push(null);
-  for (const day of days) {
-    week.push(day);
-    if (week.length === 7) { weeks.push(week); week = []; }
-  }
-  if (week.length > 0) {
-    while (week.length < 7) week.push(null);
-    weeks.push(week);
+  for (const day of days) { week.push(day); if (week.length === 7) { weeks.push(week); week = []; } }
+  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
+
+  function toggleDate(dateStr: string) {
+    setSelectedDates(prev => { const n = new Set(prev); n.has(dateStr) ? n.delete(dateStr) : n.add(dateStr); return n; });
   }
 
+  function addTimeSlot() {
+    const last = timeSlots[timeSlots.length - 1];
+    // Default next slot to start right after the last one ends
+    const nextStart = calcEndTime(last.startTime, last.durationH);
+    setTimeSlots(prev => [...prev, newTimeSlot(nextStart, last.durationH)]);
+  }
+
+  function removeTimeSlot(id: string) {
+    if (timeSlots.length === 1) return;
+    setTimeSlots(prev => prev.filter(s => s.id !== id));
+  }
+
+  function updateTimeSlot(id: string, field: keyof Omit<TimeSlotRow, "id">, value: string) {
+    setTimeSlots(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
+  }
+
+  function cycleSlotColor(id: string, currentColor: string) {
+    const idx = SLOT_COLORS.indexOf(currentColor);
+    const next = SLOT_COLORS[(idx + 1) % SLOT_COLORS.length];
+    updateTimeSlot(id, "color", next);
+  }
+
+  const totalSessions = selectedDates.size * timeSlots.length;
+  const canCreate = selectedDates.size > 0 && !!brandId;
   const selectedBrand = brands.find(b => b.id === brandId);
-  const dowLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
-  async function createSelected() {
-    if (selectedDates.size === 0 || !hostId || !brandId || !roomId) return;
+  async function createAll() {
+    if (!canCreate) return;
     setSaving(true);
-    const sessions = Array.from(selectedDates).sort().map(dateStr => ({
-      liveHostId: hostId, brandId, roomId, platform,
-      scheduledStart: `${dateStr}T${startTime}`,
-      scheduledEnd: `${dateStr}T${endTimeStr}`,
-      isCampaignDay: false, notes: "",
-    }));
+    const sessions: object[] = [];
+    for (const dateStr of Array.from(selectedDates).sort()) {
+      for (const ts of timeSlots) {
+        const endTime = calcEndTime(ts.startTime, ts.durationH);
+        sessions.push({
+          brandId, platform,
+          slotColor: ts.color,
+          scheduledStart: toMYT(`${dateStr}T${ts.startTime}`),
+          scheduledEnd:   toMYT(`${dateStr}T${endTime}`),
+          isCampaignDay: false, notes: "",
+        });
+      }
+    }
     const res = await fetch("/api/sessions/bulk", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessions }),
     });
     const data = await res.json();
     setSaving(false);
-    if (res.ok) { alert(`Created ${data.created} session(s)!`); onCreated(); }
-    else alert(`Error: ${data.error}`);
+    if (res.ok) {
+      setResult({ created: data.created, errors: data.errors ?? [] });
+      onCreated();
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  }
+
+  if (result) {
+    return (
+      <Modal open onClose={onClose} title="Manual Slot — Done" size="lg">
+        <div className="space-y-4 py-2">
+          <div className="text-center">
+            <div className="text-3xl font-bold mb-1" style={{ color: "var(--accent)" }}>{result.created}</div>
+            <div className="text-sm" style={{ color: "var(--text-secondary)" }}>session{result.created !== 1 ? "s" : ""} created</div>
+          </div>
+          {result.errors.length > 0 && (
+            <div className="rounded-lg p-3 text-xs space-y-1" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+              <div className="font-semibold mb-1">Skipped:</div>
+              {result.errors.map((e, i) => <div key={i}>• {e}</div>)}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button onClick={onClose}>Close</Button>
+          </div>
+        </div>
+      </Modal>
+    );
   }
 
   return (
-    <Modal open onClose={onClose} title="Manual Slot — Pick Days" size="xl">
+    <Modal open onClose={onClose} title="Manual Slot" size="xl">
       <div className="space-y-4">
-        {/* Config */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Live Host *</label>
-            <Select value={hostId} onChange={(e) => setHostId(e.target.value)}>
-              <option value="">Select host…</option>
-              {hosts.map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
-            </Select>
-          </div>
+
+        {/* ── Shared config ─────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand *</label>
-            <Select value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+            <Select value={brandId} onChange={e => setBrandId(e.target.value)}>
               <option value="">Select brand…</option>
-              {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Room *</label>
-            <Select value={roomId} onChange={(e) => setRoomId(e.target.value)}>
-              <option value="">Select room…</option>
-              {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
           </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
-            <Select value={platform} onChange={(e) => setPlatform(e.target.value)}>
+            <Select value={platform} onChange={e => setPlatform(e.target.value)}>
               <option value="TIKTOK">TikTok</option>
               <option value="SHOPEE">Shopee</option>
             </Select>
           </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Start Time</label>
-            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Duration</label>
-            <Select value={durationH} onChange={(e) => setDurationH(e.target.value)}>
-              {[1,2,3,4,5,6,7,8].map((n) => <option key={n} value={n}>{n}h</option>)}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month</label>
-            <div className="flex gap-1.5">
-              <Select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setSelectedDates(new Set()); }} className="w-20">
-                {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-              </Select>
-              <Input type="number" value={year} min={2024} max={2030}
-                onChange={(e) => { setYear(Number(e.target.value)); setSelectedDates(new Set()); }} className="w-20" />
-            </div>
-          </div>
-          <div className="flex items-end pb-0.5">
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {selectedDates.size} day{selectedDates.size !== 1 ? "s" : ""} selected · {startTime}–{endTimeStr}
-            </span>
-          </div>
         </div>
 
-        {/* Calendar grid — click to toggle */}
-        <div>
-          <p className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
-            Click days to select/deselect. {selectedBrand && <span>Sessions will use <strong style={{ color: selectedBrand.color }}>{selectedBrand.name}</strong>.</span>}
-          </p>
+        {/* ── Time slots ────────────────────────────────────────────────── */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+              Time Slots <span className="font-normal" style={{ color: "var(--text-muted)" }}>— applied to every selected day</span>
+            </label>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {timeSlots.length} slot{timeSlots.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {timeSlots.map((ts, idx) => {
+            const endTime = calcEndTime(ts.startTime, ts.durationH);
+            return (
+              <div key={ts.id} className="flex items-center gap-2 rounded-lg px-3 py-2"
+                style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                <button
+                  onClick={() => cycleSlotColor(ts.id, ts.color)}
+                  title="Click to change color"
+                  className="w-4 h-4 rounded-full flex-shrink-0 cursor-pointer transition-transform hover:scale-110"
+                  style={{ background: ts.color, border: "2px solid rgba(255,255,255,0.3)" }}
+                />
+                <div className="flex items-center gap-2 flex-1">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[10px] mb-0.5" style={{ color: "var(--text-muted)" }}>Start</label>
+                    <Input type="time" value={ts.startTime}
+                      onChange={e => updateTimeSlot(ts.id, "startTime", e.target.value)} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[10px] mb-0.5" style={{ color: "var(--text-muted)" }}>Duration</label>
+                    <Select value={ts.durationH}
+                      onChange={e => updateTimeSlot(ts.id, "durationH", e.target.value)}>
+                      {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8].map(n => (
+                        <option key={n} value={n}>{n}h</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <span className="text-[11px] flex-shrink-0 pt-4" style={{ color: "var(--text-muted)" }}>
+                    → {endTime}
+                  </span>
+                </div>
+                <button
+                  onClick={() => removeTimeSlot(ts.id)}
+                  disabled={timeSlots.length === 1}
+                  className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-opacity text-base leading-none"
+                  style={{ opacity: timeSlots.length === 1 ? 0.2 : 0.5, color: "var(--text-muted)" }}
+                  title="Remove time slot"
+                >×</button>
+              </div>
+            );
+          })}
+
+          <button
+            onClick={addTimeSlot}
+            className="w-full py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors"
+            style={{ border: "1px dashed var(--border)", color: "var(--text-muted)", background: "transparent" }}
+          >
+            + Add time slot
+          </button>
+        </div>
+
+        {/* ── Calendar date picker ──────────────────────────────────────── */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+              Select Days
+            </label>
+            <div className="flex items-center gap-2">
+              <Select value={month} onChange={e => { setMonth(Number(e.target.value)); setSelectedDates(new Set()); }}
+                className="text-xs">
+                {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </Select>
+              <Input type="number" value={year} min={2024} max={2030} className="w-16 text-xs"
+                onChange={e => { setYear(Number(e.target.value)); setSelectedDates(new Set()); }} />
+              {selectedDates.size > 0 && (
+                <button className="text-[11px] cursor-pointer" style={{ color: "var(--text-muted)" }}
+                  onClick={() => setSelectedDates(new Set())}>Clear</button>
+              )}
+            </div>
+          </div>
+
           <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
             <div className="grid grid-cols-7 text-center text-[11px] font-semibold py-2"
               style={{ background: "var(--bg-subtle)", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
@@ -1131,27 +1390,23 @@ function ManualSlotModal({ hosts, brands, rooms, onClose, onCreated }: BulkSched
                   const dateStr = day ? format(day, "yyyy-MM-dd") : null;
                   const selected = dateStr ? selectedDates.has(dateStr) : false;
                   return (
-                    <div key={di}
-                      onClick={() => dateStr && toggleDate(dateStr)}
-                      className="min-h-[52px] p-1.5 flex flex-col gap-0.5 transition-colors"
+                    <div key={di} onClick={() => dateStr && toggleDate(dateStr)}
+                      className="min-h-[44px] p-1.5 flex flex-col gap-0.5 transition-colors"
                       style={{
                         borderRight: di < 6 ? "1px solid var(--border)" : "none",
-                        background: selected
-                          ? (selectedBrand ? selectedBrand.color + "20" : "var(--accent-light)")
-                          : !day ? "var(--bg-subtle)" : "transparent",
+                        background: selected ? (selectedBrand ? selectedBrand.color + "20" : "var(--accent-light)") : !day ? "var(--bg-subtle)" : "transparent",
                         cursor: day ? "pointer" : "default",
-                      }}
-                    >
+                      }}>
                       {day && (
                         <>
                           <span className="text-[11px] font-medium leading-none"
-                            style={{ color: selected ? (selectedBrand?.color || "var(--accent)") : "var(--text-muted)" }}>
+                            style={{ color: selected ? (selectedBrand?.color || "var(--accent)") : "var(--text-secondary)" }}>
                             {format(day, "d")}
                           </span>
-                          {selected && selectedBrand && (
-                            <span className="rounded px-1 py-0.5 font-medium truncate leading-tight"
-                              style={{ background: selectedBrand.color + "25", color: selectedBrand.color, fontSize: "10px" }}>
-                              {selectedBrand.name.split(" ")[0]}
+                          {selected && (
+                            <span className="text-[9px] leading-tight font-medium"
+                              style={{ color: selectedBrand?.color || "var(--accent)" }}>
+                              ×{timeSlots.length}
                             </span>
                           )}
                         </>
@@ -1164,23 +1419,162 @@ function ManualSlotModal({ hosts, brands, rooms, onClose, onCreated }: BulkSched
           </div>
         </div>
 
+        {/* ── Footer ────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between pt-1">
-          <button
-            className="text-xs cursor-pointer"
-            style={{ color: "var(--text-muted)" }}
-            onClick={() => setSelectedDates(new Set())}
-          >
-            Clear all
-          </button>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {selectedDates.size > 0 && timeSlots.length > 0
+              ? `${selectedDates.size} day${selectedDates.size !== 1 ? "s" : ""} × ${timeSlots.length} slot${timeSlots.length !== 1 ? "s" : ""} = ${totalSessions} brand slot${totalSessions !== 1 ? "s" : ""}`
+              : "Select days and configure time slots"}
+          </span>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={createSelected} loading={saving} disabled={selectedDates.size === 0 || !hostId || !brandId || !roomId}>
-              <CalendarPlus size={13} /> Create {selectedDates.size} Session{selectedDates.size !== 1 ? "s" : ""}
+            <Button onClick={createAll} loading={saving} disabled={!canCreate}>
+              <CalendarPlus size={13} /> Create {totalSessions} Session{totalSessions !== 1 ? "s" : ""}
             </Button>
           </div>
         </div>
+
       </div>
     </Modal>
+  );
+}
+
+// ── Hours Tracker Panel ───────────────────────────────────────────────────────
+
+function HoursTrackerPanel({
+  data, loading, onRefresh, onTargetSaved,
+}: {
+  data: HoursData | null;
+  loading: boolean;
+  onRefresh: (month: number, year: number) => void;
+  onTargetSaved: (month: number, year: number) => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editType, setEditType] = useState<"HOST" | "BRAND">("HOST");
+  const [editVal, setEditVal] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const now = new Date();
+  const [month, setMonth] = useState<number>(data?.month ?? (now.getMonth() + 1));
+  const [year, setYear] = useState<number>(data?.year ?? now.getFullYear());
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  async function saveTarget(type: "HOST" | "BRAND", id: string) {
+    const hrs = parseFloat(editVal);
+    if (isNaN(hrs) || hrs < 0) return;
+    setSaving(true);
+    await fetch("/api/hours-targets", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, referenceId: id, month, year, targetHours: hrs }),
+    });
+    setSaving(false);
+    setEditingId(null);
+    onTargetSaved(month, year);
+  }
+
+  function HoursRow({ row, type }: { row: HoursRow; type: "HOST" | "BRAND" }) {
+    const pct = row.target > 0 ? Math.min(100, (row.scheduled / row.target) * 100) : 0;
+    const isEditing = editingId === row.id && editType === type;
+    const color = type === "BRAND" && row.color ? row.color : "var(--accent)";
+    const overTarget = row.target > 0 && row.scheduled >= row.target;
+
+    return (
+      <div className="flex items-center gap-3 py-2 px-1" style={{ borderBottom: "1px solid var(--border)" }}>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            {type === "BRAND" && row.color && (
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: row.color }} />
+            )}
+            <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
+              {row.name}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)", minWidth: 60 }}>
+              {pct > 0 && (
+                <div className="h-full rounded-full transition-all"
+                  style={{ width: `${pct}%`, background: overTarget ? "#22c55e" : color }} />
+              )}
+            </div>
+            <span className="text-xs flex-shrink-0 font-medium tabular-nums"
+              style={{ color: overTarget ? "#22c55e" : "var(--text-secondary)" }}>
+              {row.scheduled}h{row.target > 0 ? ` / ${row.target}h` : ""}
+            </span>
+          </div>
+        </div>
+        {isEditing ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Input
+              type="number" value={editVal} min="0" step="1"
+              onChange={e => setEditVal(e.target.value)}
+              className="w-16 text-xs py-1"
+              onKeyDown={e => { if (e.key === "Enter") saveTarget(type, row.id); if (e.key === "Escape") setEditingId(null); }}
+              autoFocus
+            />
+            <Button size="sm" onClick={() => saveTarget(type, row.id)} loading={saving}>✓</Button>
+            <button className="text-xs cursor-pointer px-1" style={{ color: "var(--text-muted)" }} onClick={() => setEditingId(null)}>✕</button>
+          </div>
+        ) : (
+          <button
+            className="text-[11px] px-2 py-0.5 rounded cursor-pointer flex-shrink-0 transition-colors"
+            style={{ color: "var(--text-muted)", background: "var(--bg-subtle)" }}
+            onClick={() => { setEditingId(row.id); setEditType(type); setEditVal(String(row.target || "")); }}
+            title="Set target"
+          >
+            {row.target > 0 ? "Edit" : "Set target"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="section-card p-4 space-y-3 animate-in">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <BarChart2 size={14} style={{ color: "var(--accent)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+            Monthly Hours Tracker
+          </span>
+          {data && (
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {months[(data.month ?? 1) - 1]} {data.year}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {data && (
+            <>
+              <Select value={month ?? data.month} onChange={e => setMonth(Number(e.target.value))} className="text-xs">
+                {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </Select>
+              <Input type="number" value={year ?? data.year} min={2024} max={2030}
+                onChange={e => setYear(Number(e.target.value))} className="w-20 text-xs" />
+            </>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => onRefresh(month, year)} loading={loading}>
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {loading && <div className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>Loading…</div>}
+
+      {data && !loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Live Hosts</div>
+            {data.hosts.length === 0 && <div className="text-xs" style={{ color: "var(--text-muted)" }}>No active hosts</div>}
+            {data.hosts.map(row => <HoursRow key={row.id} row={row} type="HOST" />)}
+          </div>
+          <div>
+            <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Brands</div>
+            {data.brands.length === 0 && <div className="text-xs" style={{ color: "var(--text-muted)" }}>No brands</div>}
+            {data.brands.map(row => <HoursRow key={row.id} row={row} type="BRAND" />)}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

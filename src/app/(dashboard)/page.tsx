@@ -8,19 +8,25 @@ import {
 } from "lucide-react";
 import { PlatformBadge } from "@/components/ui/platform-badge";
 import { MonthSelector } from "@/components/ui/month-selector";
+import { BrandDashboardPanel } from "@/components/dashboard/brand-dashboard-panel";
 import { format, startOfMonth, endOfMonth, startOfDay, endOfDay, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function fetchAdminStats(month: number, year: number) {
+async function fetchAdminStats(month: number, year: number, brandId?: string) {
   const monthStart = startOfMonth(new Date(year, month, 1));
   const monthEnd   = endOfMonth(new Date(year, month, 1));
 
+  const sessionWhere = {
+    scheduledStart: { gte: monthStart, lte: monthEnd },
+    ...(brandId ? { brandId } : {}),
+  };
+
   const [monthSessions, totalHosts, totalRooms, totalBrands, recentImports, lastSyncedSession] = await Promise.all([
     prisma.session.findMany({
-      where: { scheduledStart: { gte: monthStart, lte: monthEnd } },
+      where: sessionWhere,
       include: { brand: true },
     }),
     prisma.liveHost.count({ where: { isActive: true } }),
@@ -64,10 +70,13 @@ async function fetchAdminStats(month: number, year: number) {
   };
 }
 
-function getAdminStats(month: number, year: number) {
+function getAdminStats(month: number, year: number, brandId?: string) {
+  const cacheKey = brandId
+    ? ["admin-stats", String(month), String(year), brandId]
+    : ["admin-stats", String(month), String(year)];
   return unstable_cache(
-    () => fetchAdminStats(month, year),
-    ["admin-stats", String(month), String(year)],
+    () => fetchAdminStats(month, year, brandId),
+    cacheKey,
     { revalidate: 30 },
   )();
 }
@@ -104,7 +113,7 @@ async function getLiveHostStats(userId: string) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage(props: {
-  searchParams: Promise<{ month?: string; year?: string }>;
+  searchParams: Promise<{ month?: string; year?: string; brand?: string }>;
 }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -115,9 +124,14 @@ export default async function DashboardPage(props: {
     const now   = new Date();
     const month = sp.month !== undefined ? parseInt(sp.month) : now.getMonth();
     const year  = sp.year  !== undefined ? parseInt(sp.year)  : now.getFullYear();
+    const selectedBrandId = sp.brand ?? null;
     const isMTD = month === now.getMonth() && year === now.getFullYear();
 
-    const stats = await getAdminStats(month, year);
+    const [stats, brands] = await Promise.all([
+      getAdminStats(month, year, selectedBrandId ?? undefined),
+      prisma.brand.findMany({ where: { isActive: true, hasLivestream: true }, orderBy: { name: "asc" } }),
+    ]);
+    const selectedBrand = selectedBrandId ? brands.find(b => b.id === selectedBrandId) ?? null : null;
     const completionRate = stats.monthSessionCount > 0
       ? Math.round((stats.completedCount / stats.monthSessionCount) * 100)
       : 0;
@@ -137,7 +151,7 @@ export default async function DashboardPage(props: {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <MonthSelector month={month} year={year} isMTD={isMTD} />
+            <MonthSelector month={month} year={year} isMTD={isMTD} brand={selectedBrandId ?? undefined} />
             <Link
               href="/schedule"
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg"
@@ -148,73 +162,100 @@ export default async function DashboardPage(props: {
           </div>
         </div>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href="/admin/hosts">
-            <GradientStatCard icon={Users} label="Active Hosts" value={stats.totalHosts} sub="live hosts" gradient="metric-card-indigo" />
-          </Link>
-          <Link href="/admin/rooms">
-            <GradientStatCard icon={DoorOpen} label="Studios" value={stats.totalRooms} sub="active rooms" gradient="metric-card-sky" />
-          </Link>
-          <Link href="/admin/brands">
-            <GradientStatCard icon={Building2} label="Brands" value={stats.totalBrands} sub="active brands" gradient="metric-card-violet" />
-          </Link>
-          <Link href="/performance">
-            <GradientStatCard
-              icon={TrendingUp}
-              label={isMTD ? "MTD GMV" : "Month GMV"}
-              value={formatCurrency(stats.monthGMV)}
-              sub={`${stats.completedCount} sessions · ${completionRate}% done`}
-              gradient="metric-card-emerald"
-            />
-          </Link>
-        </div>
+        {/* Brand tabs */}
+        {brands.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            <Link
+              href={`/?month=${month}&year=${year}`}
+              className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+              style={!selectedBrandId
+                ? { background: "var(--accent)", color: "#fff" }
+                : { background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+              All Brands
+            </Link>
+            {brands.map(b => (
+              <Link key={b.id} href={`/?month=${month}&year=${year}&brand=${b.id}`}
+                className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                style={selectedBrandId === b.id
+                  ? { background: b.color + "20", color: b.color, border: `1px solid ${b.color}60` }
+                  : { background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+                {b.name}
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* Stat cards — hidden when viewing a specific brand */}
+        {!selectedBrandId && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Link href="/admin/hosts">
+              <GradientStatCard icon={Users} label="Active Hosts" value={stats.totalHosts} sub="live hosts" gradient="metric-card-orange" />
+            </Link>
+            <Link href="/admin/rooms">
+              <GradientStatCard icon={DoorOpen} label="Studios" value={stats.totalRooms} sub="active rooms" gradient="metric-card-indigo" />
+            </Link>
+            <Link href="/admin/brands">
+              <GradientStatCard icon={Building2} label="Brands" value={stats.totalBrands} sub="active brands" gradient="metric-card-violet" />
+            </Link>
+            <Link href="/performance">
+              <GradientStatCard
+                icon={TrendingUp}
+                label={isMTD ? "MTD GMV" : "Month GMV"}
+                value={formatCurrency(stats.monthGMV)}
+                sub={`${stats.completedCount} sessions · ${completionRate}% done`}
+                gradient="metric-card-amber"
+              />
+            </Link>
+          </div>
+        )}
 
         {/* Top 3 Brands + Month Summary row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Top 3 Brands — compact */}
-          <div className="section-card">
-            <div className="section-card-header">
-              <h2 className="flex items-center gap-1.5 text-sm">
-                <Medal size={13} style={{ color: "var(--warning)" }} />
-                Top Brands
-              </h2>
-              <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
-                <ArrowUpRight size={11} />
-              </Link>
-            </div>
-            {stats.topBrands.length === 0 ? (
-              <div className="empty-state py-4 text-xs">No completed sessions yet.</div>
-            ) : (
-              <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-                {stats.topBrands.map((b, i) => (
-                  <div key={b.name} className="flex items-center gap-2 px-3 py-2">
-                    <span className="text-base w-5 text-center flex-shrink-0 leading-none">{medals[i]}</span>
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-xs truncate" style={{ color: "var(--text-primary)" }}>{b.name}</p>
-                      <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                        {b.sessions}sess · {b.hours.toFixed(1)}h
-                      </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="font-bold text-xs" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</p>
-                      {b.gmvPerHour > 0 && (
-                        <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                          {formatCurrency(b.gmvPerHour)}/hr
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
+        <div className={`grid grid-cols-1 gap-4 ${selectedBrandId ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
+          {/* Top 3 Brands — hidden when a brand is selected */}
+          {!selectedBrandId && (
+            <div className="section-card">
+              <div className="section-card-header">
+                <h2 className="flex items-center gap-1.5 text-sm">
+                  <Medal size={13} style={{ color: "var(--warning)" }} />
+                  Top Brands
+                </h2>
+                <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
+                  <ArrowUpRight size={11} />
+                </Link>
               </div>
-            )}
-          </div>
+              {stats.topBrands.length === 0 ? (
+                <div className="empty-state py-4 text-xs">No completed sessions yet.</div>
+              ) : (
+                <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                  {stats.topBrands.map((b, i) => (
+                    <div key={b.name} className="flex items-center gap-2 px-3 py-2">
+                      <span className="text-base w-5 text-center flex-shrink-0 leading-none">{medals[i]}</span>
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-xs truncate" style={{ color: "var(--text-primary)" }}>{b.name}</p>
+                        <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                          {b.sessions}sess · {b.hours.toFixed(1)}h
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-bold text-xs" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</p>
+                        {b.gmvPerHour > 0 && (
+                          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            {formatCurrency(b.gmvPerHour)}/hr
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Month Summary — compact 2-col grid */}
           <div className="section-card">
             <div className="section-card-header">
-              <h2 className="text-sm">Month Summary</h2>
+              <h2 className="text-sm">{selectedBrand ? `${selectedBrand.name} · Month Summary` : "Month Summary"}</h2>
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>{displayMonthLabel}{isMTD ? " MTD" : ""}</span>
             </div>
             <div className="px-3 py-2 space-y-0">
@@ -284,62 +325,74 @@ export default async function DashboardPage(props: {
           </div>
         </div>
 
-        {/* Analytics — Brand breakdown */}
-        <div className="section-card">
-          <div className="section-card-header">
-            <h2 className="flex items-center gap-1.5 text-sm">
-              <BarChart2 size={13} style={{ color: "var(--accent)" }} />
-              Analytics — {displayMonthLabel}{isMTD ? " (MTD)" : ""}
-            </h2>
-            <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
-              Full analytics <ArrowUpRight size={11} />
-            </Link>
-          </div>
-          {stats.brandBreakdown.length === 0 ? (
-            <div className="empty-state py-6 text-xs">No completed sessions yet for this period.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="data-table text-xs w-full">
-                <thead>
-                  <tr>
-                    <th className="text-left">Brand</th>
-                    <th className="text-right">Sessions</th>
-                    <th className="text-right">Hours</th>
-                    <th className="text-right">GMV</th>
-                    <th className="text-right">GMV/hr</th>
-                    <th className="text-right">Ads Cost</th>
-                    <th className="text-right">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.brandBreakdown.map((b, i) => (
-                    <tr key={b.name}>
-                      <td>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm">{medals[i] ?? ""}</span>
-                          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
-                          <span className="font-medium" style={{ color: "var(--text-primary)" }}>{b.name}</span>
-                        </div>
-                      </td>
-                      <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.sessions}</td>
-                      <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.hours.toFixed(1)}h</td>
-                      <td className="text-right font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</td>
-                      <td className="text-right" style={{ color: "var(--text-secondary)" }}>
-                        {b.gmvPerHour > 0 ? formatCurrency(b.gmvPerHour) : "—"}
-                      </td>
-                      <td className="text-right" style={{ color: "var(--text-muted)" }}>
-                        {b.adsCost > 0 ? formatCurrency(b.adsCost) : "—"}
-                      </td>
-                      <td className="text-right" style={{ color: b.netRevenue >= 0 ? "var(--success)" : "var(--danger)" }}>
-                        {b.gmv > 0 ? formatCurrency(b.netRevenue) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Brand-specific dashboard panel */}
+        {selectedBrand ? (
+          <BrandDashboardPanel
+            brandId={selectedBrand.id}
+            brandName={selectedBrand.name}
+            brandColor={selectedBrand.color}
+            month={month}
+            year={year}
+            currentGMV={stats.monthGMV}
+          />
+        ) : (
+          /* Analytics — All-brands breakdown table */
+          <div className="section-card">
+            <div className="section-card-header">
+              <h2 className="flex items-center gap-1.5 text-sm">
+                <BarChart2 size={13} style={{ color: "var(--accent)" }} />
+                {`Analytics — ${displayMonthLabel}${isMTD ? " (MTD)" : ""}`}
+              </h2>
+              <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
+                Full analytics <ArrowUpRight size={11} />
+              </Link>
             </div>
-          )}
-        </div>
+            {stats.brandBreakdown.length === 0 ? (
+              <div className="empty-state py-6 text-xs">No completed sessions yet for this period.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table text-xs w-full">
+                  <thead>
+                    <tr>
+                      <th className="text-left">Brand</th>
+                      <th className="text-right">Sessions</th>
+                      <th className="text-right">Hours</th>
+                      <th className="text-right">GMV</th>
+                      <th className="text-right">GMV/hr</th>
+                      <th className="text-right">Ads Cost</th>
+                      <th className="text-right">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.brandBreakdown.map((b, i) => (
+                      <tr key={b.name}>
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm">{medals[i] ?? ""}</span>
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
+                            <span className="font-medium" style={{ color: "var(--text-primary)" }}>{b.name}</span>
+                          </div>
+                        </td>
+                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.sessions}</td>
+                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.hours.toFixed(1)}h</td>
+                        <td className="text-right font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</td>
+                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>
+                          {b.gmvPerHour > 0 ? formatCurrency(b.gmvPerHour) : "—"}
+                        </td>
+                        <td className="text-right" style={{ color: "var(--text-muted)" }}>
+                          {b.adsCost > 0 ? formatCurrency(b.adsCost) : "—"}
+                        </td>
+                        <td className="text-right" style={{ color: b.netRevenue >= 0 ? "var(--success)" : "var(--danger)" }}>
+                          {b.gmv > 0 ? formatCurrency(b.netRevenue) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     );
@@ -365,9 +418,9 @@ export default async function DashboardPage(props: {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <GradientStatCard icon={Calendar}     label="Today"     value={stats.todaySessions.length}        sub="sessions"    gradient="metric-card-indigo" />
+          <GradientStatCard icon={Calendar}     label="Today"     value={stats.todaySessions.length}        sub="sessions"    gradient="metric-card-orange" />
           <GradientStatCard icon={CheckCircle2} label="Completed" value={stats.completedSessions.length}    sub="this month"  gradient="metric-card-emerald" />
-          <GradientStatCard icon={Clock}        label="Hours"     value={`${stats.totalHours.toFixed(1)}h`} sub="this month"  gradient="metric-card-sky" />
+          <GradientStatCard icon={Clock}        label="Hours"     value={`${stats.totalHours.toFixed(1)}h`} sub="this month"  gradient="metric-card-indigo" />
           <GradientStatCard icon={TrendingUp}   label="My GMV"    value={formatCurrency(stats.totalGMV)}    sub="this month"  gradient="metric-card-amber" />
         </div>
 
@@ -388,7 +441,7 @@ export default async function DashboardPage(props: {
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.brand.color }} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm" style={{ color: "var(--text-primary)" }}>{s.brand.name}</div>
-                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>{s.room.name} · {s.platform}</div>
+                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>{s.room?.name ?? "—"} · {s.platform}</div>
                     </div>
                     <div className="text-right text-xs flex-shrink-0" style={{ color: "var(--text-secondary)" }}>
                       <div className="font-medium">{format(new Date(s.scheduledStart), "HH:mm")} – {format(new Date(s.scheduledEnd), "HH:mm")}</div>
@@ -451,11 +504,11 @@ function GradientStatCard({ icon: Icon, label, value, sub, gradient }: {
   icon: React.ElementType; label: string; value: string | number; sub?: string; gradient: string;
 }) {
   return (
-    <div className={`${gradient} rounded-xl p-5 text-white shadow-md relative overflow-hidden transition-transform hover:scale-[1.02] hover:shadow-lg cursor-pointer`}>
-      <div className="absolute right-3 top-3 opacity-20"><Icon size={36} /></div>
-      <div className="text-xs font-medium opacity-80 uppercase tracking-wider">{label}</div>
-      <div className="text-2xl font-bold mt-1.5 leading-none">{value}</div>
-      {sub && <div className="text-xs opacity-70 mt-1.5">{sub}</div>}
+    <div className={`${gradient} metric-card-base rounded-xl p-5 relative cursor-pointer`}>
+      <div className="absolute right-3 top-3 opacity-[0.12]"><Icon size={44} /></div>
+      <div className="text-[10.5px] font-semibold uppercase tracking-[.1em] mb-1" style={{ color: "var(--text-muted)" }}>{label}</div>
+      <div className="text-xl lg:text-2xl font-bold leading-tight whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{value}</div>
+      {sub && <div className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>{sub}</div>}
     </div>
   );
 }

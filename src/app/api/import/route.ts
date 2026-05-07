@@ -14,17 +14,25 @@ export async function POST(req: NextRequest) {
   if (!file || !platform) return Response.json({ error: "Missing file or platform" }, { status: 400 });
 
   const text = await file.text();
-  const rows: { title: string; startTime: Date; durationSeconds: number; gmv: number }[] = [];
+  const rows: { title: string; startTime: Date; durationSeconds: number; gmv: number; grossRevenue?: number }[] = [];
 
   if (platform === "SHOPEE") {
-    const lines = text.split("\n").slice(1).filter((l) => l.trim());
+    const allLines = text.split("\n").filter((l) => l.trim());
+    const headerLine = allLines[0] ?? "";
+    const headers = headerLine.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+    let gmvColIdx = headers.findIndex((h) => h === "Sales(Confirmed Order)");
+    if (gmvColIdx === -1) {
+      console.warn("Shopee import: 'Sales(Confirmed Order)' column not found, falling back to index 16");
+      gmvColIdx = 16;
+    }
+    const lines = allLines.slice(1);
     for (const line of lines) {
       const cols = line.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
-      if (cols.length < 17) continue;
+      if (cols.length <= gmvColIdx) continue;
       const title = cols[3];
       const startRaw = cols[4]; // "26-03-2026 21:57"
       const durationRaw = cols[5]; // "02:00:59"
-      const gmvRaw = cols[16]; // Sales(Confirmed Order)
+      const gmvRaw = cols[gmvColIdx]; // Sales(Confirmed Order)
       const [datePart, timePart] = startRaw.split(" ");
       const [day, month, year] = datePart.split("-");
       const startTime = new Date(`${year}-${month}-${day}T${timePart}:00`);
@@ -45,9 +53,12 @@ export async function POST(req: NextRequest) {
         const startTime = new Date(row.startTime);
         const durationSeconds = Number(row.duration) || 0;
         const gmv = parseMYR(String(row.directGmv || "0"));
+        const grossRevenue = row.attributedSales != null
+          ? parseMYR(String(row.attributedSales))
+          : undefined;
         const title = row.title || "";
         if (!isNaN(startTime.getTime())) {
-          rows.push({ title, startTime, durationSeconds, gmv });
+          rows.push({ title, startTime, durationSeconds, gmv, grossRevenue });
         }
       }
     }
@@ -115,6 +126,7 @@ export async function POST(req: NextRequest) {
             actualEnd: actualEnd,
             actualDurationMinutes: Math.round(row.durationSeconds / 60),
             gmv: row.gmv,
+            ...(row.grossRevenue !== undefined && { grossRevenue: row.grossRevenue }),
             status: "COMPLETED",
             punctuality,
             importedSessionId: imported.id,

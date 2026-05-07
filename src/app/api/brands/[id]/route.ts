@@ -7,10 +7,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
-  const { name, platform, color, clientId, isActive } = await req.json();
+  const { name, platform, color, clientId, isActive, hasLivestream, hasAffiliate } = await req.json();
   const brand = await prisma.brand.update({
     where: { id },
-    data: { name, platform, color, clientId: clientId || null, isActive },
+    data: {
+      name,
+      platform,
+      color,
+      clientId: clientId || null,
+      isActive,
+      ...(hasLivestream !== undefined ? { hasLivestream } : {}),
+      ...(hasAffiliate !== undefined ? { hasAffiliate } : {}),
+    },
   });
   return Response.json(brand);
 }

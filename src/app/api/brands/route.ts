@@ -9,16 +9,25 @@ export async function GET() {
     include: { client: { include: { user: true } } },
     orderBy: { name: "asc" },
   });
-  return Response.json(brands);
+  return Response.json(brands, {
+    headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+  });
 }
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
-  const { name, platform, color, clientId } = await req.json();
+  const { name, platform, color, clientId, hasLivestream, hasAffiliate } = await req.json();
   const brand = await prisma.brand.create({
-    data: { name, platform, color: color || "#6366f1", clientId: clientId || null },
+    data: {
+      name,
+      platform,
+      color: color || "#6366f1",
+      clientId: clientId || null,
+      hasLivestream: hasLivestream ?? true,
+      hasAffiliate: hasAffiliate ?? false,
+    },
   });
   return Response.json(brand, { status: 201 });
 }

@@ -39,23 +39,44 @@ export default function ImportPage() {
         const wb = new ExcelJS.Workbook();
         await wb.xlsx.load(buf);
         const ws = wb.worksheets[0];
-        const parsedRows: { title: string; startTime: string; duration: string; directGmv: string }[] = [];
+        const parsedRows: { title: string; startTime: string; duration: string; directGmv: string; attributedSales: string }[] = [];
         let headerRow = -1;
+        const colMap: Record<string, number> = {};
+        let warnedGmv = false;
+        let warnedAttr = false;
         ws.eachRow((row, rowNumber) => {
           const vals = row.values as (string | null)[];
           if (headerRow === -1 && vals.some((v) => String(v || "").includes("Livestream"))) {
-            headerRow = rowNumber; return;
+            headerRow = rowNumber;
+            vals.forEach((v, i) => { if (v) colMap[String(v).trim().toLowerCase()] = i; });
+            if (!colMap["direct gmv"] && !warnedGmv) {
+              console.warn("TikTok import: 'direct GMV' column not found in header");
+              warnedGmv = true;
+            }
+            if (!colMap["attributed sales"] && !warnedAttr) {
+              console.warn("TikTok import: 'attributed sales' column not found in header");
+              warnedAttr = true;
+            }
+            return;
           }
           if (headerRow > 0 && rowNumber > headerRow) {
-            const title = String(vals[1] || "").trim();
-            const startTime = vals[2];
-            const duration = vals[3];
-            const directGmv = String(vals[5] || "0").trim();
+            const titleIdx = colMap["livestream name"] ?? colMap["livestream"] ?? 1;
+            const startIdx = colMap["start time"] ?? 2;
+            const durIdx   = colMap["duration"] ?? 3;
+            const gmvIdx   = colMap["direct gmv"] ?? 5;
+            const attrIdx  = colMap["attributed sales"] ?? -1;
+            // Use .text to preserve large numeric IDs as strings (avoids float precision loss)
+            const titleCell = ws.getCell(rowNumber, titleIdx);
+            const title = (titleCell.text || String(vals[titleIdx] || "")).trim();
+            const startTime = vals[startIdx];
+            const duration = vals[durIdx];
+            const directGmv = String(vals[gmvIdx] || "0").trim();
+            const attributedSales = attrIdx > 0 ? String(vals[attrIdx] || "0").trim() : "0";
             if (title && startTime) {
               const startStr = (startTime as unknown) instanceof Date
                 ? (startTime as unknown as Date).toISOString()
                 : String(startTime);
-              parsedRows.push({ title, startTime: startStr, duration: String(duration || "0"), directGmv });
+              parsedRows.push({ title, startTime: startStr, duration: String(duration || "0"), directGmv, attributedSales });
             }
           }
         });

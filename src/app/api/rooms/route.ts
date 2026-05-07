@@ -6,7 +6,9 @@ export async function GET() {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const rooms = await prisma.room.findMany({ orderBy: { name: "asc" } });
-  return Response.json(rooms);
+  return Response.json(rooms, {
+    headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+  });
 }
 
 export async function POST(req: NextRequest) {

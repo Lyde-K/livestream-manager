@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
         pairs.push({
           wrongId:        wrong.id,
           correctId:      correct.id,
-          host:           wrong.liveHost.user.name,
+          host:           wrong.liveHost?.user.name ?? "",
           brand:          wrong.brand.name,
           platform:       wrong.platform,
           wrongTime:      wrong.scheduledStart.toISOString(),
