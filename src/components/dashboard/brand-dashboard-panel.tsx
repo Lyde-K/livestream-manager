@@ -291,22 +291,74 @@ export function BrandDashboardPanel({
           </div>
 
           <div className="px-3 pb-4">
-            {/* Bar chart */}
-            <div className="flex items-end gap-2 h-[88px] pt-1">
+            {/* Chart — bars aligned to bottom, labels float above each bar */}
+            <div className="flex gap-2" style={{ height: "160px", paddingTop: "44px", position: "relative" }}>
               {trendMonths.map((m, i) => {
                 const pct        = maxGMV > 0 ? (m.gmv / maxGMV) * 100 : 0;
+                const barPct     = Math.max(pct, m.gmv > 0 ? 3 : 0.5);
                 const isSelected = m.month === month && m.year === year;
+                const prev       = i > 0 ? trendMonths[i - 1] : null;
+                const mom        = prev && prev.gmv > 0
+                  ? ((m.gmv - prev.gmv) / prev.gmv) * 100
+                  : null;
+
                 return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
-                    <div className="w-full flex items-end" style={{ height: "72px" }}>
+                  <div key={i} className="flex-1 flex flex-col items-center" style={{ position: "relative", height: "100%" }}>
+                    {/* Labels floating above the bar */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        bottom: `calc(${barPct}% + 6px)`,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "1px",
+                        width: "100%",
+                      }}
+                    >
+                      {mom !== null && (
+                        <span
+                          style={{
+                            fontSize: "8px",
+                            fontWeight: 700,
+                            lineHeight: 1.2,
+                            color: mom >= 0 ? "var(--success)" : "var(--danger)",
+                          }}
+                        >
+                          {mom > 0 ? "+" : ""}{mom.toFixed(0)}%
+                        </span>
+                      )}
+                      {m.gmv > 0 && (
+                        <span style={{ fontSize: "8px", lineHeight: 1.2, color: "var(--text-muted)" }}>
+                          {m.gmv >= 1000
+                            ? `${(m.gmv / 1000).toFixed(0)}k`
+                            : `${m.gmv.toFixed(0)}`}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Bar — anchored to bottom */}
+                    <div style={{ position: "absolute", bottom: 0, width: "100%" }}>
                       <div
-                        className="w-full rounded-t transition-all"
+                        className="rounded-t transition-all"
                         style={{
-                          height: `${Math.max(pct, m.gmv > 0 ? 4 : 1)}%`,
-                          background: isSelected ? brandColor : brandColor + "45",
+                          height: `${barPct}%`,
+                          width: "100%",
+                          background: isSelected ? brandColor : brandColor + "50",
                         }}
                       />
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Month labels */}
+            <div className="flex gap-2 mt-1.5">
+              {trendMonths.map((m, i) => {
+                const isSelected = m.month === month && m.year === year;
+                return (
+                  <div key={i} className="flex-1 text-center">
                     <span
                       className="text-[9px] font-medium"
                       style={{ color: isSelected ? "var(--text-primary)" : "var(--text-muted)" }}
@@ -316,16 +368,6 @@ export function BrandDashboardPanel({
                   </div>
                 );
               })}
-            </div>
-            {/* GMV labels under bars */}
-            <div className="flex gap-2 mt-1">
-              {trendMonths.map((m, i) => (
-                <div key={i} className="flex-1 text-center">
-                  <span className="text-[8px]" style={{ color: "var(--text-muted)" }}>
-                    {m.gmv > 0 ? `${(m.gmv / 1000).toFixed(0)}k` : ""}
-                  </span>
-                </div>
-              ))}
             </div>
           </div>
         </div>
