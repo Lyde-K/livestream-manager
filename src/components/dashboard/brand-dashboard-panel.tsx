@@ -123,7 +123,7 @@ export function BrandDashboardPanel({
 
   // ── GMV Target circular progress ───────────────────────────────────────────
   const progressPct       = target > 0 ? Math.min((currentGMV / target) * 100, 100) : 0;
-  const RADIUS            = 54;
+  const RADIUS            = 48;  // SVG is 120x120, cx/cy = 60
   const circumference     = 2 * Math.PI * RADIUS;
   const strokeDashoffset  = circumference - (progressPct / 100) * circumference;
 
@@ -200,54 +200,49 @@ export function BrandDashboardPanel({
                 </button>
               </div>
             ) : target > 0 ? (
-              <div className="flex items-center gap-5 pt-1">
-                {/* Circular SVG progress */}
-                <div className="relative flex-shrink-0">
-                  <svg width="140" height="140" viewBox="0 0 140 140">
-                    {/* Track */}
-                    <circle cx="70" cy="70" r={RADIUS} fill="none" strokeWidth="10"
-                      stroke="var(--bg-subtle)" />
-                    {/* Progress arc */}
+              <div className="flex items-center gap-4 pt-1">
+                {/* Circular SVG — compact 120px */}
+                <div className="flex-shrink-0">
+                  <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r={RADIUS} fill="none" strokeWidth="9" stroke="var(--bg-subtle)" />
                     <circle
-                      cx="70" cy="70" r={RADIUS}
-                      fill="none"
-                      strokeWidth="10"
+                      cx="60" cy="60" r={RADIUS}
+                      fill="none" strokeWidth="9"
                       stroke={brandColor}
                       strokeLinecap="round"
                       strokeDasharray={circumference}
                       strokeDashoffset={strokeDashoffset}
-                      transform="rotate(-90 70 70)"
+                      transform="rotate(-90 60 60)"
                       style={{ transition: "stroke-dashoffset 0.7s cubic-bezier(.4,0,.2,1)" }}
                     />
-                    {/* Centre labels */}
-                    <text x="70" y="63" textAnchor="middle" dominantBaseline="middle"
-                      fontSize="20" fontWeight="700" fill="var(--text-primary)">
+                    <text x="60" y="55" textAnchor="middle" dominantBaseline="middle"
+                      fontSize="18" fontWeight="700" fill="var(--text-primary)">
                       {progressPct.toFixed(0)}%
                     </text>
-                    <text x="70" y="82" textAnchor="middle" dominantBaseline="middle"
-                      fontSize="10" fill="var(--text-muted)">
+                    <text x="60" y="72" textAnchor="middle" dominantBaseline="middle"
+                      fontSize="9.5" fill="var(--text-muted)">
                       of target
                     </text>
                   </svg>
                 </div>
 
-                {/* Stats */}
-                <div className="space-y-2.5 flex-1 min-w-0">
+                {/* Stats — 3 rows stacked */}
+                <div className="flex-1 min-w-0 space-y-3">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "var(--text-muted)" }}>MTD GMV</p>
-                    <p className="text-lg font-bold leading-tight" style={{ color: "var(--text-primary)" }}>{formatCurrency(currentGMV)}</p>
+                    <p className="text-[9px] uppercase tracking-widest font-semibold mb-0.5" style={{ color: "var(--text-muted)" }}>MTD GMV</p>
+                    <p className="text-xl font-bold leading-none" style={{ color: "var(--text-primary)" }}>{formatCurrency(currentGMV)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "var(--text-muted)" }}>Target</p>
+                    <p className="text-[9px] uppercase tracking-widest font-semibold mb-0.5" style={{ color: "var(--text-muted)" }}>Target</p>
                     <p className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>{formatCurrency(target)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wide font-medium" style={{ color: "var(--text-muted)" }}>
-                      Run Rate ({daysPassed}d/{daysInMonth}d)
+                    <p className="text-[9px] uppercase tracking-widest font-semibold mb-0.5" style={{ color: "var(--text-muted)" }}>
+                      Run Rate · {daysPassed}/{daysInMonth}d
                     </p>
                     <p className="text-sm font-bold" style={{ color: runRateGMV >= target ? "var(--success)" : "var(--warning)" }}>
                       {formatCurrency(runRateGMV)}
-                      <span className="text-[10px] font-normal ml-1" style={{ color: "var(--text-muted)" }}>projected</span>
+                      <span className="text-[10px] font-normal ml-1.5" style={{ color: "var(--text-muted)" }}>projected</span>
                     </p>
                   </div>
                 </div>
@@ -290,85 +285,96 @@ export function BrandDashboardPanel({
             )}
           </div>
 
-          <div className="px-3 pb-4">
-            {/* Chart — bars aligned to bottom, labels float above each bar */}
-            <div className="flex gap-2" style={{ height: "160px", paddingTop: "44px", position: "relative" }}>
-              {trendMonths.map((m, i) => {
-                const pct        = maxGMV > 0 ? (m.gmv / maxGMV) * 100 : 0;
-                const barPct     = Math.max(pct, m.gmv > 0 ? 3 : 0.5);
-                const isSelected = m.month === month && m.year === year;
-                const prev       = i > 0 ? trendMonths[i - 1] : null;
-                const mom        = prev && prev.gmv > 0
-                  ? ((m.gmv - prev.gmv) / prev.gmv) * 100
-                  : null;
+          <div className="px-3 pb-4 pt-1">
+            {/* Use explicit pixel heights — avoids percentage-of-auto-height resolving to 0 */}
+            {(() => {
+              const CHART_H = 100; // px — usable bar height
+              const LABEL_H = 36;  // px — reserved above bars for labels
+              return (
+                <>
+                  {/* Chart rows: label zone + bar zone */}
+                  <div className="flex gap-2 items-end" style={{ height: CHART_H + LABEL_H }}>
+                    {trendMonths.map((m, i) => {
+                      const pct        = maxGMV > 0 ? (m.gmv / maxGMV) * 100 : 0;
+                      const barH       = Math.max((pct / 100) * CHART_H, m.gmv > 0 ? 4 : 1); // px
+                      const isSelected = m.month === month && m.year === year;
+                      const prev       = i > 0 ? trendMonths[i - 1] : null;
+                      const mom        = prev && prev.gmv > 0
+                        ? ((m.gmv - prev.gmv) / prev.gmv) * 100
+                        : null;
 
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center" style={{ position: "relative", height: "100%" }}>
-                    {/* Labels floating above the bar */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        bottom: `calc(${barPct}% + 6px)`,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: "1px",
-                        width: "100%",
-                      }}
-                    >
-                      {mom !== null && (
-                        <span
-                          style={{
-                            fontSize: "8px",
-                            fontWeight: 700,
-                            lineHeight: 1.2,
-                            color: mom >= 0 ? "var(--success)" : "var(--danger)",
-                          }}
+                      return (
+                        <div
+                          key={i}
+                          className="flex-1 flex flex-col items-center justify-end"
+                          style={{ height: "100%", position: "relative" }}
                         >
-                          {mom > 0 ? "+" : ""}{mom.toFixed(0)}%
-                        </span>
-                      )}
-                      {m.gmv > 0 && (
-                        <span style={{ fontSize: "8px", lineHeight: 1.2, color: "var(--text-muted)" }}>
-                          {m.gmv >= 1000
-                            ? `${(m.gmv / 1000).toFixed(0)}k`
-                            : `${m.gmv.toFixed(0)}`}
-                        </span>
-                      )}
-                    </div>
+                          {/* Labels pinned just above bar top */}
+                          <div
+                            style={{
+                              position: "absolute",
+                              bottom: barH + 5,
+                              left: 0,
+                              right: 0,
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              gap: "1px",
+                            }}
+                          >
+                            {mom !== null && (
+                              <span style={{
+                                fontSize: "8px",
+                                fontWeight: 700,
+                                lineHeight: 1.3,
+                                color: mom >= 0 ? "var(--success)" : "var(--danger)",
+                              }}>
+                                {mom > 0 ? "+" : ""}{mom.toFixed(0)}%
+                              </span>
+                            )}
+                            {m.gmv > 0 && (
+                              <span style={{ fontSize: "8px", lineHeight: 1.3, color: "var(--text-muted)" }}>
+                                {m.gmv >= 1000 ? `${(m.gmv / 1000).toFixed(0)}k` : m.gmv.toFixed(0)}
+                              </span>
+                            )}
+                          </div>
 
-                    {/* Bar — anchored to bottom */}
-                    <div style={{ position: "absolute", bottom: 0, width: "100%" }}>
-                      <div
-                        className="rounded-t transition-all"
-                        style={{
-                          height: `${barPct}%`,
-                          width: "100%",
-                          background: isSelected ? brandColor : brandColor + "50",
-                        }}
-                      />
-                    </div>
+                          {/* Bar — explicit px height, no percentage issues */}
+                          <div
+                            className="w-full rounded-t-sm transition-all"
+                            style={{
+                              height: barH,
+                              flexShrink: 0,
+                              background: isSelected ? brandColor : brandColor + "55",
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
 
-            {/* Month labels */}
-            <div className="flex gap-2 mt-1.5">
-              {trendMonths.map((m, i) => {
-                const isSelected = m.month === month && m.year === year;
-                return (
-                  <div key={i} className="flex-1 text-center">
-                    <span
-                      className="text-[9px] font-medium"
-                      style={{ color: isSelected ? "var(--text-primary)" : "var(--text-muted)" }}
-                    >
-                      {m.label}
-                    </span>
+                  {/* Month labels */}
+                  <div className="flex gap-2 mt-2">
+                    {trendMonths.map((m, i) => {
+                      const isSelected = m.month === month && m.year === year;
+                      return (
+                        <div key={i} className="flex-1 text-center">
+                          <span
+                            style={{
+                              fontSize: "9px",
+                              fontWeight: isSelected ? 600 : 400,
+                              color: isSelected ? "var(--text-primary)" : "var(--text-muted)",
+                            }}
+                          >
+                            {m.label}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
