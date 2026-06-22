@@ -28,7 +28,7 @@ interface SuggestResult {
 }
 
 interface Room { id: string; name: string; }
-interface Host { id: string; displayName: string; user: { name: string }; }
+interface Host { id: string; displayName: string; type: string; user: { name: string }; }
 interface Brand { id: string; name: string; color: string; platform: string; }
 
 interface HoursRow { id: string; name: string; displayName?: string; color?: string; scheduled: number; target: number; }
@@ -67,6 +67,7 @@ export default function SchedulePage() {
   const [filterHost, setFilterHost] = useState("");
   const [filterBrand, setFilterBrand] = useState("");
   const [filterRoom, setFilterRoom] = useState("");
+  const [filterType, setFilterType] = useState("");
   const [viewRange, setViewRange] = useState({ start: "", end: "" });
 
   const [open, setOpen] = useState(false);
@@ -148,8 +149,14 @@ export default function SchedulePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewRange, filterHost, filterBrand]);
 
+  function matchesTypeFilter(s: Session) {
+    if (!filterType) return true;
+    const hostType = (s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME";
+    return hostType === filterType;
+  }
+
   const calEvents = sessions
-    .filter((s) => !filterRoom || s.roomId === filterRoom)
+    .filter((s) => (!filterRoom || s.roomId === filterRoom) && matchesTypeFilter(s))
     .map((s) => {
       const bgColor = s.status === "COMPLETED"
         ? (s.punctuality ? PUNCTUALITY_COLORS[s.punctuality] : PUNCTUALITY_COLORS.default)
@@ -667,8 +674,13 @@ export default function SchedulePage() {
             <option value="">All Rooms</option>
             {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
-          {(filterHost || filterBrand || filterRoom) && (
-            <Button size="sm" variant="ghost" onClick={() => { setFilterHost(""); setFilterBrand(""); setFilterRoom(""); }}>
+          <Select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="flex-1 min-w-[110px] lg:w-36 lg:flex-none">
+            <option value="">All Types</option>
+            <option value="FULL_TIME">Full Time</option>
+            <option value="PART_TIME">Part Time</option>
+          </Select>
+          {(filterHost || filterBrand || filterRoom || filterType) && (
+            <Button size="sm" variant="ghost" onClick={() => { setFilterHost(""); setFilterBrand(""); setFilterRoom(""); setFilterType(""); }}>
               Clear
             </Button>
           )}
@@ -720,6 +732,7 @@ export default function SchedulePage() {
           brands={brands}
           filterBrand={filterBrand}
           filterRoom={filterRoom}
+          filterType={filterType}
           onSessionClick={(s) => setDetailSession(s)}
           onAddSlot={(roomId, start, end) => {
             setEditing(null);
@@ -904,7 +917,13 @@ export default function SchedulePage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
-            <Select value={form.brandId} onChange={(e) => setForm({ ...form, brandId: e.target.value })}>
+            <Select value={form.brandId} onChange={(e) => {
+              const selectedBrand = brands.find((b) => b.id === e.target.value);
+              const autoPlatform = selectedBrand?.platform === "SHOPEE" ? "SHOPEE"
+                : selectedBrand?.platform === "TIKTOK" ? "TIKTOK"
+                : form.platform;
+              setForm({ ...form, brandId: e.target.value, platform: autoPlatform });
+            }}>
               <option value="">Select brand…</option>
               {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </Select>
@@ -1691,6 +1710,7 @@ function HoursTrackerPanel({
 // ── Daily Grid View ──────────────────────────────────────────────────────────
 
 const TIME_SLOTS = [
+  { label: "8am–10am",  start:  8, end: 10 },
   { label: "10am–12pm", start: 10, end: 12 },
   { label: "12pm–2pm",  start: 12, end: 14 },
   { label: "3pm–5pm",   start: 15, end: 17 },
@@ -1714,7 +1734,7 @@ function sessionOverlapsSlot(session: Session, slot: { start: number; end: numbe
 }
 
 function DailyGridView({
-  gridDate, setGridDate, sessions, rooms, hosts: _hosts, brands: _brands, filterBrand, filterRoom, onSessionClick, onAddSlot,
+  gridDate, setGridDate, sessions, rooms, hosts: _hosts, brands: _brands, filterBrand, filterRoom, filterType, onSessionClick, onAddSlot,
 }: {
   gridDate: string;
   setGridDate: (d: string) => void;
@@ -1724,6 +1744,7 @@ function DailyGridView({
   brands: Brand[];
   filterBrand: string;
   filterRoom: string;
+  filterType: string;
   onSessionClick: (s: Session) => void;
   onAddSlot: (roomId: string, start: string, end: string) => void;
 }) {
@@ -1759,7 +1780,8 @@ function DailyGridView({
     const sessionDate = myt.toISOString().slice(0, 10);
     return sessionDate === gridDate &&
       (!filterBrand || s.brandId === filterBrand) &&
-      (!filterRoom || s.roomId === filterRoom);
+      (!filterRoom || s.roomId === filterRoom) &&
+      (!filterType || ((s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME") === filterType);
   });
 
   // Rooms to show (all rooms, optionally filtered)
