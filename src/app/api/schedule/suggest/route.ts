@@ -115,7 +115,21 @@ export async function GET(req: NextRequest) {
     if (top2HostIds && !top2HostIds.has(host.id)) continue;
 
     const prefs = host.preferences;
-    const preferredSlots: string[] = prefs ? JSON.parse(prefs.preferredSlots) : ["8pm-10pm"];
+    // Parse slot preferences — stored as { normal: [], campaign: [] } or legacy flat array
+    let normalSlots: string[] = ["8pm-10pm"];
+    let campaignSlots: string[] = ["8pm-10pm"];
+    if (prefs) {
+      try {
+        const parsed = JSON.parse(prefs.preferredSlots);
+        if (Array.isArray(parsed)) {
+          normalSlots = parsed.length ? parsed : ["8pm-10pm"];
+          campaignSlots = parsed.length ? parsed : ["8pm-10pm"];
+        } else {
+          normalSlots = parsed.normal?.length ? parsed.normal : ["8pm-10pm"];
+          campaignSlots = parsed.campaign?.length ? parsed.campaign : normalSlots;
+        }
+      } catch { /* use defaults */ }
+    }
     const preferredBrands: string[] = prefs ? JSON.parse(prefs.preferredBrands) : [];
 
     // offDays are now recurring day-of-week indices (0=Sun … 6=Sat)
@@ -124,10 +138,6 @@ export async function GET(req: NextRequest) {
     const offDowSet = new Set<number>(
       rawOffDays.filter((x): x is number => typeof x === "number")
     );
-
-    // First preferred slot determines the suggested start time
-    const defaultSlot = preferredSlots[0] ?? "8pm-10pm";
-    const suggestedStart = SLOT_START[defaultSlot] ?? "20:00";
 
     for (const day of allDays) {
       const dateStr = format(day, "yyyy-MM-dd");
@@ -150,6 +160,10 @@ export async function GET(req: NextRequest) {
       if (filterBrandId && !top2HostIds && preferredBrands.length > 0 && !preferredBrands.includes(filterBrandId)) {
         continue;
       }
+
+      // Use campaign slots on campaign-open days, normal slots otherwise
+      const activeSlots = isCampaignOpen ? campaignSlots : normalSlots;
+      const suggestedStart = SLOT_START[activeSlots[0] ?? "8pm-10pm"] ?? "20:00";
 
       suggestions.push({
         date: dateStr,
