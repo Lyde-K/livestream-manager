@@ -15,11 +15,6 @@ const ALL_SLOTS = [
   { value: "12am-2am",  startH: 24, endH: 26 },
 ];
 
-// Slot 1 (8am-10am) always excluded.
-// Slot 8 (12am-2am, startH=24) campaign days only.
-const EXCLUDED_SLOTS    = new Set([8]);
-const CAMPAIGN_ONLY_SLOTS = new Set([24]);
-
 function slotToISO(dateStr: string, startH: number, endH: number) {
   const base = new Date(`${dateStr}T00:00:00+08:00`);
   const startDate = startH >= 24 ? addDays(base, 1) : base;
@@ -44,9 +39,9 @@ export async function POST(req: NextRequest) {
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const { brandId, targetHours, roomId, month, year, confirm } = await req.json() as {
+  const { brandId, targetHours, roomId, month, year, ignoredSlots, confirm } = await req.json() as {
     brandId: string; targetHours: number; roomId: string;
-    month: number; year: number; confirm?: boolean;
+    month: number; year: number; ignoredSlots?: string[]; confirm?: boolean;
   };
 
   if (!brandId || !targetHours || !roomId || !month || !year)
@@ -96,9 +91,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Remove user-specified ignored slots (by slot value, e.g. "8am-10am")
+  const ignoredSet = new Set(ignoredSlots ?? []);
+
   // Sort eligible slots by historical GMV/hour (best first)
   const sortedSlots = ALL_SLOTS
-    .filter(s => !EXCLUDED_SLOTS.has(s.startH))
+    .filter(s => !ignoredSet.has(s.value))
     .sort((a, b) => {
       const ga = slotPerf.get(a.startH);
       const gb = slotPerf.get(b.startH);
@@ -136,9 +134,7 @@ export async function POST(req: NextRequest) {
     const isCampaignDay = campaignDates.has(dateStr);
     const cap = isCampaignDay ? strategy.campaignSlots : strategy.regularSlots;
 
-    const availableSlots = isCampaignDay
-      ? sortedSlots
-      : sortedSlots.filter(s => !CAMPAIGN_ONLY_SLOTS.has(s.startH));
+    const availableSlots = sortedSlots;
 
     const take = Math.min(cap, slotsRemaining, availableSlots.length);
 
@@ -181,7 +177,7 @@ export async function POST(req: NextRequest) {
       if (currentCount >= 6) continue; // already maxed
 
       const usedStartHours = usedSlotsPerDay.get(dateStr) ?? new Set<number>();
-      const availableSlots = (isCampaignDay ? sortedSlots : sortedSlots.filter(s => !CAMPAIGN_ONLY_SLOTS.has(s.startH)))
+      const availableSlots = sortedSlots
         .filter(s => !usedStartHours.has(s.startH));
 
       const remaining = Math.min(6 - currentCount, slotsRemaining, availableSlots.length);

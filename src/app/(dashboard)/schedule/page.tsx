@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { Plus, X, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
 import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
@@ -1141,6 +1141,8 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
   const [roomId, setRoomId] = useState(rooms[0]?.id || "");
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const [ignoredSlots, setIgnoredSlots] = useState<string[]>([]);
+  const [slotToIgnore, setSlotToIgnore] = useState("");
   const [preview, setPreview] = useState<SmartPreviewSession[] | null>(null);
   const [summary, setSummary] = useState<SmartSummary | null>(null);
   const [autoPlatform, setAutoPlatform] = useState("");
@@ -1151,6 +1153,29 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
 
   const selectedBrand = brands.find(b => b.id === brandId);
 
+  const ALL_SLOT_OPTIONS = [
+    { label: "Slot 1 — 8am–10am",   value: "8am-10am" },
+    { label: "Slot 2 — 10am–12pm",  value: "10am-12pm" },
+    { label: "Slot 3 — 12pm–2pm",   value: "12pm-2pm" },
+    { label: "Slot 4 — 3pm–5pm",    value: "3pm-5pm" },
+    { label: "Slot 5 — 5pm–7pm",    value: "5pm-7pm" },
+    { label: "Slot 6 — 8pm–10pm",   value: "8pm-10pm" },
+    { label: "Slot 7 — 10pm–12am",  value: "10pm-12am" },
+    { label: "Slot 8 — 12am–2am",   value: "12am-2am" },
+  ];
+
+  function addIgnoredSlot() {
+    if (!slotToIgnore || ignoredSlots.includes(slotToIgnore) || ignoredSlots.length >= 2) return;
+    setIgnoredSlots(s => [...s, slotToIgnore]);
+    setSlotToIgnore("");
+    setPreview(null); setSummary(null);
+  }
+
+  function removeIgnoredSlot(val: string) {
+    setIgnoredSlots(s => s.filter(x => x !== val));
+    setPreview(null); setSummary(null);
+  }
+
   async function runPreview() {
     if (!brandId || !roomId || !targetHours) return;
     setError("");
@@ -1160,7 +1185,7 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
     const res = await fetch("/api/schedule/smart-bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandId, targetHours: Number(targetHours), roomId, month, year }),
+      body: JSON.stringify({ brandId, targetHours: Number(targetHours), roomId, month, year, ignoredSlots }),
     });
     const data = await res.json();
     setLoading(false);
@@ -1177,7 +1202,7 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
     const res = await fetch("/api/schedule/smart-bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brandId, targetHours: Number(targetHours), roomId, month, year, confirm: true }),
+      body: JSON.stringify({ brandId, targetHours: Number(targetHours), roomId, month, year, ignoredSlots, confirm: true }),
     });
     const data = await res.json();
     setSaving(false);
@@ -1255,6 +1280,41 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
             <Input type="number" value={year} min={2024} max={2030}
               onChange={e => { setYear(Number(e.target.value)); setPreview(null); }} className="w-20" />
           </div>
+        </div>
+
+        {/* Ignore Slots */}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+            Ignore Slots <span className="font-normal" style={{ color: "var(--text-muted)" }}>(optional — max 2)</span>
+          </label>
+          <div className="flex gap-2">
+            <Select value={slotToIgnore} onChange={e => setSlotToIgnore(e.target.value)} className="flex-1"
+              disabled={ignoredSlots.length >= 2}>
+              <option value="">Select a slot to ignore…</option>
+              {ALL_SLOT_OPTIONS.filter(o => !ignoredSlots.includes(o.value)).map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+            <Button variant="outline" onClick={addIgnoredSlot} disabled={!slotToIgnore || ignoredSlots.length >= 2}>
+              <Plus size={13} /> Add
+            </Button>
+          </div>
+          {ignoredSlots.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {ignoredSlots.map(val => {
+                const opt = ALL_SLOT_OPTIONS.find(o => o.value === val);
+                return (
+                  <span key={val} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                    style={{ background: "#ef444420", color: "#ef4444", border: "1px solid #ef444440" }}>
+                    {opt?.label ?? val}
+                    <button onClick={() => removeIgnoredSlot(val)} className="cursor-pointer opacity-80 hover:opacity-100">
+                      <X size={10} />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {error && <p className="text-xs font-medium" style={{ color: "#ef4444" }}>{error}</p>}
