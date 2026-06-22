@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -206,7 +206,7 @@ export default function SchedulePage() {
     return hostType === filterType;
   }
 
-  const calEvents = sessions
+  const calEvents = useMemo(() => sessions
     .filter((s) => (!filterRoom || s.roomId === filterRoom) && matchesTypeFilter(s))
     .map((s) => {
       const bgColor = s.status === "COMPLETED"
@@ -226,10 +226,10 @@ export default function SchedulePage() {
         borderColor: bgColor,
         extendedProps: { session: s },
       };
-    });
+    }), [sessions, filterRoom, filterType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Add campaign periods as background events
-  const campaignEvents = campaigns.map(c => ({
+  const campaignEvents = useMemo(() => campaigns.map(c => ({
     id: `campaign-${c.id}`,
     title: `📢 ${c.name} (${c.platform === "BOTH" ? "TikTok + Shopee" : c.platform === "TIKTOK" ? "TikTok" : "Shopee"})`,
     start: c.startDate.slice(0, 10),
@@ -238,7 +238,7 @@ export default function SchedulePage() {
     backgroundColor: c.platform === "TIKTOK" ? "#010101" : c.platform === "SHOPEE" ? "#EE4D2D" : "#6366f1",
     classNames: ["campaign-bg-event"],
     extendedProps: { isCampaign: true },
-  }));
+  })), [campaigns]);
 
   // Check if a given date + brand falls within any campaign
   function isDateInCampaign(dateStr: string, brandId: string, sessionPlatform?: string): boolean {
@@ -1891,7 +1891,7 @@ function DailyGridView({
   }
 
   // Sessions for this day
-  const daySessions = sessions.filter((s) => {
+  const daySessions = useMemo(() => sessions.filter((s) => {
     const d = new Date(s.scheduledStart);
     const myt = new Date(d.getTime() + 8 * 3600_000);
     const sessionDate = myt.toISOString().slice(0, 10);
@@ -1900,46 +1900,70 @@ function DailyGridView({
       (!filterBrand || s.brandId === filterBrand) &&
       (!filterRoom || s.roomId === filterRoom) &&
       (!filterType || ((s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME") === filterType);
-  });
+  }), [sessions, gridDate, filterHost, filterBrand, filterRoom, filterType]);
 
   // Rooms to show (all rooms, optionally filtered)
-  const sortedRooms = [...rooms].sort((a, b) =>
+  const sortedRooms = useMemo(() => [...rooms].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
-  );
-  const allRoomsForDay = filterRoom ? sortedRooms.filter((r) => r.id === filterRoom) : sortedRooms;
+  ), [rooms]);
 
-  // When any filter is active, hide rooms and slots with no sessions
   const filtersActive = !!(filterHost || filterBrand || filterRoom || filterType);
-  const visibleRooms = filtersActive
+
+  const allRoomsForDay = useMemo(() =>
+    filterRoom ? sortedRooms.filter((r) => r.id === filterRoom) : sortedRooms
+  , [sortedRooms, filterRoom]);
+
+  const visibleRooms = useMemo(() => filtersActive
     ? allRoomsForDay.filter((r) => daySessions.some((s) => s.roomId === r.id))
-    : allRoomsForDay;
-  const activeSlots = filtersActive
+    : allRoomsForDay
+  , [filtersActive, allRoomsForDay, daySessions]);
+
+  const activeSlots = useMemo(() => filtersActive
     ? TIME_SLOTS.filter((slot) => daySessions.some((s) => sessionOverlapsSlot(s, slot)))
-    : TIME_SLOTS;
+    : TIME_SLOTS
+  , [filtersActive, daySessions]);
 
   // Campaign sessions (isCampaignDay) — build per-slot set
-  const campaignSessions = daySessions.filter((s) => s.isCampaignDay);
+  const campaignSessions = useMemo(() => daySessions.filter((s) => s.isCampaignDay), [daySessions]);
 
-  // For each slot, check if any campaign session spans it
-  function getCampaignForSlot(slot: typeof TIME_SLOTS[0]) {
-    return campaignSessions.filter((s) => sessionOverlapsSlot(s, slot));
+  // Pre-build O(1) lookup: roomId+slotIndex → Session
+  const roomSlotMap = useMemo(() => {
+    const map = new Map<string, Session>();
+    for (const s of daySessions) {
+      activeSlots.forEach((slot, i) => {
+        if (s.roomId && sessionOverlapsSlot(s, slot)) map.set(`${s.roomId}|${i}`, s);
+      });
+    }
+    return map;
+  }, [daySessions, activeSlots]);
+
+  function getSessionForRoomSlot(roomId: string, slotIndex: number): Session | null {
+    return roomSlotMap.get(`${roomId}|${slotIndex}`) ?? null;
   }
 
-  function getSessionForRoomSlot(roomId: string, slot: typeof TIME_SLOTS[0]): Session | null {
-    return daySessions.find((s) => s.roomId === roomId && sessionOverlapsSlot(s, slot)) ?? null;
-  }
+  // Pre-build O(1) lookup: slotIndex → campaign sessions
+  const slotCampaignMap = useMemo(() => {
+    const map = new Map<number, Session[]>();
+    activeSlots.forEach((slot, i) => {
+      map.set(i, campaignSessions.filter(s => sessionOverlapsSlot(s, slot)));
+    });
+    return map;
+  }, [campaignSessions, activeSlots]);
 
   // Build unique brand groups for campaign banner
-  const campaignBrandSlots: Record<string, Set<number>> = {};
-  for (const s of campaignSessions) {
-    activeSlots.forEach((slot, i) => {
-      if (sessionOverlapsSlot(s, slot)) {
-        const key = `${s.brandId}|${s.brand.name}|${s.brand.color}|${s.platform}`;
-        if (!campaignBrandSlots[key]) campaignBrandSlots[key] = new Set();
-        campaignBrandSlots[key].add(i);
-      }
-    });
-  }
+  const campaignBrandSlots = useMemo(() => {
+    const result: Record<string, Set<number>> = {};
+    for (const s of campaignSessions) {
+      activeSlots.forEach((slot, i) => {
+        if (sessionOverlapsSlot(s, slot)) {
+          const key = `${s.brandId}|${s.brand.name}|${s.brand.color}|${s.platform}`;
+          if (!result[key]) result[key] = new Set();
+          result[key].add(i);
+        }
+      });
+    }
+    return result;
+  }, [campaignSessions, activeSlots]);
 
   const colWidth = 120;
   const labelWidth = 140;
@@ -2075,7 +2099,7 @@ function DailyGridView({
                       Store
                     </td>
                     {activeSlots.map((slot, si) => {
-                      const session = getSessionForRoomSlot(room.id, slot);
+                      const session = getSessionForRoomSlot(room.id, si);
                       if (!session) return (
                         <td key={si}
                           title="Click to add session"
@@ -2116,7 +2140,7 @@ function DailyGridView({
                       Host
                     </td>
                     {activeSlots.map((slot, si) => {
-                      const session = getSessionForRoomSlot(room.id, slot);
+                      const session = getSessionForRoomSlot(room.id, si);
                       if (!session) return (
                         <td key={si}
                           title="Click to add session"

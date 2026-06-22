@@ -35,10 +35,14 @@ export async function GET(req: NextRequest) {
 
   const sessions = await prisma.session.findMany({
     where,
-    include: {
-      room: true,
-      brand: true,
-      liveHost: { include: { user: { select: { name: true } } } },
+    select: {
+      id: true, roomId: true, liveHostId: true, brandId: true, platform: true,
+      scheduledStart: true, scheduledEnd: true, isCampaignDay: true, notes: true,
+      slotColor: true, status: true, punctuality: true, gmv: true, actualStart: true,
+      actualDurationMinutes: true,
+      room: { select: { id: true, name: true } },
+      brand: { select: { id: true, name: true, color: true, platform: true } },
+      liveHost: { select: { displayName: true, type: true, user: { select: { name: true } } } },
     },
     orderBy: { scheduledStart: "asc" },
   });
