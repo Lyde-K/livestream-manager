@@ -172,29 +172,35 @@ export async function GET(req: NextRequest) {
 
   const total = await prisma.affiliateCreatorStat.count({ where });
 
+  // Compute ranks dynamically from all rows in the period, ranked by GMV descending — no ties
+  const allForRank = await prisma.affiliateCreatorStat.findMany({
+    where: { brandId: where.brandId, period, ...typeFilter },
+    select: { id: true, gmv: true },
+    orderBy: { gmv: "desc" },
+  });
+  const rankMap = new Map(allForRank.map((r, i) => [r.id, i + 1]));
+
+  // Compute prev-period ranks the same way for rankDelta
   const previousPeriod = previousMonth(period);
-  const prevRanks = previousPeriod
+  const allPrevForRank = previousPeriod
     ? await prisma.affiliateCreatorStat.findMany({
-        where: {
-          brandId: where.brandId,
-          period: previousPeriod,
-          creatorName: { in: rows.map((r) => r.creatorName) },
-        },
-        select: { creatorName: true, rank: true, brandId: true },
+        where: { brandId: where.brandId, period: previousPeriod, ...typeFilter },
+        select: { id: true, gmv: true, creatorName: true, brandId: true },
+        orderBy: { gmv: "desc" },
       })
     : [];
-  const prevRankByKey = new Map<string, number | null>();
-  for (const p of prevRanks) prevRankByKey.set(`${p.brandId}|${p.creatorName}`, p.rank);
+  const prevRankByKey = new Map(allPrevForRank.map((r, i) => [`${r.brandId}|${r.creatorName}`, i + 1]));
 
   const mapped = rows.map((r) => ({
     id: r.id,
     creatorName: r.creatorName,
     period: r.period,
-    rank: r.rank,
+    rank: rankMap.get(r.id) ?? null,
     rankDelta: (() => {
+      const myRank = rankMap.get(r.id);
       const prev = prevRankByKey.get(`${r.brandId}|${r.creatorName}`);
-      if (prev == null || r.rank == null) return null;
-      return prev - r.rank;
+      if (prev == null || myRank == null) return null;
+      return prev - myRank;
     })(),
     gmv: Number(r.gmv),
     refunds: Number(r.refunds),
