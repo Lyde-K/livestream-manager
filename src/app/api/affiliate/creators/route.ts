@@ -172,13 +172,20 @@ export async function GET(req: NextRequest) {
 
   const total = await prisma.affiliateCreatorStat.count({ where });
 
-  // Compute ranks dynamically from all rows in the period, ranked by GMV descending — no ties
+  // Fetch all rows for ranking + aggregate totals (respects all filters, no pagination)
   const allForRank = await prisma.affiliateCreatorStat.findMany({
-    where: { brandId: where.brandId, period, ...typeFilter },
-    select: { id: true, gmv: true },
+    where,
+    select: { id: true, gmv: true, estCommission: true, videos: true, liveStreams: true },
     orderBy: { gmv: "desc" },
   });
   const rankMap = new Map(allForRank.map((r, i) => [r.id, i + 1]));
+
+  const aggregateTotals = {
+    totalGmv:        allForRank.reduce((s, r) => s + Number(r.gmv), 0),
+    totalCommission: allForRank.reduce((s, r) => s + Number(r.estCommission), 0),
+    totalVideos:     allForRank.reduce((s, r) => s + r.videos, 0),
+    totalLiveStreams: allForRank.reduce((s, r) => s + r.liveStreams, 0),
+  };
 
   // Compute prev-period ranks the same way for rankDelta
   const previousPeriod = previousMonth(period);
@@ -216,7 +223,7 @@ export async function GET(req: NextRequest) {
     brand: r.brand,
   }));
 
-  return Response.json({ rows: mapped, total });
+  return Response.json({ rows: mapped, total, aggregateTotals });
 }
 
 function previousMonth(period: string): string | null {
