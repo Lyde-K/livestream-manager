@@ -116,15 +116,18 @@ const LABEL_EXPLANATIONS: Record<string, { title: string; criteria: string[]; co
   },
 };
 
+type AffiliateType = "all" | "live" | "video";
+
 export default function AffiliateOverviewPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandId, setBrandId] = useState("");
   const [period, setPeriod] = useState("");         // for single-month mode
-  const [filterMode, setFilterMode] = useState<FilterMode>("month");
+  const [filterMode, setFilterMode] = useState<FilterMode>("ytd");
   const [customFrom, setCustomFrom] = useState(""); // "YYYY-MM"
   const [customTo, setCustomTo] = useState("");     // "YYYY-MM"
   const [data, setData] = useState<OverviewData | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+  const [affiliateType, setAffiliateType] = useState<AffiliateType>("all");
 
   useEffect(() => {
     fetch("/api/affiliate/brands")
@@ -182,6 +185,27 @@ export default function AffiliateOverviewPage() {
   const ytdYear = data?.periods?.length
     ? data.periods[data.periods.length - 1].substring(0, 4)
     : new Date().getFullYear().toString();
+
+  // Derive current period param for "View all" links
+  const currentPeriodParam = filterMode === "ytd" ? "YTD"
+    : filterMode === "range" && customFrom && customTo ? `${customFrom}..${customTo}`
+    : period;
+  const _creatorParams = new URLSearchParams();
+  if (brandId) _creatorParams.set("brandId", brandId);
+  if (currentPeriodParam) _creatorParams.set("period", currentPeriodParam);
+  const _productParams = new URLSearchParams();
+  if (brandId) _productParams.set("brandId", brandId);
+  if (currentPeriodParam) _productParams.set("period", currentPeriodParam);
+  const creatorsHref = `/affiliate/creators${_creatorParams.toString() ? `?${_creatorParams}` : ""}`;
+  const productsHref = `/affiliate/products${_productParams.toString() ? `?${_productParams}` : ""}`;
+
+  const filteredTopCreators = data
+    ? affiliateType === "live"
+      ? data.topLiveCreators
+      : affiliateType === "video"
+      ? data.topVideoCreators
+      : data.topCreators
+    : [];
 
   return (
     <div className="space-y-5 animate-in">
@@ -261,6 +285,23 @@ export default function AffiliateOverviewPage() {
               Aggregating {data.rangePeriods?.length ?? 0} months of {ytdYear}
             </div>
           )}
+
+          {/* Affiliate type filter */}
+          <div className="flex gap-1 ml-auto">
+            {(["all", "live", "video"] as AffiliateType[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setAffiliateType(t)}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
+                style={{
+                  background: affiliateType === t ? "var(--accent)" : "var(--bg-subtle)",
+                  color: affiliateType === t ? "#fff" : "var(--text-secondary)",
+                }}
+              >
+                {t === "all" ? "All" : t === "live" ? "🔴 Livestream" : "🎬 Videos"}
+              </button>
+            ))}
+          </div>
 
           {/* Custom range pickers */}
           {filterMode === "range" && (
@@ -462,12 +503,12 @@ export default function AffiliateOverviewPage() {
                   Top 10 creators by GMV
                   {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
                 </div>
-                <Link href="/affiliate/creators" className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
+                <Link href={creatorsHref} className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
                   View all <ArrowRight size={11} />
                 </Link>
               </div>
               <div className="space-y-0">
-                {data.topCreators.map((c, i) => (
+                {filteredTopCreators.map((c, i) => (
                   <Link
                     key={c.id}
                     href={`/affiliate/creators/${encodeURIComponent(c.creatorName)}`}
@@ -477,11 +518,11 @@ export default function AffiliateOverviewPage() {
                     <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
                     <LabelChip label={c.label} />
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }}>{c.creatorName}</span>
-                    {!data.rangeMode && <GmvDeltaBadge curr={c.gmv} prev={c.prevGmv} />}
+                    {affiliateType === "all" && !data.rangeMode && "prevGmv" in c && <GmvDeltaBadge curr={c.gmv} prev={(c as { prevGmv: number | null }).prevGmv} />}
                     <span className="font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(c.gmv)}</span>
                   </Link>
                 ))}
-                {data.topCreators.length === 0 && (
+                {filteredTopCreators.length === 0 && (
                   <div className="text-sm py-4" style={{ color: "var(--text-muted)" }}>No creator data.</div>
                 )}
               </div>
@@ -493,7 +534,7 @@ export default function AffiliateOverviewPage() {
                   Top 10 products by GMV
                   {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
                 </div>
-                <Link href="/affiliate/products" className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
+                <Link href={productsHref} className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
                   View all <ArrowRight size={11} />
                 </Link>
               </div>
@@ -518,7 +559,8 @@ export default function AffiliateOverviewPage() {
             </div>
           </div>
 
-          {/* Top live + video creators */}
+          {/* Top live + video creators — hidden when type filter is active */}
+          {affiliateType === "all" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
@@ -580,6 +622,7 @@ export default function AffiliateOverviewPage() {
               </div>
             </div>
           </div>
+          )}
         </>
       )}
     </div>

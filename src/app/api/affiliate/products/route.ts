@@ -30,6 +30,83 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: `invalid sortBy: ${sortBy}` }, { status: 400 });
   }
 
+  const brandFilter = brandId ?? { in: scope.brandIds };
+
+  // ── YTD aggregation mode ─────────────────────────────────────────────────────
+  if (period === "YTD") {
+    const latest = await prisma.affiliateProductStat.findFirst({
+      where: { brandId: brandFilter },
+      orderBy: { period: "desc" },
+      select: { period: true },
+    });
+    if (!latest) return Response.json({ rows: [], categories: [] });
+
+    const ytdYear = latest.period.substring(0, 4);
+
+    const groupByWhere: {
+      brandId: string | { in: string[] };
+      period: { startsWith: string };
+      productName?: { contains: string; mode: "insensitive" };
+      tier?: string;
+      category?: string;
+    } = { brandId: brandFilter, period: { startsWith: `${ytdYear}-` } };
+    if (search) groupByWhere.productName = { contains: search, mode: "insensitive" };
+    if (tier) groupByWhere.tier = tier;
+    if (category) groupByWhere.category = category;
+
+    const [grouped, latestRows, catRows] = await Promise.all([
+      prisma.affiliateProductStat.groupBy({
+        by: ["productId", "productName", "brandId"],
+        where: groupByWhere,
+        _sum: { gmv: true, estCommission: true, itemsSold: true, videos: true, liveStreams: true, samplesShipped: true },
+      }),
+      prisma.affiliateProductStat.findMany({
+        where: { brandId: brandFilter, period: latest.period },
+        include: { brand: { select: { id: true, name: true, color: true } } },
+      }),
+      prisma.affiliateProductStat.findMany({
+        where: { brandId: brandFilter, period: latest.period },
+        select: { category: true },
+        distinct: ["category"],
+      }),
+    ]);
+
+    const latestMap = new Map(latestRows.map((r) => [`${r.brandId}|${r.productId}`, r]));
+
+    let results = grouped.map((g) => {
+      const latest = latestMap.get(`${g.brandId}|${g.productId}`);
+      const gmv = Number(g._sum.gmv ?? 0);
+      const estCommission = Number(g._sum.estCommission ?? 0);
+      return {
+        id: latest?.id ?? `${g.brandId}|${g.productId}`,
+        productId: g.productId,
+        productName: g.productName,
+        category: latest?.category ?? null,
+        gmv, estCommission,
+        prevGmv: null as number | null,
+        itemsSold: g._sum.itemsSold ?? 0,
+        videos: g._sum.videos ?? 0,
+        liveStreams: g._sum.liveStreams ?? 0,
+        samplesShipped: g._sum.samplesShipped ?? 0,
+        roi: estCommission > 0 ? gmv / estCommission : null,
+        tier: latest?.tier ?? null,
+        brand: latest?.brand ?? { id: g.brandId, name: "", color: "" },
+      };
+    });
+
+    results.sort((a, b) => {
+      const av = ((a as unknown as Record<string, number>)[sortBy]) ?? 0;
+      const bv = ((b as unknown as Record<string, number>)[sortBy]) ?? 0;
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+
+    return Response.json({
+      rows: results.slice(0, 200),
+      categories: catRows.map((c) => c.category).filter((c): c is string => !!c).sort(),
+    });
+  }
+
+  // ── Single-period mode ───────────────────────────────────────────────────────
   const where: {
     brandId: string | { in: string[] };
     period: string;
@@ -37,7 +114,7 @@ export async function GET(req: NextRequest) {
     tier?: string;
     category?: string;
   } = {
-    brandId: brandId ?? { in: scope.brandIds },
+    brandId: brandFilter,
     period,
   };
   if (search) where.productName = { contains: search, mode: "insensitive" };
@@ -52,7 +129,7 @@ export async function GET(req: NextRequest) {
       include: { brand: { select: { id: true, name: true, color: true } } },
     }),
     prisma.affiliateProductStat.findMany({
-      where: { brandId: brandId ?? { in: scope.brandIds }, period },
+      where: { brandId: brandFilter, period },
       select: { category: true },
       distinct: ["category"],
     }),
@@ -63,7 +140,7 @@ export async function GET(req: NextRequest) {
   if (prevPeriod && rows.length > 0) {
     const prevRows = await prisma.affiliateProductStat.findMany({
       where: {
-        brandId: brandId ?? { in: scope.brandIds },
+        brandId: brandFilter,
         period: prevPeriod,
         productId: { in: rows.map((r) => r.productId) },
       },

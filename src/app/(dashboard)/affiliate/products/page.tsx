@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
-import { ArrowDown, ArrowUp, Package, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Loader2, Package, Search } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface Brand {
   id: string;
@@ -50,11 +51,19 @@ function TierChip({ tier }: { tier: string | null }) {
 }
 
 export default function AffiliateProductsPage() {
+  const router = useRouter();
   const [brands, setBrands] = useState<Brand[]>([]);
   const [periods, setPeriods] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
-  const [brandId, setBrandId] = useState("");
-  const [period, setPeriod] = useState("");
+  const [brandId, setBrandId] = useState(() => {
+    if (typeof window !== "undefined") return new URLSearchParams(window.location.search).get("brandId") ?? "";
+    return "";
+  });
+  const [period, setPeriod] = useState(() => {
+    if (typeof window !== "undefined") return new URLSearchParams(window.location.search).get("period") ?? "";
+    return "";
+  });
+  const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useState("");
   const [tier, setTier] = useState("");
   const [category, setCategory] = useState("");
@@ -63,14 +72,48 @@ export default function AffiliateProductsPage() {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const syncUrl = useCallback((newBrandId: string, newPeriod: string) => {
+    const sp = new URLSearchParams();
+    if (newBrandId) sp.set("brandId", newBrandId);
+    if (newPeriod) sp.set("period", newPeriod);
+    const qs = sp.toString();
+    router.replace(`/affiliate/products${qs ? `?${qs}` : ""}`, { scroll: false });
+  }, [router]);
+
+  async function handleExport() {
+    if (!period || exporting) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ period, sortBy, sortDir });
+      if (brandId) params.set("brandId", brandId);
+      if (search.trim()) params.set("search", search.trim());
+      if (tier) params.set("tier", tier);
+      if (category) params.set("category", category);
+
+      const res = await fetch(`/api/affiliate/products/export?${params}`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `affiliate-products-${period.replace(/\s/g, "-")}${tier ? `-${tier}` : ""}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   useEffect(() => {
     fetch("/api/affiliate/brands")
       .then((r) => r.json())
       .then((data: { brands: Brand[] }) => {
         setBrands(data.brands);
-        if (data.brands.length === 1) setBrandId(data.brands[0].id);
+        if (data.brands.length === 1 && !brandId) setBrandId(data.brands[0].id);
       });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ytdYear = periods.length > 0 ? periods[0].substring(0, 4) : String(new Date().getFullYear());
 
   useEffect(() => {
     const url = brandId ? `/api/affiliate/periods?brandId=${brandId}` : "/api/affiliate/periods";
@@ -78,7 +121,9 @@ export default function AffiliateProductsPage() {
       .then((r) => r.json())
       .then((data: { periods: string[] }) => {
         setPeriods(data.periods);
-        if (data.periods.length > 0 && !data.periods.includes(period)) setPeriod(data.periods[0]);
+        if (data.periods.length > 0 && period !== "YTD" && !data.periods.includes(period)) {
+          setPeriod("YTD");
+        }
       });
   }, [brandId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -138,20 +183,38 @@ export default function AffiliateProductsPage() {
 
   return (
     <div className="space-y-5 animate-in">
-      <div>
-        <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-          <Package size={20} /> Affiliate Products
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-          {rows.length > 0 ? `${rows.length} products` : "No data"} · sorted by {sortBy} {sortDir}
-        </p>
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
+            <Package size={20} /> Affiliate Products
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
+            {rows.length > 0 ? `${rows.length} products` : "No data"} · sorted by {sortBy} {sortDir}
+          </p>
+        </div>
+        {rows.length > 0 && (
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer"
+            style={{
+              background: "var(--bg-subtle)",
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border)",
+              opacity: exporting ? 0.6 : 1,
+            }}
+          >
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {exporting ? "Exporting…" : "Export Excel"}
+          </button>
+        )}
       </div>
 
       <div className="section-card p-3 flex flex-wrap items-end gap-3">
         {brands.length > 1 && (
           <div className="min-w-[160px]">
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
-            <Select value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+            <Select value={brandId} onChange={(e) => { setBrandId(e.target.value); syncUrl(e.target.value, period); }}>
               <option value="">All my brands</option>
               {brands.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
             </Select>
@@ -159,8 +222,11 @@ export default function AffiliateProductsPage() {
         )}
         <div className="min-w-[120px]">
           <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Period</label>
-          <Select value={period} onChange={(e) => setPeriod(e.target.value)}>
+          <Select value={period} onChange={(e) => { setPeriod(e.target.value); syncUrl(brandId, e.target.value); }}>
             {periods.length === 0 && <option value="">No data</option>}
+            {periods.length > 0 && (
+              <option value="YTD">📅 {ytdYear} — Year to Date</option>
+            )}
             {periods.map((p) => (<option key={p} value={p}>{p}</option>))}
           </Select>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { LabelChip } from "@/components/affiliate/label-chip";
@@ -42,10 +43,17 @@ interface AggregateTotals {
 }
 
 export default function AffiliateCreatorsPage() {
+  const router = useRouter();
   const [brands, setBrands] = useState<Brand[]>([]);
   const [periods, setPeriods] = useState<string[]>([]);
-  const [brandId, setBrandId] = useState("");
-  const [period, setPeriod] = useState("");
+  const [brandId, setBrandId] = useState(() => {
+    if (typeof window !== "undefined") return new URLSearchParams(window.location.search).get("brandId") ?? "";
+    return "";
+  });
+  const [period, setPeriod] = useState(() => {
+    if (typeof window !== "undefined") return new URLSearchParams(window.location.search).get("period") ?? "";
+    return "";
+  });
   const [search, setSearch] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
   const [sortBy, setSortBy] = useState<"rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission">("rank");
@@ -57,14 +65,22 @@ export default function AffiliateCreatorsPage() {
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
 
+  const syncUrl = useCallback((newBrandId: string, newPeriod: string) => {
+    const sp = new URLSearchParams();
+    if (newBrandId) sp.set("brandId", newBrandId);
+    if (newPeriod) sp.set("period", newPeriod);
+    const qs = sp.toString();
+    router.replace(`/affiliate/creators${qs ? `?${qs}` : ""}`, { scroll: false });
+  }, [router]);
+
   useEffect(() => {
     fetch("/api/affiliate/brands")
       .then((r) => r.json())
       .then((data: { brands: Brand[] }) => {
         setBrands(data.brands);
-        if (data.brands.length === 1) setBrandId(data.brands[0].id);
+        if (data.brands.length === 1 && !brandId) setBrandId(data.brands[0].id);
       });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const url = brandId ? `/api/affiliate/periods?brandId=${brandId}` : "/api/affiliate/periods";
@@ -225,7 +241,7 @@ export default function AffiliateCreatorsPage() {
         {brands.length > 1 && (
           <div className="min-w-[180px]">
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
-            <Select value={brandId} onChange={(e) => setBrandId(e.target.value)}>
+            <Select value={brandId} onChange={(e) => { setBrandId(e.target.value); syncUrl(e.target.value, period); }}>
               <option value="">All my brands</option>
               {brands.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
             </Select>
@@ -233,7 +249,7 @@ export default function AffiliateCreatorsPage() {
         )}
         <div className="min-w-[160px]">
           <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Period</label>
-          <Select value={period} onChange={(e) => setPeriod(e.target.value)}>
+          <Select value={period} onChange={(e) => { setPeriod(e.target.value); syncUrl(brandId, e.target.value); }}>
             {periods.length === 0 && <option value="">No data</option>}
             {periods.length > 0 && (
               <option value="YTD">📅 {ytdYear} — Year to Date</option>
