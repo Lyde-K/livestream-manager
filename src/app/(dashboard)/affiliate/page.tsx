@@ -124,7 +124,7 @@ export default function AffiliateOverviewPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandId, setBrandId] = useState("");
   const [period, setPeriod] = useState("");         // for single-month mode
-  const [filterMode, setFilterMode] = useState<FilterMode>("ytd");
+  const [filterMode, setFilterMode] = useState<FilterMode>("month");
   const [customFrom, setCustomFrom] = useState(""); // "YYYY-MM"
   const [customTo, setCustomTo] = useState("");     // "YYYY-MM"
   const [data, setData] = useState<OverviewData | null>(null);

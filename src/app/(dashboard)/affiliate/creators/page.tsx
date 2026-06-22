@@ -95,8 +95,8 @@ export default function AffiliateCreatorsPage() {
       .then((r) => r.json())
       .then((data: { periods: string[] }) => {
         setPeriods(data.periods);
-        if (data.periods.length > 0 && period !== "YTD" && !data.periods.includes(period)) {
-          setPeriod("YTD");
+        if (data.periods.length > 0 && !data.periods.includes(period) && period !== "YTD") {
+          setPeriod(data.periods[data.periods.length - 1]);
         }
       });
   }, [brandId]); // eslint-disable-line react-hooks/exhaustive-deps
