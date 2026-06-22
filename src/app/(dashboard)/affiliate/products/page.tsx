@@ -122,7 +122,7 @@ export default function AffiliateProductsPage() {
       .then((data: { periods: string[] }) => {
         setPeriods(data.periods);
         if (data.periods.length > 0 && !data.periods.includes(period) && period !== "YTD") {
-          setPeriod(data.periods[data.periods.length - 1]);
+          setPeriod(data.periods[0]);
         }
       });
   }, [brandId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -293,7 +293,7 @@ export default function AffiliateProductsPage() {
                 const momUp = mom != null && mom >= 0;
                 return (
                   <tr key={r.id} className="border-t cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors" style={{ borderColor: "var(--border)" }}>
-                    <td className="px-2 sm:px-3 py-2 font-mono text-xs whitespace-nowrap" style={{ color: "var(--text-muted)" }}>#{i + 1}</td>
+                    <td className="px-2 sm:px-3 py-2 font-mono text-xs whitespace-nowrap text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</td>
                     <td className="px-2 sm:px-3 py-2 max-w-[220px] sm:max-w-[380px]">
                       <div className="flex items-center gap-2 min-w-0">
                         <TierChip tier={r.tier} />

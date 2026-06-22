@@ -96,7 +96,7 @@ export default function AffiliateCreatorsPage() {
       .then((data: { periods: string[] }) => {
         setPeriods(data.periods);
         if (data.periods.length > 0 && !data.periods.includes(period) && period !== "YTD") {
-          setPeriod(data.periods[data.periods.length - 1]);
+          setPeriod(data.periods[0]);
         }
       });
   }, [brandId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -305,7 +305,7 @@ export default function AffiliateCreatorsPage() {
                 <SortableTh field="rank" align="center" tooltip="GMV rank for the selected period — #1 is the top earner. Ties share the same rank.">Rank</SortableTh>
                 <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Creator</th>
                 {brands.length > 1 && (
-                  <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>Brand</th>
+                  <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>Brand</th>
                 )}
                 <SortableTh field="gmv" align="center" tooltip="Gross Merchandise Value — total sales (RM) generated through this creator's content this period.">GMV</SortableTh>
                 <SortableTh field="estCommission" align="center" tooltip="Estimated commission payout to this creator based on their commission rate and GMV.">Est. Comm</SortableTh>
@@ -353,7 +353,7 @@ export default function AffiliateCreatorsPage() {
                     </div>
                   </td>
                   {brands.length > 1 && (
-                    <td className="px-2 sm:px-3 py-2 text-xs hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{r.brand.name}</td>
+                    <td className="px-2 sm:px-3 py-2 text-xs text-center hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{r.brand.name}</td>
                   )}
                   <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(r.gmv)}</td>
                   <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>

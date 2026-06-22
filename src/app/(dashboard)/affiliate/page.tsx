@@ -163,7 +163,7 @@ export default function AffiliateOverviewPage() {
     if (data?.activePeriod && filterMode === "month" && !period) {
       setPeriod(data.activePeriod);
     }
-  }, [data?.activePeriod]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The active display snapshot (range or single-month)
   const displaySnapshot = data?.rangeMode
