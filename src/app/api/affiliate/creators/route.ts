@@ -162,41 +162,41 @@ export async function GET(req: NextRequest) {
   if (search) where.creatorName = { contains: search, mode: "insensitive" };
   if (label) where.label = label;
 
-  const rows = await prisma.affiliateCreatorStat.findMany({
-    where,
-    orderBy: { [sortBy]: sortDir },
-    take,
-    skip,
-    include: { brand: { select: { id: true, name: true, color: true } } },
-  });
+  const previousPeriod = previousMonth(period);
 
-  const total = await prisma.affiliateCreatorStat.count({ where });
+  // Run all 4 queries in parallel — previously 4 sequential roundtrips
+  const [rows, total, allForRank, allPrevForRank] = await Promise.all([
+    prisma.affiliateCreatorStat.findMany({
+      where,
+      orderBy: { [sortBy]: sortDir },
+      take,
+      skip,
+      include: { brand: { select: { id: true, name: true, color: true } } },
+    }),
+    prisma.affiliateCreatorStat.count({ where }),
+    prisma.affiliateCreatorStat.findMany({
+      where,
+      select: { id: true, gmv: true, estCommission: true, videos: true, liveStreams: true },
+      orderBy: { gmv: "desc" },
+    }),
+    previousPeriod
+      ? prisma.affiliateCreatorStat.findMany({
+          where: { brandId: where.brandId, period: previousPeriod, ...typeFilter },
+          select: { id: true, gmv: true, creatorName: true, brandId: true },
+          orderBy: { gmv: "desc" },
+        })
+      : Promise.resolve([]),
+  ]);
 
-  // Fetch all rows for ranking + aggregate totals (respects all filters, no pagination)
-  const allForRank = await prisma.affiliateCreatorStat.findMany({
-    where,
-    select: { id: true, gmv: true, estCommission: true, videos: true, liveStreams: true },
-    orderBy: { gmv: "desc" },
-  });
   const rankMap = new Map(allForRank.map((r, i) => [r.id, i + 1]));
 
   const aggregateTotals = {
-    totalGmv:        allForRank.reduce((s, r) => s + Number(r.gmv), 0),
-    totalCommission: allForRank.reduce((s, r) => s + Number(r.estCommission), 0),
-    totalVideos:     allForRank.reduce((s, r) => s + r.videos, 0),
-    totalLiveStreams: allForRank.reduce((s, r) => s + r.liveStreams, 0),
+    totalGmv:         allForRank.reduce((s, r) => s + Number(r.gmv), 0),
+    totalCommission:  allForRank.reduce((s, r) => s + Number(r.estCommission), 0),
+    totalVideos:      allForRank.reduce((s, r) => s + r.videos, 0),
+    totalLiveStreams:  allForRank.reduce((s, r) => s + r.liveStreams, 0),
   };
-
-  // Compute prev-period ranks the same way for rankDelta
-  const previousPeriod = previousMonth(period);
-  const allPrevForRank = previousPeriod
-    ? await prisma.affiliateCreatorStat.findMany({
-        where: { brandId: where.brandId, period: previousPeriod, ...typeFilter },
-        select: { id: true, gmv: true, creatorName: true, brandId: true },
-        orderBy: { gmv: "desc" },
-      })
-    : [];
-  const prevRankByKey = new Map(allPrevForRank.map((r, i) => [`${r.brandId}|${r.creatorName}`, i + 1]));
+  const prevRankByKey = new Map((allPrevForRank as { id: string; gmv: number; creatorName: string; brandId: string }[]).map((r, i) => [`${r.brandId}|${r.creatorName}`, i + 1]));
 
   const mapped = rows.map((r) => ({
     id: r.id,
