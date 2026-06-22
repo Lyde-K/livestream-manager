@@ -72,6 +72,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const [data, setData] = useState<ProductData | null>(null);
 
+  const backHref = (() => {
+    if (typeof window === "undefined") return "/affiliate/products";
+    const sp = new URLSearchParams(window.location.search);
+    const qs = sp.toString();
+    return `/affiliate/products${qs ? `?${qs}` : ""}`;
+  })();
+
   useEffect(() => {
     fetch(`/api/affiliate/products/${encodeURIComponent(id)}`)
       .then((r) => r.json())
@@ -83,7 +90,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   if (data.history.length === 0) {
     return (
       <div className="space-y-4 animate-in">
-        <Link href="/affiliate/products" className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+        <Link href={backHref} className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
           <ArrowLeft size={14} /> Back to products
         </Link>
         <div className="section-card p-10 text-center">
@@ -100,7 +107,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="space-y-5 animate-in">
-      <Link href="/affiliate/products" className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+      <Link href={backHref} className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
         <ArrowLeft size={14} /> Back to products
       </Link>
 

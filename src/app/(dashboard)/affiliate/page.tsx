@@ -203,6 +203,15 @@ export default function AffiliateOverviewPage() {
   const creatorsHref = `/affiliate/creators${_creatorParams.toString() ? `?${_creatorParams}` : ""}`;
   const productsHref = `/affiliate/products${_productParams.toString() ? `?${_productParams}` : ""}`;
 
+  function creatorHref(name: string) {
+    const qs = _creatorParams.toString();
+    return `/affiliate/creators/${encodeURIComponent(name)}${qs ? `?${qs}` : ""}`;
+  }
+  function productHref(id: string) {
+    const qs = _productParams.toString();
+    return `/affiliate/products/${encodeURIComponent(id)}${qs ? `?${qs}` : ""}`;
+  }
+
   // For type filter: use the pre-filtered lists (live/video) but sort by GMV for ranking accuracy
   const filteredTopCreators = data
     ? affiliateType === "live"
@@ -520,7 +529,7 @@ export default function AffiliateOverviewPage() {
                 {filteredTopCreators.map((c, i) => (
                   <Link
                     key={c.id}
-                    href={`/affiliate/creators/${encodeURIComponent(c.creatorName)}`}
+                    href={creatorHref(c.creatorName)}
                     className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
                     style={{ borderColor: "var(--border)" }}
                   >
@@ -556,7 +565,7 @@ export default function AffiliateOverviewPage() {
                 {data.topProducts.map((p, i) => (
                   <Link
                     key={p.id}
-                    href={`/affiliate/products/${encodeURIComponent(p.id)}`}
+                    href={productHref(p.id)}
                     className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
                     style={{ borderColor: "var(--border)" }}
                   >
@@ -595,7 +604,7 @@ export default function AffiliateOverviewPage() {
                 {data.topLiveCreators.map((c, i) => (
                   <Link
                     key={c.id}
-                    href={`/affiliate/creators/${encodeURIComponent(c.creatorName)}`}
+                    href={creatorHref(c.creatorName)}
                     className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
                     style={{ borderColor: "var(--border)" }}
                   >
@@ -632,7 +641,7 @@ export default function AffiliateOverviewPage() {
                 {data.topVideoCreators.map((c, i) => (
                   <Link
                     key={c.id}
-                    href={`/affiliate/creators/${encodeURIComponent(c.creatorName)}`}
+                    href={creatorHref(c.creatorName)}
                     className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
                     style={{ borderColor: "var(--border)" }}
                   >
