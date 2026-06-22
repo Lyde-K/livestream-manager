@@ -2037,37 +2037,6 @@ function DailyGridView({
                 </th>
               ))}
             </tr>
-            {/* Campaign banner row */}
-            {Object.keys(campaignBrandSlots).length > 0 && (
-              <tr>
-                <td style={{
-                  background: "var(--bg-subtle)", border: "1px solid var(--border)",
-                  padding: "4px 10px", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
-                }}>Campaign</td>
-                {activeSlots.map((_, i) => {
-                  const entries = Object.entries(campaignBrandSlots).filter(([, slots]) => slots.has(i));
-                  if (entries.length === 0) return (
-                    <td key={i} style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)" }} />
-                  );
-                  return (
-                    <td key={i} style={{ border: "1px solid var(--border)", padding: 0, verticalAlign: "top" }}>
-                      {entries.map(([key]) => {
-                        const [, brandName, color, platform] = key.split("|");
-                        const bg = color || "#888";
-                        return (
-                          <div key={key} style={{
-                            background: bg, color: "#fff", fontSize: 10, fontWeight: 700,
-                            padding: "3px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                          }}>
-                            {platform}: {brandName}
-                          </div>
-                        );
-                      })}
-                    </td>
-                  );
-                })}
-              </tr>
-            )}
           </thead>
 
           <tbody>
