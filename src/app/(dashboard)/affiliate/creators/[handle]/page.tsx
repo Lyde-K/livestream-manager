@@ -66,6 +66,13 @@ export default function CreatorProfilePage({ params }: { params: Promise<{ handl
   const { handle } = use(params);
   const [data, setData] = useState<ProfileData | null>(null);
 
+  const backHref = (() => {
+    if (typeof window === "undefined") return "/affiliate/creators";
+    const sp = new URLSearchParams(window.location.search);
+    const qs = sp.toString();
+    return `/affiliate/creators${qs ? `?${qs}` : ""}`;
+  })();
+
   useEffect(() => {
     fetch(`/api/affiliate/creators/${encodeURIComponent(handle)}`)
       .then((r) => r.json())
@@ -77,7 +84,7 @@ export default function CreatorProfilePage({ params }: { params: Promise<{ handl
   if (data.history.length === 0) {
     return (
       <div className="space-y-4 animate-in">
-        <Link href="/affiliate/creators" className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+        <Link href={backHref} className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
           <ArrowLeft size={14} /> Back to creators
         </Link>
         <div className="section-card p-10 text-center">
@@ -116,7 +123,7 @@ export default function CreatorProfilePage({ params }: { params: Promise<{ handl
 
   return (
     <div className="space-y-5 animate-in">
-      <Link href="/affiliate/creators" className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+      <Link href={backHref} className="inline-flex items-center gap-1 text-sm" style={{ color: "var(--text-secondary)" }}>
         <ArrowLeft size={14} /> Back to creators
       </Link>
 

@@ -331,7 +331,7 @@ export default function AffiliateCreatorsPage() {
                     <div className="flex items-center gap-2 min-w-0">
                       <LabelChip label={r.label} />
                       <Link
-                        href={`/affiliate/creators/${encodeURIComponent(r.creatorName)}`}
+                        href={(() => { const sp = new URLSearchParams(); if (brandId) sp.set("brandId", brandId); if (period) sp.set("period", period); const qs = sp.toString(); return `/affiliate/creators/${encodeURIComponent(r.creatorName)}${qs ? `?${qs}` : ""}`; })()}
                         className="font-medium hover:underline truncate"
                         style={{ color: "var(--text-primary)" }}
                       >
