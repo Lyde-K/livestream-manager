@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
 import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
@@ -56,6 +57,8 @@ const PUNCTUALITY_COLORS: Record<string, string> = {
 };
 
 export default function SchedulePage() {
+  const { data: authSession } = useSession();
+  const isAdmin = (authSession?.user as { role?: string })?.role === "ADMIN";
   const calRef = useRef<FullCalendar>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -90,6 +93,7 @@ export default function SchedulePage() {
   const [hoursOpen, setHoursOpen] = useState(false);
   const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [hoursLoading, setHoursLoading] = useState(false);
+  const [clearAllLoading, setClearAllLoading] = useState(false);
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("calendar");
   const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
@@ -216,6 +220,31 @@ export default function SchedulePage() {
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     setDetailSession(null);
     await reloadCurrentRange();
+  }
+
+  async function clearAllMonth() {
+    // Derive the active month: use gridDate in grid mode, else calendar's active date
+    const activeDate = viewMode === "grid"
+      ? parseISO(gridDate)
+      : calRef.current ? calRef.current.getApi().getDate() : new Date();
+    const monthLabel = format(activeDate, "MMMM yyyy");
+    if (!confirm(`Delete ALL sessions in ${monthLabel}? This cannot be undone.`)) return;
+    setClearAllLoading(true);
+    const start = `${format(startOfMonth(activeDate), "yyyy-MM-dd")}T00:00:00+08:00`;
+    const end   = `${format(endOfMonth(activeDate),   "yyyy-MM-dd")}T23:59:59+08:00`;
+    const res = await fetch("/api/sessions/bulk", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start, end }),
+    });
+    const data = await res.json();
+    setClearAllLoading(false);
+    if (res.ok) {
+      alert(`Cleared ${data.deleted} session(s) from ${monthLabel}.`);
+      await reloadCurrentRange();
+    } else {
+      alert(`Error: ${data.error}`);
+    }
   }
 
   async function reloadCurrentRange() {
@@ -432,6 +461,12 @@ export default function SchedulePage() {
           <Button variant="outline" onClick={exportMonthEmail} loading={emailLoading}>
             <Mail size={14} /> Email to Clients
           </Button>
+          {isAdmin && (
+            <Button variant="outline" onClick={clearAllMonth} loading={clearAllLoading}
+              style={{ borderColor: "#ef4444", color: "#ef4444" }}>
+              <Trash2 size={14} /> Clear All
+            </Button>
+          )}
           <Button onClick={() => {
             setEditing(null);
             setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "" });

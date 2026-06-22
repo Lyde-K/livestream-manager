@@ -39,3 +39,21 @@ export async function POST(req: NextRequest) {
 
   return Response.json({ created: created.count });
 }
+
+export async function DELETE(req: NextRequest) {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const user = session.user as { role: string };
+  if (user.role !== "ADMIN") return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  const { start, end } = await req.json() as { start: string; end: string };
+  if (!start || !end) return Response.json({ error: "start and end required" }, { status: 400 });
+
+  const deleted = await prisma.session.deleteMany({
+    where: {
+      scheduledStart: { gte: new Date(start), lte: new Date(end) },
+    },
+  });
+
+  return Response.json({ deleted: deleted.count });
+}
