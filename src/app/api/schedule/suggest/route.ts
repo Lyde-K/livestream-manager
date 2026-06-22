@@ -1,7 +1,19 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfMonth, endOfMonth, eachDayOfInterval, format, getDay } from "date-fns";
+import { startOfMonth, endOfMonth, eachDayOfInterval, format, getDay, addDays } from "date-fns";
+
+// Maps slot label → suggested start time shown in the schedule UI
+const SLOT_START: Record<string, string> = {
+  "8am-10am":   "08:00",
+  "10am-12pm":  "10:00",
+  "12pm-2pm":   "12:00",
+  "3pm-5pm":    "15:00",
+  "5pm-7pm":    "17:00",
+  "8pm-10pm":   "20:00",
+  "10pm-12am":  "22:00",
+  "12am-2am":   "00:00",
+};
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -15,6 +27,21 @@ export async function GET(req: NextRequest) {
   const monthStart = startOfMonth(new Date(year, month - 1));
   const monthEnd = endOfMonth(new Date(year, month - 1));
   const allDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+  // Load campaigns for this month to check first-2-days exception
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const campaigns: { startDate: Date }[] = await (prisma as any).campaign.findMany({
+    where: { month, year },
+    select: { startDate: true },
+  });
+  // Build set of dates that are within the first 2 days of any campaign
+  const campaignOpenDates = new Set<string>();
+  for (const c of campaigns) {
+    const start = format(new Date(c.startDate), "yyyy-MM-dd");
+    const day2  = format(addDays(new Date(c.startDate), 1), "yyyy-MM-dd");
+    campaignOpenDates.add(start);
+    campaignOpenDates.add(day2);
+  }
 
   // Load all full-time hosts with preferences
   const hosts = await prisma.liveHost.findMany({
@@ -41,7 +68,6 @@ export async function GET(req: NextRequest) {
     select: { liveHostId: true, brandId: true, gmv: true, actualDurationMinutes: true },
   });
 
-  // gmvPerHour score per (hostId+brandId)
   const perfMap = new Map<string, { totalGmv: number; totalHours: number }>();
   for (const ps of perfSessions) {
     if (!ps.gmv || !ps.actualDurationMinutes) continue;
@@ -83,24 +109,39 @@ export async function GET(req: NextRequest) {
     gmvPerHour: number;
   }[] = [];
 
+  const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
   for (const host of hosts) {
-    // When a brand filter is active and we have enough performance data, limit to top 2
     if (top2HostIds && !top2HostIds.has(host.id)) continue;
 
     const prefs = host.preferences;
-    const preferredSlots: string[] = prefs ? JSON.parse(prefs.preferredSlots) : ["20:00"];
+    const preferredSlots: string[] = prefs ? JSON.parse(prefs.preferredSlots) : ["8pm-10pm"];
     const preferredBrands: string[] = prefs ? JSON.parse(prefs.preferredBrands) : [];
-    const offDays: string[] = prefs ? JSON.parse(prefs.offDays) : [];
 
-    const defaultSlot = preferredSlots[0] || "20:00";
+    // offDays are now recurring day-of-week indices (0=Sun … 6=Sat)
+    // Handle legacy format (date strings) gracefully — treat as no off days
+    const rawOffDays: unknown[] = prefs ? JSON.parse(prefs.offDays) : [];
+    const offDowSet = new Set<number>(
+      rawOffDays.filter((x): x is number => typeof x === "number")
+    );
+
+    // First preferred slot determines the suggested start time
+    const defaultSlot = preferredSlots[0] ?? "8pm-10pm";
+    const suggestedStart = SLOT_START[defaultSlot] ?? "20:00";
 
     for (const day of allDays) {
       const dateStr = format(day, "yyyy-MM-dd");
       const dow = getDay(day); // 0=Sun, 6=Sat
 
+      // Skip weekends for Mon–Fri hosts
       if (host.workingDays === 5 && (dow === 0 || dow === 6)) continue;
 
-      const isOffDay = offDays.includes(dateStr);
+      // Off day check — recurring by day-of-week
+      // Exception: first 2 days of any campaign range override the off day
+      const isRecurringOffDay = offDowSet.has(dow);
+      const isCampaignOpen = campaignOpenDates.has(dateStr);
+      const isOffDay = isRecurringOffDay && !isCampaignOpen;
+
       const existingSessions = host.sessions.filter(
         (s) => format(new Date(s.scheduledStart), "yyyy-MM-dd") === dateStr
       );
@@ -110,15 +151,13 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
       suggestions.push({
         date: dateStr,
         dayOfWeek: DOW_LABELS[dow],
         hostId: host.id,
         hostName: host.user.name,
         displayName: host.displayName,
-        suggestedSlot: defaultSlot,
+        suggestedSlot: suggestedStart,
         preferredBrandIds: preferredBrands,
         hasExistingSession,
         isOffDay,
@@ -127,7 +166,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Sort by date, then by performance (desc), then by host name
   suggestions.sort((a, b) =>
     a.date.localeCompare(b.date) ||
     b.gmvPerHour - a.gmvPerHour ||

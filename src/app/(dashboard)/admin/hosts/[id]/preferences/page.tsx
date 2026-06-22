@@ -1,12 +1,22 @@
 "use client";
 import { useState, useEffect, use } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { ArrowLeft, Plus, X, Clock, Star, CalendarOff, Save } from "lucide-react";
 import Link from "next/link";
-import { format, addDays, startOfMonth, endOfMonth } from "date-fns";
 
-const COMMON_SLOTS = ["08:00","10:00","12:00","14:00","16:00","18:00","20:00","22:00"];
+const SCHEDULE_SLOTS = [
+  { label: "8am–10am",   value: "8am-10am" },
+  { label: "10am–12pm",  value: "10am-12pm" },
+  { label: "12pm–2pm",   value: "12pm-2pm" },
+  { label: "3pm–5pm",    value: "3pm-5pm" },
+  { label: "5pm–7pm",    value: "5pm-7pm" },
+  { label: "8pm–10pm",   value: "8pm-10pm" },
+  { label: "10pm–12am",  value: "10pm-12am" },
+  { label: "12am–2am",   value: "12am-2am" },
+];
+
+const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 interface Brand { id: string; name: string; platform: string; color: string; }
 interface HostInfo { id: string; displayName: string; user: { name: string }; }
@@ -17,14 +27,12 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
   const [brands, setBrands] = useState<Brand[]>([]);
   const [slots, setSlots] = useState<string[]>([]);
   const [preferredBrands, setPreferredBrands] = useState<string[]>([]);
-  const [offDays, setOffDays] = useState<string[]>([]);
+  // offDays stored as day-of-week indices 0=Sun … 6=Sat
+  const [offDays, setOffDays] = useState<number[]>([]);
+  const [brandToAdd, setBrandToAdd] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  // Calendar for off-days picker — current + next month
-  const now = new Date();
-  const [calMonth, setCalMonth] = useState(now.getMonth());
-  const [calYear, setCalYear] = useState(now.getFullYear());
+  const [error, setError] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -32,16 +40,50 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
       fetch("/api/brands").then(r => r.json()),
       fetch(`/api/hosts/${id}/preferences`).then(r => r.json()),
     ]).then(([hostData, brandsData, prefsData]) => {
-      // hostData might be the LiveHost record
       setHost(hostData);
       setBrands(brandsData);
-      setSlots(prefsData.preferredSlots || []);
-      setPreferredBrands(prefsData.preferredBrands || []);
-      setOffDays(prefsData.offDays || []);
+      setSlots(prefsData.preferredSlots ?? []);
+      setPreferredBrands(prefsData.preferredBrands ?? []);
+      // Handle both old date-string format and new DOW index format
+      const raw = prefsData.offDays ?? [];
+      const parsed = raw.filter((x: unknown) => typeof x === "number") as number[];
+      setOffDays(parsed);
     });
   }, [id]);
 
+  function toggleSlot(val: string) {
+    setSlots(s => s.includes(val) ? s.filter(x => x !== val) : [...s, val]);
+  }
+
+  function addBrand() {
+    if (!brandToAdd || preferredBrands.includes(brandToAdd)) return;
+    setPreferredBrands(b => [...b, brandToAdd]);
+    setBrandToAdd("");
+  }
+
+  function removeBrand(id: string) {
+    setPreferredBrands(b => b.filter(x => x !== id));
+  }
+
+  function toggleOffDay(dow: number) {
+    setError("");
+    if (offDays.includes(dow)) {
+      setOffDays(d => d.filter(x => x !== dow));
+    } else {
+      if (offDays.length >= 2) {
+        setError("Maximum 2 off days per week allowed.");
+        return;
+      }
+      setOffDays(d => [...d, dow].sort((a, b) => a - b));
+    }
+  }
+
   async function save() {
+    if (offDays.length < 1) {
+      setError("Please select at least 1 off day per week.");
+      return;
+    }
+    setError("");
     setSaving(true);
     await fetch(`/api/hosts/${id}/preferences`, {
       method: "PUT",
@@ -53,29 +95,7 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
     setTimeout(() => setSaved(false), 2000);
   }
 
-  function toggleSlot(slot: string) {
-    setSlots(s => s.includes(slot) ? s.filter(x => x !== slot) : [...s, slot].sort());
-  }
-  function toggleBrand(brandId: string) {
-    setPreferredBrands(b => b.includes(brandId) ? b.filter(x => x !== brandId) : [...b, brandId]);
-  }
-  function toggleOffDay(dateStr: string) {
-    setOffDays(d => d.includes(dateStr) ? d.filter(x => x !== dateStr) : [...d, dateStr].sort());
-  }
-
-  // Build calendar grid for current cal month
-  const mStart = startOfMonth(new Date(calYear, calMonth));
-  const mEnd = endOfMonth(new Date(calYear, calMonth));
-  const calDays: (string | null)[] = [];
-  const firstDow = mStart.getDay(); // 0=Sun
-  for (let i = 0; i < firstDow; i++) calDays.push(null);
-  let cur = mStart;
-  while (cur <= mEnd) {
-    calDays.push(format(cur, "yyyy-MM-dd"));
-    cur = addDays(cur, 1);
-  }
-
-  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const availableBrands = brands.filter(b => !preferredBrands.includes(b.id));
 
   return (
     <div className="space-y-6 animate-in max-w-2xl">
@@ -96,34 +116,34 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
-      {/* ── Preferred Time Slots ── */}
+      {/* ── Preferred Slots ── */}
       <div className="section-card p-5 space-y-3">
         <div className="flex items-center gap-2 mb-1">
           <Clock size={14} style={{ color: "var(--accent)" }} />
-          <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Preferred Start Times</h2>
+          <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Preferred Slots</h2>
         </div>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Toggle the slots this host prefers to start livestreams. Auto-schedule will prioritise these.
+          Select the time slots this host prefers. Auto-schedule will prioritise these slots.
         </p>
         <div className="flex flex-wrap gap-2 mt-2">
-          {COMMON_SLOTS.map(slot => (
+          {SCHEDULE_SLOTS.map(slot => (
             <button
-              key={slot}
-              onClick={() => toggleSlot(slot)}
+              key={slot.value}
+              onClick={() => toggleSlot(slot.value)}
               className="px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-all"
               style={{
-                background: slots.includes(slot) ? "var(--accent)" : "var(--bg-subtle)",
-                color: slots.includes(slot) ? "#fff" : "var(--text-secondary)",
-                border: slots.includes(slot) ? "none" : "1px solid var(--border)",
+                background: slots.includes(slot.value) ? "var(--accent)" : "var(--bg-subtle)",
+                color: slots.includes(slot.value) ? "#fff" : "var(--text-secondary)",
+                border: slots.includes(slot.value) ? "none" : "1px solid var(--border)",
               }}
             >
-              {slot}
+              {slot.label}
             </button>
           ))}
         </div>
         {slots.length > 0 && (
           <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-            Selected: {slots.join(", ")}
+            Selected: {slots.map(v => SCHEDULE_SLOTS.find(s => s.value === v)?.label ?? v).join(", ")}
           </div>
         )}
       </div>
@@ -135,78 +155,78 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
           <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Preferred Brands</h2>
         </div>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Auto-schedule will try to pair this host with these brands first.
+          Auto-schedule will try to pair this host with these brands first. No limit.
         </p>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {brands.map(b => {
-            const selected = preferredBrands.includes(b.id);
-            return (
-              <button
-                key={b.id}
-                onClick={() => toggleBrand(b.id)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
-                style={{
-                  background: selected ? b.color : "var(--bg-subtle)",
-                  color: selected ? "#fff" : "var(--text-secondary)",
-                  border: selected ? "none" : "1px solid var(--border)",
-                }}
-              >
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: selected ? "rgba(255,255,255,0.5)" : b.color }} />
-                {b.name}
-                {selected && <X size={10} />}
-              </button>
-            );
-          })}
+
+        {/* Add brand */}
+        <div className="flex gap-2 mt-2">
+          <Select
+            value={brandToAdd}
+            onChange={e => setBrandToAdd(e.target.value)}
+            className="flex-1"
+          >
+            <option value="">Select a brand to add…</option>
+            {availableBrands.map(b => (
+              <option key={b.id} value={b.id}>{b.name} ({b.platform})</option>
+            ))}
+          </Select>
+          <Button onClick={addBrand} disabled={!brandToAdd} variant="outline">
+            <Plus size={14} /> Add
+          </Button>
         </div>
+
+        {/* Selected brands */}
+        {preferredBrands.length === 0 ? (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>No preferred brands yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-2 mt-1">
+            {preferredBrands.map(bId => {
+              const b = brands.find(x => x.id === bId);
+              if (!b) return null;
+              return (
+                <span key={bId} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                  style={{ background: b.color, color: "#fff" }}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/40 flex-shrink-0" />
+                  {b.name}
+                  <button onClick={() => removeBrand(bId)} className="cursor-pointer opacity-80 hover:opacity-100">
+                    <X size={10} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
         {preferredBrands.length > 0 && (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {preferredBrands.length} brand(s) selected
-          </p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>{preferredBrands.length} brand(s) selected</p>
         )}
       </div>
 
       {/* ── Off Days ── */}
       <div className="section-card p-5 space-y-3">
         <div className="flex items-center gap-2 mb-1">
-          <CalendarOff size={14} style={{ color: "var(--danger)" }} />
+          <CalendarOff size={14} style={{ color: "#ef4444" }} />
           <h2 className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Off Days</h2>
         </div>
         <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Click dates to mark as unavailable. Auto-schedule will skip these days for this host.
+          Select recurring weekly off days. Max 2 per week, minimum 1 per month. These repeat every week and are fixed.
+          Auto-schedule will not assign sessions on these days — except if the off day falls on the first 2 days of a campaign range.
         </p>
 
-        {/* Month nav */}
-        <div className="flex items-center gap-3 mt-2">
-          <button onClick={() => {
-            if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); }
-            else setCalMonth(m => m - 1);
-          }} className="p-1 rounded cursor-pointer" style={{ color: "var(--text-muted)" }}>‹</button>
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-            {MONTHS[calMonth]} {calYear}
-          </span>
-          <button onClick={() => {
-            if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); }
-            else setCalMonth(m => m + 1);
-          }} className="p-1 rounded cursor-pointer" style={{ color: "var(--text-muted)" }}>›</button>
-        </div>
-
-        {/* Calendar grid */}
-        <div className="grid grid-cols-7 gap-1 mt-1">
-          {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d => (
-            <div key={d} className="text-center text-[10px] font-semibold py-1" style={{ color: "var(--text-muted)" }}>{d}</div>
-          ))}
-          {calDays.map((dateStr, i) => {
-            if (!dateStr) return <div key={`empty-${i}`} />;
-            const isOff = offDays.includes(dateStr);
-            const day = Number(dateStr.split("-")[2]);
+        <div className="flex gap-2 mt-3 flex-wrap">
+          {DAYS_OF_WEEK.map((day, dow) => {
+            const selected = offDays.includes(dow);
+            const disabled = !selected && offDays.length >= 2;
             return (
               <button
-                key={dateStr}
-                onClick={() => toggleOffDay(dateStr)}
-                className="aspect-square rounded-lg text-xs font-medium cursor-pointer transition-all flex items-center justify-center"
+                key={dow}
+                onClick={() => !disabled && toggleOffDay(dow)}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
                 style={{
-                  background: isOff ? "var(--danger)" : "var(--bg-subtle)",
-                  color: isOff ? "#fff" : "var(--text-secondary)",
+                  background: selected ? "#ef4444" : "var(--bg-subtle)",
+                  color: selected ? "#fff" : disabled ? "var(--text-muted)" : "var(--text-secondary)",
+                  border: selected ? "none" : "1px solid var(--border)",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  opacity: disabled ? 0.5 : 1,
                 }}
               >
                 {day}
@@ -216,15 +236,13 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
         </div>
 
         {offDays.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {offDays.map(d => (
-              <span key={d} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                style={{ background: "var(--danger-light)", color: "var(--danger-text)", border: "1px solid var(--danger)" }}>
-                {d}
-                <button onClick={() => toggleOffDay(d)} className="cursor-pointer"><X size={10} /></button>
-              </span>
-            ))}
-          </div>
+          <p className="text-sm font-medium mt-2" style={{ color: "#ef4444" }}>
+            Off every {offDays.map(d => DAYS_OF_WEEK[d]).join(" & ")} each week
+          </p>
+        )}
+
+        {error && (
+          <p className="text-xs font-medium" style={{ color: "#ef4444" }}>{error}</p>
         )}
       </div>
 
