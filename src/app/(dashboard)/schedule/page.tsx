@@ -114,12 +114,17 @@ export default function SchedulePage() {
   }
 
   async function loadCampaigns(start: string, end: string) {
-    const s = new Date(start); const e = new Date(end);
-    const months = new Set<string>();
-    for (let d = new Date(s); d <= e; d.setMonth(d.getMonth() + 1))
-      months.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
+    // Slice to YYYY-MM to avoid timezone shifts when parsing +08:00 strings
+    const [sy, sm] = start.slice(0, 7).split("-").map(Number);
+    const [ey, em] = end.slice(0, 7).split("-").map(Number);
+    const months: string[] = [];
+    let y = sy, m = sm;
+    while (y < ey || (y === ey && m <= em)) {
+      months.push(`${y}-${m}`);
+      m++; if (m > 12) { m = 1; y++; }
+    }
     const all: typeof campaigns = [];
-    await Promise.all([...months].map(async (key) => {
+    await Promise.all(months.map(async (key) => {
       const [yr, mo] = key.split("-");
       const res = await fetch(`/api/campaigns?month=${mo}&year=${yr}`, { cache: "no-store" });
       const data = await res.json();
