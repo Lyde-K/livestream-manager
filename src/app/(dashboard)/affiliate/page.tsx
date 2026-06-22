@@ -152,10 +152,11 @@ export default function AffiliateOverviewPage() {
     } else if (filterMode === "month" && period) {
       params.set("period", period);
     }
+    if (affiliateType !== "all") params.set("type", affiliateType);
 
     setData(null);
     fetch(`/api/affiliate/overview?${params}`).then((r) => r.json()).then(setData);
-  }, [brandId, filterMode, period, customFrom, customTo]);
+  }, [brandId, filterMode, period, customFrom, customTo, affiliateType]);
 
   // Sync period from API response on first load
   useEffect(() => {

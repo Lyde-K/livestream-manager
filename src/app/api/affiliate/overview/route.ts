@@ -32,24 +32,32 @@ export async function GET(req: NextRequest) {
   const periodParam = sp.get("period");   // "2026-04" | "YTD" | null
   const fromParam = sp.get("from");       // "2026-01"  (range mode)
   const toParam = sp.get("to");           // "2026-04"  (range mode)
+  const affiliateType = sp.get("type") as "all" | "live" | "video" | null; // creator type filter
 
   if (brandId && !assertBrandAccess(scope, brandId)) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
   const brandFilter = brandId ?? { in: scope.brandIds };
 
+  // Type filter: only include creators who have at least one live/video in that period
+  const typeFilter = affiliateType === "live"
+    ? { liveStreams: { gt: 0 } }
+    : affiliateType === "video"
+    ? { videos: { gt: 0 } }
+    : {};
+
   // ── Always fetch monthly snapshots for trend table ───────────────────────────
   const [grouped, blacklistGrouped] = await Promise.all([
     prisma.affiliateCreatorStat.groupBy({
       by: ["period"],
-      where: { brandId: brandFilter },
+      where: { brandId: brandFilter, ...typeFilter },
       _sum: { gmv: true, estCommission: true, videos: true, liveStreams: true },
       _count: { _all: true },
       orderBy: { period: "asc" },
     }),
     prisma.affiliateCreatorStat.groupBy({
       by: ["period"],
-      where: { brandId: brandFilter, label: "F" },
+      where: { brandId: brandFilter, label: "F", ...typeFilter },
       _count: { _all: true },
     }),
   ]);
@@ -99,7 +107,7 @@ export async function GET(req: NextRequest) {
     const [creatorGrouped, productGrouped, latestCreatorRows, latestProductRows, labelDist] = await Promise.all([
       prisma.affiliateCreatorStat.groupBy({
         by: ["creatorName", "brandId"],
-        where: { brandId: brandFilter, period: { in: rangePeriods } },
+        where: { brandId: brandFilter, period: { in: rangePeriods }, ...typeFilter },
         _sum: { gmv: true, estCommission: true, videos: true, liveStreams: true, samplesShipped: true },
       }),
       prisma.affiliateProductStat.groupBy({
@@ -214,7 +222,7 @@ export async function GET(req: NextRequest) {
   const [topCreators, topProducts, topLiveCreators, topVideoCreators, labelDist, prevLabelDist] = activePeriod
     ? await Promise.all([
         prisma.affiliateCreatorStat.findMany({
-          where: { brandId: brandFilter, period: activePeriod },
+          where: { brandId: brandFilter, period: activePeriod, ...typeFilter },
           orderBy: { gmv: "desc" }, take: 10,
           include: { brand: { select: { name: true } } },
         }),
@@ -235,13 +243,13 @@ export async function GET(req: NextRequest) {
         }),
         prisma.affiliateCreatorStat.groupBy({
           by: ["label"],
-          where: { brandId: brandFilter, period: activePeriod },
+          where: { brandId: brandFilter, period: activePeriod, ...typeFilter },
           _count: { _all: true },
         }),
         prevPeriod
           ? prisma.affiliateCreatorStat.groupBy({
               by: ["label"],
-              where: { brandId: brandFilter, period: prevPeriod },
+              where: { brandId: brandFilter, period: prevPeriod, ...typeFilter },
               _count: { _all: true },
             })
           : Promise.resolve([]),
