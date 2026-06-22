@@ -147,7 +147,13 @@ export default function AffiliateAIAnalysisPage() {
 
       {error && (
         <div className="section-card p-4 border" style={{ borderColor: "#ef4444", background: "color-mix(in oklab, #ef4444 8%, var(--bg-card))" }}>
-          <p className="text-sm font-medium" style={{ color: "#ef4444" }}>Failed to generate analysis: {error}</p>
+          <p className="text-sm font-semibold mb-1" style={{ color: "#ef4444" }}>Failed to generate analysis</p>
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{error}</p>
+          {error.includes("ANTHROPIC_API_KEY") && (
+            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+              Ask your admin to add <strong>ANTHROPIC_API_KEY</strong> to the Vercel environment variables for this project.
+            </p>
+          )}
         </div>
       )}
 

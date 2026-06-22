@@ -251,49 +251,63 @@ export default function AffiliateOverviewPage() {
       {/* Period filter — mode switcher + controls */}
       {data && (data.periods?.length ?? 0) > 0 && (
         <div className="section-card p-3 flex flex-wrap items-start gap-3">
-          {/* Mode buttons */}
-          <div className="flex gap-1">
-            {(["month", "ytd", "range"] as FilterMode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setFilterMode(m)}
-                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
-                style={{
-                  background: filterMode === m ? "var(--accent)" : "var(--bg-subtle)",
-                  color: filterMode === m ? "#fff" : "var(--text-secondary)",
-                }}
-              >
-                {m === "month" ? "Monthly" : m === "ytd" ? `📅 YTD ${ytdYear}` : "Custom range"}
-              </button>
-            ))}
+          {/* Mode buttons — Custom range integrates the picker trigger */}
+          <div className="flex gap-1 flex-wrap items-center">
+            <button
+              onClick={() => setFilterMode("month")}
+              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
+              style={{ background: filterMode === "month" ? "var(--accent)" : "var(--bg-subtle)", color: filterMode === "month" ? "#fff" : "var(--text-secondary)" }}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setFilterMode("ytd")}
+              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
+              style={{ background: filterMode === "ytd" ? "var(--accent)" : "var(--bg-subtle)", color: filterMode === "ytd" ? "#fff" : "var(--text-secondary)" }}
+            >
+              📅 YTD {ytdYear}
+            </button>
+
+            {/* Custom range: clicking sets mode AND opens picker inline */}
+            <div className="relative">
+              <MonthRangePicker
+                from={customFrom}
+                to={customTo}
+                minPeriod={data.periods[0]}
+                maxPeriod={data.periods[data.periods.length - 1]}
+                isActive={filterMode === "range"}
+                onActivate={() => setFilterMode("range")}
+                onChange={(f, t) => { setCustomFrom(f); setCustomTo(t); }}
+              />
+            </div>
+
+            {filterMode === "month" && (
+              <div className="flex gap-1 flex-wrap">
+                {[...data.periods].reverse().map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                    style={{ background: period === p ? "var(--accent)" : "var(--bg-subtle)", color: period === p ? "#fff" : "var(--text-secondary)" }}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {filterMode === "ytd" && (
+              <span className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                <Calendar size={12} /> {data.rangePeriods?.length ?? 0} months
+              </span>
+            )}
+
+            {filterMode === "range" && customFrom && customTo && data.rangePeriods?.length > 0 && (
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {data.rangePeriods.length} month{data.rangePeriods.length !== 1 ? "s" : ""}
+              </span>
+            )}
           </div>
-
-          {/* Monthly pill selector */}
-          {filterMode === "month" && (
-            <div className="flex gap-1 flex-wrap flex-1">
-              {[...data.periods].reverse().map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
-                  style={{
-                    background: period === p ? "var(--accent)" : "var(--bg-subtle)",
-                    color: period === p ? "#fff" : "var(--text-secondary)",
-                  }}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* YTD info */}
-          {filterMode === "ytd" && (
-            <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
-              <Calendar size={13} />
-              Aggregating {data.rangePeriods?.length ?? 0} months of {ytdYear}
-            </div>
-          )}
 
           {/* Affiliate type filter */}
           <div className="flex gap-1 ml-auto">
@@ -302,33 +316,12 @@ export default function AffiliateOverviewPage() {
                 key={t}
                 onClick={() => setAffiliateType(t)}
                 className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
-                style={{
-                  background: affiliateType === t ? "var(--accent)" : "var(--bg-subtle)",
-                  color: affiliateType === t ? "#fff" : "var(--text-secondary)",
-                }}
+                style={{ background: affiliateType === t ? "var(--accent)" : "var(--bg-subtle)", color: affiliateType === t ? "#fff" : "var(--text-secondary)" }}
               >
                 {t === "all" ? "All" : t === "live" ? "🔴 Livestream" : "🎬 Videos"}
               </button>
             ))}
           </div>
-
-          {/* Custom range picker */}
-          {filterMode === "range" && data.periods.length > 0 && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <MonthRangePicker
-                from={customFrom}
-                to={customTo}
-                minPeriod={data.periods[0]}
-                maxPeriod={data.periods[data.periods.length - 1]}
-                onChange={(f, t) => { setCustomFrom(f); setCustomTo(t); }}
-              />
-              {customFrom && customTo && data.rangePeriods?.length > 0 && (
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  {data.rangePeriods.length} month{data.rangePeriods.length !== 1 ? "s" : ""}
-                </span>
-              )}
-            </div>
-          )}
         </div>
       )}
 

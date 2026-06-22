@@ -9,6 +9,8 @@ interface Props {
   to: string;         // "YYYY-MM"
   minPeriod: string;  // "YYYY-MM"
   maxPeriod: string;  // "YYYY-MM"
+  isActive?: boolean; // whether "Custom range" mode is active
+  onActivate?: () => void; // called when user clicks the trigger button
   onChange: (from: string, to: string) => void;
 }
 
@@ -25,7 +27,7 @@ function cmp(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-export function MonthRangePicker({ from, to, minPeriod, maxPeriod, onChange }: Props) {
+export function MonthRangePicker({ from, to, minPeriod, maxPeriod, isActive, onActivate, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selecting, setSelecting] = useState<string | null>(null); // first click anchor
@@ -133,17 +135,22 @@ export function MonthRangePicker({ from, to, minPeriod, maxPeriod, onChange }: P
     ? `${from} → ${to}`
     : selecting
     ? `${selecting} → …`
-    : "Select range";
+    : "Custom range";
+
+  const active = isActive ?? (from !== "" || to !== "");
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => { setOpen((o) => !o); setSelecting(null); }}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
+        onClick={() => {
+          if (!isActive) onActivate?.();
+          setOpen((o) => !o);
+          setSelecting(null);
+        }}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
         style={{
-          background: open ? "color-mix(in oklab, var(--accent) 10%, var(--bg-subtle))" : "var(--bg-subtle)",
-          color: from && to ? "var(--accent)" : "var(--text-secondary)",
-          borderColor: open ? "var(--accent)" : "var(--border)",
+          background: active ? "var(--accent)" : "var(--bg-subtle)",
+          color: active ? "#fff" : "var(--text-secondary)",
         }}
       >
         <Calendar size={12} />
@@ -152,12 +159,13 @@ export function MonthRangePicker({ from, to, minPeriod, maxPeriod, onChange }: P
 
       {open && (
         <div
-          className="absolute z-50 mt-2 p-4 rounded-xl shadow-xl border"
+          className="absolute mt-2 p-4 rounded-xl shadow-2xl border"
           style={{
             background: "var(--bg-card)",
             borderColor: "var(--border)",
             minWidth: 420,
             left: 0,
+            zIndex: 9999,
           }}
         >
           {/* Year navigation */}

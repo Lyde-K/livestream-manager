@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { getAffiliateScope, assertBrandAccess } from "@/lib/affiliate/scope";
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic();
 const MODEL = "claude-sonnet-4-6";
 
 function fmt(n: number) {
@@ -12,6 +11,11 @@ function fmt(n: number) {
 }
 
 export async function GET(req: NextRequest) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return Response.json({ error: "ANTHROPIC_API_KEY is not configured in environment variables" }, { status: 503 });
+  }
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const user = session.user as { id: string; role: string };
@@ -64,7 +68,6 @@ export async function GET(req: NextRequest) {
       by: ["productName", "brandId"],
       where: { brandId: brandFilter, period: { in: ytdPeriods } },
       _sum: { gmv: true, itemsSold: true },
-      orderBy: { _sum: { gmv: "desc" } },
     }),
     prisma.affiliateCreatorStat.findMany({
       where: { brandId: brandFilter, period: latestPeriod },
@@ -96,7 +99,9 @@ export async function GET(req: NextRequest) {
   const totalGmv = creators.reduce((s, c) => s + c.gmv, 0);
   const totalCreators = creators.length;
 
-  // Top products
+  // Top products — sort by GMV desc
+  productGrouped.sort((a, b) => Number(b._sum.gmv ?? 0) - Number(a._sum.gmv ?? 0));
+
   const topProducts = productGrouped.slice(0, 10).map((p) => ({
     name: p.productName,
     brand: brandMap.get(p.brandId) ?? "",
