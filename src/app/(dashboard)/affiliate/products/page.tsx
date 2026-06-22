@@ -70,6 +70,7 @@ export default function AffiliateProductsPage() {
   const [sortBy, setSortBy] = useState<"gmv" | "roi" | "itemsSold" | "videos">("gmv");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [rows, setRows] = useState<ProductRow[]>([]);
+  const [aggregateTotals, setAggregateTotals] = useState<{ totalGmv: number; totalCommission: number; totalItemsSold: number; totalLiveStreams: number } | null>(null);
   const [loading, setLoading] = useState(false);
 
   const syncUrl = useCallback((newBrandId: string, newPeriod: string) => {
@@ -144,20 +145,20 @@ export default function AffiliateProductsPage() {
 
     fetch(`/api/affiliate/products?${params}`)
       .then((r) => r.json())
-      .then((data: { rows: ProductRow[]; categories: string[] }) => {
+      .then((data: { rows: ProductRow[]; categories: string[]; aggregateTotals?: typeof aggregateTotals }) => {
         setRows(data.rows ?? []);
         setCategories(data.categories ?? []);
+        setAggregateTotals(data.aggregateTotals ?? null);
       })
       .finally(() => setLoading(false));
   }, [brandId, period, prevPeriod, search, tier, category, sortBy, sortDir]);
 
-  const summary = useMemo(() => {
-    const totalGmv = rows.reduce((s, r) => s + r.gmv, 0);
-    const totalCommission = rows.reduce((s, r) => s + r.estCommission, 0);
-    const totalItems = rows.reduce((s, r) => s + r.itemsSold, 0);
-    const totalLives = rows.reduce((s, r) => s + r.liveStreams, 0);
-    return { totalGmv, totalCommission, totalItems, totalLives };
-  }, [rows]);
+  const summary = useMemo(() => ({
+    totalGmv:        aggregateTotals?.totalGmv        ?? rows.reduce((s, r) => s + r.gmv, 0),
+    totalCommission: aggregateTotals?.totalCommission  ?? rows.reduce((s, r) => s + r.estCommission, 0),
+    totalItems:      aggregateTotals?.totalItemsSold   ?? rows.reduce((s, r) => s + r.itemsSold, 0),
+    totalLives:      aggregateTotals?.totalLiveStreams ?? rows.reduce((s, r) => s + r.liveStreams, 0),
+  }), [aggregateTotals, rows]);
 
   function toggleSort(field: typeof sortBy) {
     if (sortBy === field) setSortDir(sortDir === "asc" ? "desc" : "asc");

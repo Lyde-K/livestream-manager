@@ -100,9 +100,17 @@ export async function GET(req: NextRequest) {
       return sortDir === "asc" ? av - bv : bv - av;
     });
 
+    const aggregateTotals = {
+      totalGmv:        results.reduce((s, r) => s + r.gmv, 0),
+      totalCommission: results.reduce((s, r) => s + r.estCommission, 0),
+      totalItemsSold:  results.reduce((s, r) => s + r.itemsSold, 0),
+      totalLiveStreams: results.reduce((s, r) => s + r.liveStreams, 0),
+    };
+
     return Response.json({
       rows: results.slice(0, 200),
       categories: catRows.map((c) => c.category).filter((c): c is string => !!c).sort(),
+      aggregateTotals,
     });
   }
 
@@ -121,7 +129,7 @@ export async function GET(req: NextRequest) {
   if (tier) where.tier = tier;
   if (category) where.category = category;
 
-  const [rows, categories] = await Promise.all([
+  const [rows, categories, totalsAgg] = await Promise.all([
     prisma.affiliateProductStat.findMany({
       where,
       orderBy: { [sortBy]: sortDir },
@@ -132,6 +140,10 @@ export async function GET(req: NextRequest) {
       where: { brandId: brandFilter, period },
       select: { category: true },
       distinct: ["category"],
+    }),
+    prisma.affiliateProductStat.aggregate({
+      where,
+      _sum: { gmv: true, estCommission: true, itemsSold: true, liveStreams: true },
     }),
   ]);
 
@@ -149,7 +161,15 @@ export async function GET(req: NextRequest) {
     for (const pr of prevRows) prevGmvMap.set(`${pr.productId}|${pr.brandId}`, Number(pr.gmv));
   }
 
+  const aggregateTotals = {
+    totalGmv:        Number(totalsAgg._sum.gmv ?? 0),
+    totalCommission: Number(totalsAgg._sum.estCommission ?? 0),
+    totalItemsSold:  totalsAgg._sum.itemsSold ?? 0,
+    totalLiveStreams: totalsAgg._sum.liveStreams ?? 0,
+  };
+
   return Response.json({
+    aggregateTotals,
     rows: rows.map((p) => ({
       id: p.id,
       productId: p.productId,
