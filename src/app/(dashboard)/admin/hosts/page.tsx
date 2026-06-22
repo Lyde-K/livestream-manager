@@ -76,8 +76,11 @@ export default function HostsPage() {
     load();
   }
 
-  const fullTime = hosts.filter(h => h.type !== "PART_TIME");
-  const partTime = hosts.filter(h => h.type === "PART_TIME");
+  const sortByActive = (a: Host, b: Host) =>
+    Number(b.isActive) - Number(a.isActive) || a.user.name.localeCompare(b.user.name);
+
+  const fullTime = hosts.filter(h => h.type !== "PART_TIME").sort(sortByActive);
+  const partTime = hosts.filter(h => h.type === "PART_TIME").sort(sortByActive);
 
   return (
     <div className="space-y-5 animate-in">
