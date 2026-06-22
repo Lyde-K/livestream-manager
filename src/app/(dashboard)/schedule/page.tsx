@@ -1880,7 +1880,7 @@ function DailyGridView({
       </div>
 
       {/* Grid table or no-session message */}
-      {daySessions.length === 0 ? (() => {
+      {(filtersActive && daySessions.length === 0) ? (() => {
         const selectedHost = filterHost ? hosts.find((h) => h.id === filterHost) : null;
         const msg = selectedHost
           ? `${selectedHost.user.name} has no session for the day.`
