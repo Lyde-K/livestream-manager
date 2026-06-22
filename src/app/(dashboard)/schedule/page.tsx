@@ -1102,6 +1102,27 @@ interface BulkScheduleModalProps {
   onCreated: () => void;
 }
 
+interface SmartPreviewSession {
+  date: string;
+  dayOfWeek: string;
+  hostId: string;
+  hostName: string;
+  displayName: string;
+  slotValue: string;
+  isCampaignDay: boolean;
+  scheduledStart: string;
+  scheduledEnd: string;
+}
+
+interface SmartSummary {
+  totalSessions: number;
+  totalHours: number;
+  campaignDaySessions: number;
+  regularDaySessions: number;
+  strategy: string;
+}
+
+// legacy CalendarPreview uses this shape
 interface PreviewSession {
   date: string;
   dayOfWeek: string;
@@ -1110,79 +1131,55 @@ interface PreviewSession {
   brandColor: string;
   scheduledStart: string;
   scheduledEnd: string;
+  isCampaignDay?: boolean;
 }
 
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-function BulkScheduleModal({ hosts, brands, rooms, onClose, onCreated }: BulkScheduleModalProps) {
+function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleModalProps) {
   const now = new Date();
-  const [hostId, setHostId] = useState("");
-  const [brand1Id, setBrand1Id] = useState("");
-  const [brand2Id, setBrand2Id] = useState("");
+  const [brandId, setBrandId] = useState("");
+  const [targetHours, setTargetHours] = useState("60");
   const [roomId, setRoomId] = useState(rooms[0]?.id || "");
-  const [platform, setPlatform] = useState("TIKTOK");
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [startTime, setStartTime] = useState("20:00");
-  const [durationH, setDurationH] = useState("2");
-  // 0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat — skip if true
-  const [skipDays, setSkipDays] = useState<Set<number>>(new Set([0, 6]));
-  const [preview, setPreview] = useState<PreviewSession[] | null>(null);
+  const [preview, setPreview] = useState<SmartPreviewSession[] | null>(null);
+  const [summary, setSummary] = useState<SmartSummary | null>(null);
+  const [autoPlatform, setAutoPlatform] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  function toggleSkipDay(dow: number) {
-    setSkipDays(prev => {
-      const next = new Set(prev);
-      next.has(dow) ? next.delete(dow) : next.add(dow);
-      return next;
-    });
+  const selectedBrand = brands.find(b => b.id === brandId);
+
+  async function runPreview() {
+    if (!brandId || !roomId || !targetHours) return;
+    setError("");
+    setLoading(true);
     setPreview(null);
+    setSummary(null);
+    const res = await fetch("/api/schedule/smart-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId, targetHours: Number(targetHours), roomId, month, year }),
+    });
+    const data = await res.json();
+    setLoading(false);
+    if (!res.ok) { setError(data.error ?? "Failed to generate preview"); return; }
+    setPreview(data.preview);
+    setSummary(data.summary);
+    setAutoPlatform(data.platform);
+    setBrandName(data.brandName);
   }
 
-  function generatePreview() {
-    if (!hostId || !brand1Id || !roomId) return;
-    const brandsToUse = [brand1Id, brand2Id].filter(Boolean);
-    const monthStart = startOfMonth(new Date(year, month - 1));
-    const monthEnd = endOfMonth(new Date(year, month - 1));
-    const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-
-    const [sh, sm] = startTime.split(":").map(Number);
-    const totalMins = sh * 60 + sm + Number(durationH) * 60;
-    const endH = Math.floor(totalMins / 60) % 24;
-    const endM = totalMins % 60;
-    const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-
-    let brandIdx = 0;
-    const sessions: PreviewSession[] = [];
-    for (const day of days) {
-      const dow = getDay(day);
-      if (skipDays.has(dow)) continue;
-      const dateStr = format(day, "yyyy-MM-dd");
-      const bId = brandsToUse[brandIdx % brandsToUse.length];
-      const brand = brands.find((b) => b.id === bId);
-      if (!brand) continue;
-      sessions.push({
-        date: dateStr, dayOfWeek: DOW[dow], brandId: bId,
-        brandName: brand.name, brandColor: brand.color,
-        scheduledStart: `${dateStr}T${startTime}`,
-        scheduledEnd: `${dateStr}T${endTime}`,
-      });
-      brandIdx++;
-    }
-    setPreview(sessions);
-  }
-
-  async function createAll() {
-    if (!preview || preview.length === 0) return;
+  async function confirmCreate() {
+    if (!preview || !brandId || !roomId) return;
     setSaving(true);
-    const sessions = preview.map((s) => ({
-      liveHostId: hostId, brandId: s.brandId, roomId, platform,
-      scheduledStart: s.scheduledStart, scheduledEnd: s.scheduledEnd,
-      isCampaignDay: false, notes: "",
-    }));
-    const res = await fetch("/api/sessions/bulk", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessions }),
+    const res = await fetch("/api/schedule/smart-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId, targetHours: Number(targetHours), roomId, month, year, confirm: true }),
     });
     const data = await res.json();
     setSaving(false);
@@ -1190,132 +1187,139 @@ function BulkScheduleModal({ hosts, brands, rooms, onClose, onCreated }: BulkSch
     else alert(`Error: ${data.error}`);
   }
 
-  const selectedHost = hosts.find((h) => h.id === hostId);
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const endTimeStr = (() => {
-    const [sh, sm] = startTime.split(":").map(Number);
-    const t = sh * 60 + sm + Number(durationH) * 60;
-    return `${String(Math.floor(t / 60) % 24).padStart(2,"0")}:${String(t % 60).padStart(2,"0")}`;
-  })();
+  // Convert smart preview to CalendarPreview format
+  const calPreview: PreviewSession[] = (preview ?? []).map(s => ({
+    date: s.date,
+    dayOfWeek: s.dayOfWeek,
+    brandId,
+    brandName: brandName || selectedBrand?.name || "",
+    brandColor: selectedBrand?.color || "#6366f1",
+    scheduledStart: s.scheduledStart,
+    scheduledEnd: s.scheduledEnd,
+    isCampaignDay: s.isCampaignDay,
+  }));
+
+  const tierLabel = Number(targetHours) >= 300 ? "300–400h tier: 12h/day all days"
+    : Number(targetHours) >= 200 ? "200–299h tier: 12h campaign, 6h regular"
+    : "60–199h tier: campaign-focused + historical best times";
 
   return (
-    <Modal open onClose={onClose} title="Auto-Schedule Month" size="xl">
+    <Modal open onClose={onClose} title="Smart Auto-Schedule" size="xl">
       <div className="space-y-5">
-        {/* Config row 1: host + brands */}
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Live Host *</label>
-            <Select value={hostId} onChange={(e) => { setHostId(e.target.value); setPreview(null); }}>
-              <option value="">Select host…</option>
-              {hosts.map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand 1 *</label>
-            <Select value={brand1Id} onChange={(e) => { setBrand1Id(e.target.value); setPreview(null); }}>
-              <option value="">Select brand…</option>
-              {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand 2 (alternates)</label>
-            <Select value={brand2Id} onChange={(e) => { setBrand2Id(e.target.value); setPreview(null); }}>
-              <option value="">Same brand every day</option>
-              {brands.filter((b) => b.id !== brand1Id).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </Select>
-          </div>
-        </div>
-
-        {/* Config row 2: room, platform, month, time, duration */}
+        {/* Inputs */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand *</label>
+            <Select value={brandId} onChange={e => { setBrandId(e.target.value); setPreview(null); setSummary(null); }}>
+              <option value="">Select brand…</option>
+              {["TIKTOK","SHOPEE","BOTH"].map(p => {
+                const group = brands.filter(b => b.platform === p);
+                if (!group.length) return null;
+                const lbl = p === "TIKTOK" ? "TikTok" : p === "SHOPEE" ? "Shopee" : "Both";
+                return (
+                  <optgroup key={p} label={lbl}>
+                    {group.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </optgroup>
+                );
+              })}
+            </Select>
+            {selectedBrand && (
+              <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>
+                Platform: <strong>{selectedBrand.platform}</strong> (auto-detected)
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Target Hours *</label>
+            <Input
+              type="number" min={1} max={744} value={targetHours}
+              onChange={e => { setTargetHours(e.target.value); setPreview(null); setSummary(null); }}
+            />
+            {targetHours && (
+              <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>{tierLabel}</p>
+            )}
+          </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Room *</label>
-            <Select value={roomId} onChange={(e) => { setRoomId(e.target.value); setPreview(null); }}>
+            <Select value={roomId} onChange={e => { setRoomId(e.target.value); setPreview(null); }}>
               <option value="">Select room…</option>
-              {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
-            <Select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-              <option value="TIKTOK">TikTok</option>
-              <option value="SHOPEE">Shopee</option>
-            </Select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Start Time</label>
-            <Input type="time" value={startTime} onChange={(e) => { setStartTime(e.target.value); setPreview(null); }} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Duration</label>
-            <Select value={durationH} onChange={(e) => { setDurationH(e.target.value); setPreview(null); }}>
-              {[1,2,3,4,5,6,7,8].map((n) => <option key={n} value={n}>{n}h</option>)}
+              {rooms.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </Select>
           </div>
         </div>
 
-        {/* Month picker + skip days */}
-        <div className="flex flex-wrap items-end gap-4">
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month</label>
-            <div className="flex gap-1.5">
-              <Select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setPreview(null); }} className="w-24">
-                {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-              </Select>
-              <Input type="number" value={year} min={2024} max={2030}
-                onChange={(e) => { setYear(Number(e.target.value)); setPreview(null); }} className="w-20" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Skip days</label>
-            <div className="flex gap-1">
-              {[["Mon",1],["Tue",2],["Wed",3],["Thu",4],["Fri",5],["Sat",6],["Sun",0]].map(([label, dow]) => (
-                <button
-                  key={dow}
-                  onClick={() => toggleSkipDay(dow as number)}
-                  className="w-9 h-8 rounded text-xs font-medium transition-all cursor-pointer"
-                  style={skipDays.has(dow as number)
-                    ? { background: "#ef444420", color: "#ef4444", border: "1px solid #ef444440" }
-                    : { background: "var(--accent-light)", color: "var(--accent-text)", border: "1px solid var(--accent)30" }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>Red = skipped, coloured = working</p>
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month / Year *</label>
+          <div className="flex gap-1.5">
+            <Select value={month} onChange={e => { setMonth(Number(e.target.value)); setPreview(null); }} className="w-24">
+              {MONTHS_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </Select>
+            <Input type="number" value={year} min={2024} max={2030}
+              onChange={e => { setYear(Number(e.target.value)); setPreview(null); }} className="w-20" />
           </div>
         </div>
 
-        <Button variant="secondary" onClick={generatePreview} disabled={!hostId || !brand1Id || !roomId}>
-          <Sparkles size={13} /> Preview Schedule
+        {error && <p className="text-xs font-medium" style={{ color: "#ef4444" }}>{error}</p>}
+
+        <Button variant="secondary" onClick={runPreview} loading={loading} disabled={!brandId || !roomId || !targetHours}>
+          <Sparkles size={13} /> Generate Smart Preview
         </Button>
 
-        {/* Calendar preview */}
+        {/* Summary + preview */}
+        {summary && (
+          <div className="rounded-xl p-3 space-y-1" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+            <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Preview Summary</p>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+              <span>Sessions: <strong>{summary.totalSessions}</strong></span>
+              <span>Total Hours: <strong>{summary.totalHours}h</strong></span>
+              <span>Campaign Days: <strong>{summary.campaignDaySessions}</strong></span>
+              <span>Regular Days: <strong>{summary.regularDaySessions}</strong></span>
+            </div>
+            <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>{summary.strategy}</p>
+            {autoPlatform && (
+              <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+                Platform: <strong>{autoPlatform}</strong> · Brand: <strong>{brandName}</strong>
+              </p>
+            )}
+          </div>
+        )}
+
         {preview && preview.length === 0 && (
-          <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>No working days found for this selection.</p>
+          <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>No sessions could be generated. Check that full-time hosts are active and campaign data exists.</p>
         )}
 
         {preview && preview.length > 0 && (
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                {preview.length} sessions · {selectedHost?.user.name}
-              </span>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {months[month - 1]} {year} · {startTime}–{endTimeStr}
-              </span>
-            </div>
-            <CalendarPreview month={month} year={year} sessions={preview} />
+            <SmartCalendarPreview month={month} year={year} sessions={calPreview} />
+            {/* Per-slot breakdown */}
+            <details className="text-xs">
+              <summary className="cursor-pointer font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
+                View all {preview.length} sessions
+              </summary>
+              <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1">
+                {preview.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 py-0.5">
+                    <span className="w-24 font-mono" style={{ color: "var(--text-muted)" }}>{s.date}</span>
+                    <span style={{ color: "var(--text-secondary)" }}>{s.dayOfWeek}</span>
+                    <span style={{ color: "var(--text-secondary)" }}>{s.slotValue}</span>
+                    <span className="font-medium" style={{ color: "var(--text-primary)" }}>{s.displayName}</span>
+                    {s.isCampaignDay && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Campaign</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button onClick={createAll} loading={saving}>
+              <Button onClick={confirmCreate} loading={saving}>
                 <CalendarPlus size={13} /> Create {preview.length} Sessions
               </Button>
             </div>
           </div>
         )}
 
-        {!preview && (
+        {!preview && !loading && (
           <div className="flex justify-end">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
           </div>
@@ -1325,7 +1329,7 @@ function BulkScheduleModal({ hosts, brands, rooms, onClose, onCreated }: BulkSch
   );
 }
 
-function CalendarPreview({ month, year, sessions }: { month: number; year: number; sessions: PreviewSession[] }) {
+function SmartCalendarPreview({ month, year, sessions }: { month: number; year: number; sessions: PreviewSession[] }) {
   const monthStart = startOfMonth(new Date(year, month - 1));
   const monthEnd = endOfMonth(new Date(year, month - 1));
   const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -1377,12 +1381,19 @@ function CalendarPreview({ month, year, sessions }: { month: number; year: numbe
                       {format(day, "d")}
                     </span>
                     {s && (
-                      <span
-                        className="rounded px-1 py-0.5 font-medium truncate leading-tight"
-                        style={{ background: s.brandColor + "25", color: s.brandColor, fontSize: "10px" }}
-                      >
-                        {s.brandName.split(" ")[0]}
-                      </span>
+                      <>
+                        <span
+                          className="rounded px-1 py-0.5 font-medium truncate leading-tight"
+                          style={{ background: s.brandColor + "25", color: s.brandColor, fontSize: "10px" }}
+                        >
+                          {s.brandName.split(" ")[0]}
+                        </span>
+                        {s.isCampaignDay && (
+                          <span className="rounded px-1 py-0.5 font-semibold leading-tight" style={{ background: "#f59e0b20", color: "#f59e0b", fontSize: "9px" }}>
+                            Campaign
+                          </span>
+                        )}
+                      </>
                     )}
                   </>
                 )}
