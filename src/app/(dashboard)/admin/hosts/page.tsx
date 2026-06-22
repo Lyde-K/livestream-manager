@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Users, ChevronDown, ChevronRight, Phone, CreditCard, Banknote, Settings2, Camera } from "lucide-react";
+import { Plus, Pencil, Users, ChevronDown, ChevronRight, Phone, CreditCard, Banknote, Settings2, Camera, ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
 interface Host {
@@ -186,8 +186,17 @@ interface HostTableProps {
   onAvatarUploaded: () => void;
 }
 
+const PAGE_SIZE = 10;
+
 function HostTable({ rows, title, expandedId, setExpandedId, openEdit, toggleActive, onAvatarUploaded }: HostTableProps) {
   const [uploadingId, setUploadingId] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState(1);
+
+  // Reset to page 1 when rows change (e.g. after add/edit)
+  React.useEffect(() => { setPage(1); }, [rows.length]);
+
+  const totalPages = Math.min(5, Math.ceil(rows.length / PAGE_SIZE));
+  const pageRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   async function handleAvatarUpload(hostId: string, file: File) {
     setUploadingId(hostId);
@@ -229,7 +238,7 @@ function HostTable({ rows, title, expandedId, setExpandedId, openEdit, toggleAct
               </td>
             </tr>
           )}
-          {rows.map((h) => (
+          {pageRows.map((h) => (
             <React.Fragment key={h.id}>
               <tr>
                 <td className="font-medium">
@@ -311,6 +320,45 @@ function HostTable({ rows, title, expandedId, setExpandedId, openEdit, toggleAct
           ))}
         </tbody>
       </table>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, rows.length)} of {rows.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-1.5 rounded disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+              <button
+                key={n}
+                onClick={() => setPage(n)}
+                className="min-w-[28px] h-7 px-2 rounded text-xs font-medium transition-all"
+                style={{
+                  background: page === n ? "var(--accent)" : "transparent",
+                  color: page === n ? "#fff" : "var(--text-secondary)",
+                }}
+              >
+                {n}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="p-1.5 rounded disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
