@@ -3,7 +3,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LabelChip } from "@/components/affiliate/label-chip";
 import { formatCurrency } from "@/lib/utils";
-import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, ChevronDown } from "lucide-react";
+import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, Sparkles } from "lucide-react";
+import { MonthRangePicker } from "@/components/ui/month-range-picker";
 
 interface Brand { id: string; name: string; color: string; client: { user: { name: string } } | null; }
 
@@ -199,20 +200,28 @@ export default function AffiliateOverviewPage() {
   const creatorsHref = `/affiliate/creators${_creatorParams.toString() ? `?${_creatorParams}` : ""}`;
   const productsHref = `/affiliate/products${_productParams.toString() ? `?${_productParams}` : ""}`;
 
+  // For type filter: use the pre-filtered lists (live/video) but sort by GMV for ranking accuracy
   const filteredTopCreators = data
     ? affiliateType === "live"
-      ? data.topLiveCreators
+      ? [...data.topLiveCreators].sort((a, b) => b.gmv - a.gmv)
       : affiliateType === "video"
-      ? data.topVideoCreators
+      ? [...data.topVideoCreators].sort((a, b) => b.gmv - a.gmv)
       : data.topCreators
     : [];
 
   return (
     <div className="space-y-5 animate-in">
-      <div>
+      <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
           <Handshake size={20} /> Affiliate Overview
         </h1>
+        <Link
+          href="/affiliate/ai-analysis"
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+          style={{ background: "color-mix(in oklab, var(--accent) 12%, var(--bg-subtle))", color: "var(--accent)", border: "1px solid color-mix(in oklab, var(--accent) 30%, transparent)" }}
+        >
+          <Sparkles size={13} /> AI Analysis
+        </Link>
       </div>
 
       {/* Brand tabs */}
@@ -303,28 +312,15 @@ export default function AffiliateOverviewPage() {
             ))}
           </div>
 
-          {/* Custom range pickers */}
-          {filterMode === "range" && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <label className="text-xs" style={{ color: "var(--text-muted)" }}>From</label>
-              <input
-                type="month"
-                value={customFrom}
-                min={data.periods[0]}
-                max={data.periods[data.periods.length - 1]}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="px-2 py-1 rounded text-xs border"
-                style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}
-              />
-              <label className="text-xs" style={{ color: "var(--text-muted)" }}>To</label>
-              <input
-                type="month"
-                value={customTo}
-                min={customFrom || data.periods[0]}
-                max={data.periods[data.periods.length - 1]}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="px-2 py-1 rounded text-xs border"
-                style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+          {/* Custom range picker */}
+          {filterMode === "range" && data.periods.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <MonthRangePicker
+                from={customFrom}
+                to={customTo}
+                minPeriod={data.periods[0]}
+                maxPeriod={data.periods[data.periods.length - 1]}
+                onChange={(f, t) => { setCustomFrom(f); setCustomTo(t); }}
               />
               {customFrom && customTo && data.rangePeriods?.length > 0 && (
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>
