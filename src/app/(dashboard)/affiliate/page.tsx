@@ -520,24 +520,23 @@ export default function AffiliateOverviewPage() {
                 </Link>
               </div>
               <div className="space-y-0">
-                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
-                  <span className="w-5 flex-shrink-0" />
+                <div className="flex items-center py-1.5 -mx-1 px-1 gap-1">
+                  <span className="w-7 flex-shrink-0 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>#</span>
                   <span className="w-14 flex-shrink-0" />
                   <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Creator</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>GMV</span>
+                  <span className="w-24 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>GMV</span>
                 </div>
                 {filteredTopCreators.map((c, i) => (
                   <Link
                     key={c.id}
                     href={creatorHref(c.creatorName)}
-                    className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
+                    className="flex items-center py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors gap-1"
                     style={{ borderColor: "var(--border)" }}
                   >
-                    <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
-                    <LabelChip label={c.label} />
+                    <span className="font-mono text-xs w-7 flex-shrink-0 text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
+                    <span className="w-14 flex-shrink-0"><LabelChip label={c.label} /></span>
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }}>{c.creatorName}</span>
-                    {affiliateType === "all" && !data.rangeMode && "prevGmv" in c && <GmvDeltaBadge curr={c.gmv} prev={(c as { prevGmv: number | null }).prevGmv} />}
-                    <span className="font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(c.gmv)}</span>
+                    <span className="w-24 text-center font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(c.gmv)}</span>
                   </Link>
                 ))}
                 {filteredTopCreators.length === 0 && (
@@ -557,22 +556,21 @@ export default function AffiliateOverviewPage() {
                 </Link>
               </div>
               <div className="space-y-0">
-                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
-                  <span className="w-5 flex-shrink-0" />
+                <div className="flex items-center py-1.5 -mx-1 px-1 gap-1">
+                  <span className="w-7 flex-shrink-0 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>#</span>
                   <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Product</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>GMV</span>
+                  <span className="w-24 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>GMV</span>
                 </div>
                 {data.topProducts.map((p, i) => (
                   <Link
                     key={p.id}
                     href={productHref(p.id)}
-                    className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
+                    className="flex items-center py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors gap-1"
                     style={{ borderColor: "var(--border)" }}
                   >
-                    <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
+                    <span className="font-mono text-xs w-7 flex-shrink-0 text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }} title={p.productName}>{p.productName}</span>
-                    {!data.rangeMode && <GmvDeltaBadge curr={p.gmv} prev={p.prevGmv} />}
-                    <span className="font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(p.gmv)}</span>
+                    <span className="w-24 text-center font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(p.gmv)}</span>
                   </Link>
                 ))}
                 {data.topProducts.length === 0 && (
@@ -594,26 +592,25 @@ export default function AffiliateOverviewPage() {
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>{data.activePeriod}</span>
               </div>
               <div className="space-y-0">
-                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
-                  <span className="w-5 flex-shrink-0" />
+                <div className="flex items-center py-1.5 -mx-1 px-1 gap-1">
+                  <span className="w-7 flex-shrink-0 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>#</span>
                   <span className="w-14 flex-shrink-0" />
                   <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Creator</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap mr-1" style={{ color: "var(--text-muted)" }}>GMV</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>Lives</span>
+                  <span className="w-24 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>GMV</span>
+                  <span className="w-14 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Lives</span>
                 </div>
                 {data.topLiveCreators.map((c, i) => (
                   <Link
                     key={c.id}
                     href={creatorHref(c.creatorName)}
-                    className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
+                    className="flex items-center py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors gap-1"
                     style={{ borderColor: "var(--border)" }}
                   >
-                    <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
-                    <LabelChip label={c.label} />
+                    <span className="font-mono text-xs w-7 flex-shrink-0 text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
+                    <span className="w-14 flex-shrink-0"><LabelChip label={c.label} /></span>
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }}>{c.creatorName}</span>
-                    <span className="font-mono tabular-nums text-xs whitespace-nowrap mr-1" style={{ color: "var(--text-secondary)" }}>{formatCurrency(c.gmv)}</span>
-                    <span className="font-mono tabular-nums text-sm whitespace-nowrap font-semibold" style={{ color: "var(--accent)" }}>{c.liveStreams}</span>
-                    <span className="text-xs whitespace-nowrap hidden sm:inline" style={{ color: "var(--text-muted)" }}>lives</span>
+                    <span className="w-24 text-center font-mono tabular-nums text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>{formatCurrency(c.gmv)}</span>
+                    <span className="w-14 text-center font-mono tabular-nums text-sm whitespace-nowrap font-semibold" style={{ color: "var(--accent)" }}>{c.liveStreams}</span>
                   </Link>
                 ))}
                 {data.topLiveCreators.length === 0 && (
@@ -631,26 +628,25 @@ export default function AffiliateOverviewPage() {
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>{data.activePeriod}</span>
               </div>
               <div className="space-y-0">
-                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
-                  <span className="w-5 flex-shrink-0" />
+                <div className="flex items-center py-1.5 -mx-1 px-1 gap-1">
+                  <span className="w-7 flex-shrink-0 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>#</span>
                   <span className="w-14 flex-shrink-0" />
                   <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Creator</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap mr-1" style={{ color: "var(--text-muted)" }}>GMV</span>
-                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>Videos</span>
+                  <span className="w-24 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>GMV</span>
+                  <span className="w-14 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Videos</span>
                 </div>
                 {data.topVideoCreators.map((c, i) => (
                   <Link
                     key={c.id}
                     href={creatorHref(c.creatorName)}
-                    className="flex items-center gap-2 py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors"
+                    className="flex items-center py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors gap-1"
                     style={{ borderColor: "var(--border)" }}
                   >
-                    <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
-                    <LabelChip label={c.label} />
+                    <span className="font-mono text-xs w-7 flex-shrink-0 text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
+                    <span className="w-14 flex-shrink-0"><LabelChip label={c.label} /></span>
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }}>{c.creatorName}</span>
-                    <span className="font-mono tabular-nums text-xs whitespace-nowrap mr-1" style={{ color: "var(--text-secondary)" }}>{formatCurrency(c.gmv)}</span>
-                    <span className="font-mono tabular-nums text-sm whitespace-nowrap font-semibold" style={{ color: "var(--accent)" }}>{c.videos}</span>
-                    <span className="text-xs whitespace-nowrap hidden sm:inline" style={{ color: "var(--text-muted)" }}>vids</span>
+                    <span className="w-24 text-center font-mono tabular-nums text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>{formatCurrency(c.gmv)}</span>
+                    <span className="w-14 text-center font-mono tabular-nums text-sm whitespace-nowrap font-semibold" style={{ color: "var(--accent)" }}>{c.videos}</span>
                   </Link>
                 ))}
                 {data.topVideoCreators.length === 0 && (
