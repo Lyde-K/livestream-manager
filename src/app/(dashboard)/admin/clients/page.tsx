@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, UserCheck } from "lucide-react";
+import { Plus, Pencil, UserCheck, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Client {
   id: string;
@@ -18,6 +18,10 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const totalPages = Math.min(5, Math.ceil(clients.length / PAGE_SIZE));
+  const pageClients = clients.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   async function load() {
     const res = await fetch("/api/clients");
@@ -33,7 +37,7 @@ export default function ClientsPage() {
     const url = editing ? `/api/clients/${editing.id}` : "/api/clients";
     const method = editing ? "PUT" : "POST";
     await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    setLoading(false); setOpen(false); load();
+    setLoading(false); setOpen(false); setPage(1); load();
   }
 
   return (
@@ -69,7 +73,7 @@ export default function ClientsPage() {
                 </td>
               </tr>
             )}
-            {clients.map((c) => (
+            {pageClients.map((c) => (
               <tr key={c.id}>
                 <td className="font-medium">
                   <div className="flex items-center gap-2">
@@ -102,6 +106,45 @@ export default function ClientsPage() {
             ))}
           </tbody>
         </table>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, clients.length)} of {clients.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ChevronLeft size={15} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPage(n)}
+                  className="min-w-[28px] h-7 px-2 rounded text-xs font-medium transition-all"
+                  style={{
+                    background: page === n ? "var(--accent)" : "transparent",
+                    color: page === n ? "#fff" : "var(--text-secondary)",
+                  }}
+                >
+                  {n}
+                </button>
+              ))}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit Client" : "Add Client"}>
