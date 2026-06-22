@@ -51,6 +51,10 @@ function toInputMYT(iso: string) {
   const myt = new Date(d.getTime() + 8 * 3600_000);
   return myt.toISOString().slice(0, 16);
 }
+// Format a UTC ISO string in Malaysia time (UTC+8), regardless of browser timezone
+function formatMYT(iso: string, fmt: string): string {
+  return format(parseISO(toInputMYT(iso)), fmt);
+}
 
 const PUNCTUALITY_COLORS: Record<string, string> = {
   EARLY: "#6366f1", ON_TIME: "#22c55e", LATE: "#f59e0b", default: "#94a3b8",
@@ -179,6 +183,22 @@ export default function SchedulePage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewRange, filterHost, filterBrand]);
+
+  // Re-evaluate isCampaignDay whenever campaigns load or form date/brand/platform change
+  useEffect(() => {
+    if (!open || !form.scheduledStart || !form.brandId) return;
+    const should = campaigns.some(c => {
+      const d = form.scheduledStart.slice(0, 10);
+      const start = c.startDate.slice(0, 10);
+      const end   = c.endDate.slice(0, 10);
+      if (d < start || d > end) return false;
+      if (c.brandId && c.brandId !== form.brandId) return false;
+      if (c.platform !== "BOTH" && c.platform !== form.platform) return false;
+      return true;
+    });
+    if (should !== form.isCampaignDay) setForm(f => ({ ...f, isCampaignDay: should }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns, form.scheduledStart, form.brandId, form.platform, open]);
 
   function matchesTypeFilter(s: Session) {
     if (!filterType) return true;
@@ -847,8 +867,8 @@ export default function SchedulePage() {
             const isMonth = arg.view.type === "dayGridMonth";
             const timeFmt = is24h ? "HH:mm" : "h:mm a";
             if (isMonth) {
-              const timeLabel = format(parseISO(s.scheduledStart), timeFmt);
-              const endLabel  = format(parseISO(s.scheduledEnd),   timeFmt);
+              const timeLabel = formatMYT(s.scheduledStart, timeFmt);
+              const endLabel  = formatMYT(s.scheduledEnd,   timeFmt);
               return (
                 <div className="px-1.5 py-0.5 w-full truncate leading-tight"
                   title={`${s.brand.name} · ${s.liveHost?.displayName ?? "Unassigned"} · ${timeLabel}–${endLabel}`}>
@@ -857,9 +877,9 @@ export default function SchedulePage() {
                 </div>
               );
             }
-            // Week / Day view — show start–end time range
-            const timeLabel = format(parseISO(s.scheduledStart), timeFmt);
-            const endLabel  = format(parseISO(s.scheduledEnd),   timeFmt);
+            // List view — show start–end time range
+            const timeLabel = formatMYT(s.scheduledStart, timeFmt);
+            const endLabel  = formatMYT(s.scheduledEnd,   timeFmt);
             return (
               <div className="px-1 py-0.5 truncate leading-tight">
                 <div className="font-semibold truncate">{s.brand.name}</div>
@@ -886,15 +906,15 @@ export default function SchedulePage() {
             <div className="grid grid-cols-2 gap-3">
               <InfoRow label="Room" value={detailSession.room?.name ?? "—"} />
               <InfoRow label="Platform" value={detailSession.platform} />
-              <InfoRow label="Scheduled Start" value={format(new Date(detailSession.scheduledStart), is24h ? "dd MMM yyyy HH:mm" : "dd MMM yyyy h:mm a")} />
-              <InfoRow label="Scheduled End"   value={format(new Date(detailSession.scheduledEnd),   is24h ? "HH:mm" : "h:mm a")} />
+              <InfoRow label="Scheduled Start" value={formatMYT(detailSession.scheduledStart, is24h ? "dd MMM yyyy HH:mm" : "dd MMM yyyy h:mm a")} />
+              <InfoRow label="Scheduled End"   value={formatMYT(detailSession.scheduledEnd,   is24h ? "HH:mm" : "h:mm a")} />
               <InfoRow label="Duration (scheduled)" value={(() => {
                 const ms = new Date(detailSession.scheduledEnd).getTime() - new Date(detailSession.scheduledStart).getTime();
                 const h = Math.floor(ms / 3600000);
                 const m = Math.round((ms % 3600000) / 60000);
                 return m > 0 ? `${h}h ${m}m` : `${h}h`;
               })()} />
-              {detailSession.actualStart && <InfoRow label="Actual Start" value={format(new Date(detailSession.actualStart), is24h ? "HH:mm" : "h:mm a")} />}
+              {detailSession.actualStart && <InfoRow label="Actual Start" value={formatMYT(detailSession.actualStart, is24h ? "HH:mm" : "h:mm a")} />}
               {(detailSession as any).actualDurationMinutes != null && (
                 <InfoRow label="Actual Duration" value={(() => {
                   const min = (detailSession as any).actualDurationMinutes as number;
