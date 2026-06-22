@@ -66,13 +66,10 @@ export default function AffiliateAIAnalysisPage() {
 
   const ytdYear = periods.length > 0 ? periods[0].substring(0, 4) : String(new Date().getFullYear());
 
-  const [streamText, setStreamText] = useState("");
-
   async function generate() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setStreamText("");
     try {
       const params = new URLSearchParams({ period });
       if (brandId) params.set("brandId", brandId);
@@ -81,32 +78,8 @@ export default function AffiliateAIAnalysisPage() {
         const err = await res.json();
         throw new Error(err.error ?? "Failed");
       }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        const lines = accumulated.split("\n");
-        accumulated = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = JSON.parse(line.slice(6));
-          if (payload.type === "meta") {
-            setResult((r) => ({ ...(r ?? {} as ApiResponse), meta: payload.meta }));
-          } else if (payload.type === "chunk") {
-            setStreamText((t) => t + payload.text);
-          } else if (payload.type === "done") {
-            setResult((r) => ({ meta: r!.meta, analysis: payload.analysis }));
-            setStreamText("");
-          } else if (payload.type === "error") {
-            throw new Error(payload.error);
-          }
-        }
-      }
+      const data: ApiResponse = await res.json();
+      setResult(data);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -127,10 +100,10 @@ export default function AffiliateAIAnalysisPage() {
             </Link>
           </div>
           <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
-            <Sparkles size={20} style={{ color: "var(--accent)" }} /> Affiliate AI Analysis
+            <Sparkles size={20} style={{ color: "var(--accent)" }} /> Affiliate Insights
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-            AI-powered insights and recommendations for your affiliate program
+            Data-driven insights and recommendations computed from your affiliate data
           </p>
         </div>
       </div>
@@ -164,29 +137,16 @@ export default function AffiliateAIAnalysisPage() {
           }}
         >
           {loading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-          {loading ? "Analysing…" : result ? "Re-analyse" : "Generate Analysis"}
+          {loading ? "Analysing…" : result ? "Re-analyse" : "Generate Insights"}
         </button>
         {loading && (
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Reading affiliate data and generating insights…
+            Computing insights from your affiliate data…
           </p>
         )}
       </div>
 
-      {/* Live streaming preview while Claude is writing */}
-      {loading && streamText && (
-        <div className="section-card p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Loader2 size={14} className="animate-spin" style={{ color: "var(--accent)" }} />
-            <span className="text-xs font-semibold" style={{ color: "var(--accent)" }}>Generating analysis…</span>
-          </div>
-          <pre className="text-xs whitespace-pre-wrap leading-relaxed font-sans" style={{ color: "var(--text-secondary)", maxHeight: 300, overflowY: "auto" }}>
-            {streamText}
-          </pre>
-        </div>
-      )}
-
-      {loading && !streamText && (
+      {loading && (
         <div className="space-y-3">
           <Skeleton className="h-32" />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -198,13 +158,8 @@ export default function AffiliateAIAnalysisPage() {
 
       {error && (
         <div className="section-card p-4 border" style={{ borderColor: "#ef4444", background: "color-mix(in oklab, #ef4444 8%, var(--bg-card))" }}>
-          <p className="text-sm font-semibold mb-1" style={{ color: "#ef4444" }}>Failed to generate analysis</p>
+          <p className="text-sm font-semibold mb-1" style={{ color: "#ef4444" }}>Failed to generate insights</p>
           <p className="text-xs" style={{ color: "var(--text-secondary)" }}>{error}</p>
-          {error.includes("ANTHROPIC_API_KEY") && (
-            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
-              Ask your admin to add <strong>ANTHROPIC_API_KEY</strong> to the Vercel environment variables for this project.
-            </p>
-          )}
         </div>
       )}
 
@@ -372,8 +327,8 @@ export default function AffiliateAIAnalysisPage() {
       {!result && !loading && (
         <div className="section-card p-12 text-center">
           <Sparkles size={36} className="mx-auto mb-4 opacity-30" style={{ color: "var(--accent)" }} />
-          <p className="text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>No analysis yet</p>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>Select a brand and period above, then click Generate Analysis</p>
+          <p className="text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>No insights yet</p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>Select a brand and period above, then click Generate Insights</p>
         </div>
       )}
     </div>
