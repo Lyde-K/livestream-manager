@@ -54,6 +54,13 @@ export default function AffiliateCreatorsPage() {
     if (typeof window !== "undefined") return new URLSearchParams(window.location.search).get("period") ?? "";
     return "";
   });
+  const [affiliateType] = useState<"all" | "live" | "video">(() => {
+    if (typeof window !== "undefined") {
+      const t = new URLSearchParams(window.location.search).get("type");
+      if (t === "live" || t === "video") return t;
+    }
+    return "all";
+  });
   const [search, setSearch] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
   const [sortBy, setSortBy] = useState<"rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission">("rank");
@@ -108,6 +115,7 @@ export default function AffiliateCreatorsPage() {
     if (brandId) params.set("brandId", brandId);
     if (search.trim()) params.set("search", search.trim());
     if (labelFilter) params.set("label", labelFilter);
+    if (affiliateType !== "all") params.set("type", affiliateType);
 
     fetch(`/api/affiliate/creators?${params}`)
       .then((r) => r.json())
@@ -212,8 +220,13 @@ export default function AffiliateCreatorsPage() {
           <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
             <Users size={20} /> Affiliate Creators
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
+          <p className="text-sm mt-0.5 flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
             {total > 0 ? `${total.toLocaleString()} creators` : "No data"} · sorted by {sortBy} {sortDir}
+            {affiliateType !== "all" && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold" style={{ background: "color-mix(in oklab, var(--accent) 15%, transparent)", color: "var(--accent)" }}>
+                {affiliateType === "live" ? "🔴 Livestream only" : "🎬 Video only"}
+              </span>
+            )}
           </p>
         </div>
 

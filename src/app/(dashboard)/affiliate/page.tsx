@@ -196,6 +196,7 @@ export default function AffiliateOverviewPage() {
   const _creatorParams = new URLSearchParams();
   if (brandId) _creatorParams.set("brandId", brandId);
   if (currentPeriodParam) _creatorParams.set("period", currentPeriodParam);
+  if (affiliateType !== "all") _creatorParams.set("type", affiliateType);
   const _productParams = new URLSearchParams();
   if (brandId) _productParams.set("brandId", brandId);
   if (currentPeriodParam) _productParams.set("period", currentPeriodParam);

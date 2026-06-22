@@ -38,6 +38,13 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: `invalid sortBy: ${sortBy}` }, { status: 400 });
   }
 
+  const affiliateType = sp.get("type") as "all" | "live" | "video" | null;
+  const typeFilter = affiliateType === "live"
+    ? { liveStreams: { gt: 0 } }
+    : affiliateType === "video"
+    ? { videos: { gt: 0 } }
+    : {};
+
   const brandFilter = brandId ?? { in: scope.brandIds };
 
   // ── YTD aggregation — aggregated in PostgreSQL ──────────────────────────────
@@ -55,7 +62,9 @@ export async function GET(req: NextRequest) {
       brandId: string | { in: string[] };
       period: { startsWith: string };
       creatorName?: { contains: string; mode: "insensitive" };
-    } = { brandId: brandFilter, period: { startsWith: `${ytdYear}-` } };
+      liveStreams?: { gt: number };
+      videos?: { gt: number };
+    } = { brandId: brandFilter, period: { startsWith: `${ytdYear}-` }, ...typeFilter };
     if (search) groupByWhere.creatorName = { contains: search, mode: "insensitive" };
 
     const [grouped, latestRows] = await Promise.all([
@@ -143,9 +152,12 @@ export async function GET(req: NextRequest) {
     period: string;
     creatorName?: { contains: string; mode: "insensitive" };
     label?: string;
+    liveStreams?: { gt: number };
+    videos?: { gt: number };
   } = {
     brandId: brandFilter,
     period,
+    ...typeFilter,
   };
   if (search) where.creatorName = { contains: search, mode: "insensitive" };
   if (label) where.label = label;
