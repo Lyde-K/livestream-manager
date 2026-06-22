@@ -83,6 +83,25 @@ model Brand {
   affiliateSampleCosts  AffiliateSampleCost[]
   affiliateProductCosts AffiliateProductCost[]
   gmvTargets            MonthlyGMVTarget[]
+  campaigns             Campaign[]
+}
+
+model Campaign {
+  id        String   @id @default(cuid())
+  name      String
+  platform  String   // TIKTOK | SHOPEE | BOTH
+  startDate DateTime
+  endDate   DateTime
+  month     Int
+  year      Int
+  brandId   String?  // null = applies to all brands on this platform
+  brand     Brand?   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([month, year])
+  @@index([platform])
 }
 
 model AffiliateImport {

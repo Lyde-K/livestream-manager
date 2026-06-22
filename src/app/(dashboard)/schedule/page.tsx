@@ -64,6 +64,7 @@ export default function SchedulePage() {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [campaigns, setCampaigns] = useState<{ id: string; name: string; platform: string; startDate: string; endDate: string; brandId: string | null; brand: { color: string; name: string } | null }[]>([]);
   // Applied filters (drive data fetching + rendering)
   const [filterHost, setFilterHost] = useState("");
   const [filterBrand, setFilterBrand] = useState("");
@@ -112,6 +113,21 @@ export default function SchedulePage() {
     setBrands(await b.json());
   }
 
+  async function loadCampaigns(start: string, end: string) {
+    const s = new Date(start); const e = new Date(end);
+    const months = new Set<string>();
+    for (let d = new Date(s); d <= e; d.setMonth(d.getMonth() + 1))
+      months.add(`${d.getFullYear()}-${d.getMonth() + 1}`);
+    const all: typeof campaigns = [];
+    await Promise.all([...months].map(async (key) => {
+      const [yr, mo] = key.split("-");
+      const res = await fetch(`/api/campaigns?month=${mo}&year=${yr}`, { cache: "no-store" });
+      const data = await res.json();
+      all.push(...data);
+    }));
+    setCampaigns(all);
+  }
+
   async function loadSessions(start: string, end: string) {
     const params = new URLSearchParams({ start, end, _t: String(Date.now()) });
     if (filterHost) params.set("hostId", filterHost);
@@ -151,7 +167,10 @@ export default function SchedulePage() {
   }
 
   useEffect(() => {
-    if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+    if (viewRange.start) {
+      loadSessions(viewRange.start, viewRange.end);
+      loadCampaigns(viewRange.start, viewRange.end);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewRange, filterHost, filterBrand]);
 
@@ -182,6 +201,35 @@ export default function SchedulePage() {
         extendedProps: { session: s },
       };
     });
+
+  // Add campaign periods as background events
+  const campaignEvents = campaigns.map(c => ({
+    id: `campaign-${c.id}`,
+    title: `📢 ${c.name} (${c.platform === "BOTH" ? "TikTok + Shopee" : c.platform === "TIKTOK" ? "TikTok" : "Shopee"})`,
+    start: c.startDate.slice(0, 10),
+    end: (() => { const d = new Date(c.endDate); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })(),
+    display: "background" as const,
+    backgroundColor: c.platform === "TIKTOK" ? "#010101" : c.platform === "SHOPEE" ? "#EE4D2D" : "#6366f1",
+    classNames: ["campaign-bg-event"],
+    extendedProps: { isCampaign: true },
+  }));
+
+  // Check if a given date + brand falls within any campaign
+  function isDateInCampaign(dateStr: string, brandId: string): boolean {
+    const d = dateStr.slice(0, 10);
+    const brand = brands.find(b => b.id === brandId);
+    return campaigns.some(c => {
+      const start = c.startDate.slice(0, 10);
+      const end   = c.endDate.slice(0, 10);
+      if (d < start || d > end) return false;
+      if (c.brandId && c.brandId !== brandId) return false;
+      if (brand) {
+        if (c.platform === "TIKTOK" && brand.platform === "SHOPEE") return false;
+        if (c.platform === "SHOPEE" && brand.platform === "TIKTOK") return false;
+      }
+      return true;
+    });
+  }
 
   function handleDateSelect(arg: DateSelectArg) {
     const startStr = arg.startStr.includes("T") ? arg.startStr : `${arg.startStr}T10:00`;
@@ -781,7 +829,7 @@ export default function SchedulePage() {
           headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek" }}
           buttonText={{ month: "Month", week: "Week", day: "Day", list: "List" }}
           height="calc(100vh - 310px)"
-          events={calEvents}
+          events={[...calEvents, ...campaignEvents]}
           selectable selectMirror editable dayMaxEvents={5}
           slotMinTime="06:00:00" slotMaxTime="26:00:00" scrollTime="08:00:00"
           allDaySlot={false} nowIndicator
@@ -951,7 +999,10 @@ export default function SchedulePage() {
               const autoPlatform = selectedBrand?.platform === "SHOPEE" ? "SHOPEE"
                 : selectedBrand?.platform === "TIKTOK" ? "TIKTOK"
                 : form.platform;
-              setForm({ ...form, brandId: e.target.value, platform: autoPlatform });
+              const autoIsCampaign = form.scheduledStart
+                ? isDateInCampaign(form.scheduledStart, e.target.value)
+                : form.isCampaignDay;
+              setForm({ ...form, brandId: e.target.value, platform: autoPlatform, isCampaignDay: autoIsCampaign });
             }}>
               <option value="">Select brand…</option>
               {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -973,7 +1024,12 @@ export default function SchedulePage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Start Time</label>
-            <Input type="datetime-local" value={form.scheduledStart} onChange={(e) => setForm({ ...form, scheduledStart: e.target.value })} />
+            <Input type="datetime-local" value={form.scheduledStart} onChange={(e) => {
+              const autoIsCampaign = form.brandId
+                ? isDateInCampaign(e.target.value, form.brandId)
+                : form.isCampaignDay;
+              setForm({ ...form, scheduledStart: e.target.value, isCampaignDay: autoIsCampaign });
+            }} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>End Time</label>
