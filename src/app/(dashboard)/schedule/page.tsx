@@ -773,17 +773,6 @@ export default function SchedulePage() {
       {/* View mode toggle */}
       <div className="flex items-center gap-2">
         <button
-          onClick={() => setViewMode("calendar")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
-          style={{
-            borderColor: viewMode === "calendar" ? "var(--accent)" : "var(--border)",
-            color: viewMode === "calendar" ? "var(--accent)" : "var(--text-secondary)",
-            background: viewMode === "calendar" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
-          }}
-        >
-          <Calendar size={13} /> Calendar
-        </button>
-        <button
           onClick={() => setViewMode("grid")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
           style={{
@@ -792,7 +781,18 @@ export default function SchedulePage() {
             background: viewMode === "grid" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
           }}
         >
-          <LayoutGrid size={13} /> Daily Grid
+          <LayoutGrid size={13} /> Daily Schedule
+        </button>
+        <button
+          onClick={() => setViewMode("calendar")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+          style={{
+            borderColor: viewMode === "calendar" ? "var(--accent)" : "var(--border)",
+            color: viewMode === "calendar" ? "var(--accent)" : "var(--text-secondary)",
+            background: viewMode === "calendar" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
+          }}
+        >
+          <Calendar size={13} /> Schedule List
         </button>
       </div>
 
