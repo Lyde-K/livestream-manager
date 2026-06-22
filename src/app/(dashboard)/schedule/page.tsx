@@ -108,9 +108,21 @@ export default function SchedulePage() {
     setSessions(await res.json());
   }
 
+  // Load sessions for the month shown in grid view (MYT-aware boundaries)
+  function gridMonthRange(dateStr: string) {
+    const d = parseISO(dateStr);
+    const first = format(startOfMonth(d), "yyyy-MM-dd");
+    const last  = format(endOfMonth(d),   "yyyy-MM-dd");
+    // +08:00 so the API's new Date() lands at midnight MYT, not midnight UTC
+    return { start: `${first}T00:00:00+08:00`, end: `${last}T23:59:59+08:00` };
+  }
+
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => {
-    if (viewMode === "grid") loadSessions(gridDate, gridDate);
+    if (viewMode === "grid") {
+      const { start, end } = gridMonthRange(gridDate);
+      loadSessions(start, end);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, gridDate]);
 
@@ -195,14 +207,23 @@ export default function SchedulePage() {
     });
     setSaving(false);
     setOpen(false);
-    if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
+    await reloadCurrentRange();
   }
 
   async function deleteSession(id: string) {
     if (!confirm("Delete this session?")) return;
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     setDetailSession(null);
-    if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
+    await reloadCurrentRange();
+  }
+
+  async function reloadCurrentRange() {
+    if (viewMode === "grid") {
+      const { start, end } = gridMonthRange(gridDate);
+      await loadSessions(start, end);
+    } else if (viewRange.start) {
+      await loadSessions(viewRange.start, viewRange.end);
+    }
   }
 
   async function loadSuggestions() {
@@ -284,7 +305,7 @@ export default function SchedulePage() {
     setAssignLoading(false);
     if (res.ok) {
       alert(`Assigned ${data.assigned} of ${data.total} unassigned slots!`);
-      if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
+      await reloadCurrentRange();
     } else {
       alert(`Error: ${data.error}`);
     }
@@ -334,7 +355,7 @@ export default function SchedulePage() {
     setImportLoading(false);
     if (data.ok) {
       setImportResult(data);
-      if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
+      await reloadCurrentRange();
     } else {
       alert(`Import failed: ${data.error}`);
     }
@@ -359,7 +380,7 @@ export default function SchedulePage() {
       }),
     });
     if (!res.ok) { arg.revert(); alert("Failed to update session time."); }
-    else if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
+    else await reloadCurrentRange();
   }
 
   return (
@@ -659,9 +680,17 @@ export default function SchedulePage() {
           setGridDate={setGridDate}
           sessions={sessions}
           rooms={rooms}
+          hosts={hosts}
+          brands={brands}
           filterBrand={filterBrand}
           filterRoom={filterRoom}
           onSessionClick={(s) => setDetailSession(s)}
+          onAddSlot={(roomId, start, end) => {
+            setEditing(null);
+            setForm({ roomId, liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: start, scheduledEnd: end, isCampaignDay: false, notes: "" });
+            setDetailSession(null);
+            setOpen(true);
+          }}
         />
       )}
 
@@ -814,7 +843,7 @@ export default function SchedulePage() {
         <BulkScheduleModal
           hosts={hosts} brands={brands} rooms={rooms}
           onClose={() => setBulkOpen(false)}
-          onCreated={() => { setBulkOpen(false); if (viewRange.start) loadSessions(viewRange.start, viewRange.end); }}
+          onCreated={() => { setBulkOpen(false); reloadCurrentRange(); }}
         />
       )}
 
@@ -823,7 +852,7 @@ export default function SchedulePage() {
         <ManualSlotModal
           hosts={hosts} brands={brands} rooms={rooms}
           onClose={() => setManualOpen(false)}
-          onCreated={() => { setManualOpen(false); if (viewRange.start) loadSessions(viewRange.start, viewRange.end); }}
+          onCreated={() => { setManualOpen(false); reloadCurrentRange(); }}
         />
       )}
 
@@ -1649,19 +1678,32 @@ function sessionOverlapsSlot(session: Session, slot: { start: number; end: numbe
 }
 
 function DailyGridView({
-  gridDate, setGridDate, sessions, rooms, filterBrand, filterRoom, onSessionClick,
+  gridDate, setGridDate, sessions, rooms, hosts: _hosts, brands: _brands, filterBrand, filterRoom, onSessionClick, onAddSlot,
 }: {
   gridDate: string;
   setGridDate: (d: string) => void;
   sessions: Session[];
   rooms: Room[];
+  hosts: Host[];
+  brands: Brand[];
   filterBrand: string;
   filterRoom: string;
   onSessionClick: (s: Session) => void;
+  onAddSlot: (roomId: string, start: string, end: string) => void;
 }) {
 
   const dateObj = parseISO(gridDate);
   const dayLabel = format(dateObj, "d/M/yyyy EEEE");
+
+  // Build a `YYYY-MM-DDTHH:mm` (MYT) string for a slot on the grid date.
+  // Slots past midnight (h >= 24) advance to the next calendar day.
+  function slotDatetime(h: number): string {
+    const extra = h >= 24 ? 1 : 0;
+    const hh = h >= 24 ? h - 24 : h;
+    const base = parseISO(gridDate);
+    base.setDate(base.getDate() + extra);
+    return `${format(base, "yyyy-MM-dd")}T${String(hh).padStart(2, "0")}:00`;
+  }
 
   function prevDay() {
     const d = parseISO(gridDate);
@@ -1841,7 +1883,16 @@ function DailyGridView({
                     {TIME_SLOTS.map((slot, si) => {
                       const session = getSessionForRoomSlot(room.id, slot);
                       if (!session) return (
-                        <td key={si} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }} />
+                        <td key={si}
+                          title="Click to add session"
+                          onClick={() => onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end))}
+                          style={{
+                            border: "1px solid var(--border)", background: "var(--bg-card)",
+                            cursor: "pointer", textAlign: "center", verticalAlign: "middle",
+                          }}
+                        >
+                          <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4, lineHeight: 1 }}>+</span>
+                        </td>
                       );
                       const bg = session.brand.color || "#888";
                       return (
@@ -1873,7 +1924,16 @@ function DailyGridView({
                     {TIME_SLOTS.map((slot, si) => {
                       const session = getSessionForRoomSlot(room.id, slot);
                       if (!session) return (
-                        <td key={si} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }} />
+                        <td key={si}
+                          title="Click to add session"
+                          onClick={() => onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end))}
+                          style={{
+                            border: "1px solid var(--border)", background: "var(--bg-card)",
+                            cursor: "pointer", textAlign: "center", verticalAlign: "middle",
+                          }}
+                        >
+                          <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4, lineHeight: 1 }}>+</span>
+                        </td>
                       );
                       const hostName = session.liveHost?.displayName ?? "—";
                       return (
