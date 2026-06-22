@@ -117,10 +117,10 @@ export default function AffiliateBlacklistPage() {
                 {brands.length > 1 && (
                   <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>Brand</th>
                 )}
-                <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Samples</th>
-                <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Videos</th>
-                <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Lives</th>
-                <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>GMV</th>
+                <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Samples</th>
+                <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Videos</th>
+                <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Lives</th>
+                <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>GMV</th>
                 <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>Reason</th>
               </tr>
             </thead>
@@ -137,10 +137,10 @@ export default function AffiliateBlacklistPage() {
                   {brands.length > 1 && (
                     <td className="px-2 sm:px-3 py-2 text-xs hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{r.brand.name}</td>
                   )}
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap font-semibold" style={{ color: "#ef4444" }}>{r.samplesShipped}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.videos}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.liveStreams}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(r.gmv)}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap font-semibold" style={{ color: "#ef4444" }}>{r.samplesShipped}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.videos}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.liveStreams}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(r.gmv)}</td>
                   <td className="px-2 sm:px-3 py-2 text-xs hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{reasonFor(r)}</td>
                 </tr>
               ))}

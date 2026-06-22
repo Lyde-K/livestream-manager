@@ -460,11 +460,11 @@ export default function AffiliateOverviewPage() {
                 <table className="w-full text-sm">
                   <thead style={{ background: "var(--bg-subtle)" }}>
                     <tr>
-                      <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Period</th>
-                      <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>GMV</th>
-                      <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Videos</th>
-                      <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Lives</th>
-                      <th className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Blacklist</th>
+                      <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Period</th>
+                      <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>GMV</th>
+                      <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Videos</th>
+                      <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Lives</th>
+                      <th className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Blacklist</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -485,15 +485,15 @@ export default function AffiliateOverviewPage() {
                           }}
                           onClick={() => { setFilterMode("month"); setPeriod(s.period); }}
                         >
-                          <td className="px-2 sm:px-3 py-2 font-medium tabular-nums" style={{ color: isActive || inRange ? "var(--accent)" : "var(--text-primary)" }}>
+                          <td className="px-2 sm:px-3 py-2 text-center font-medium tabular-nums" style={{ color: isActive || inRange ? "var(--accent)" : "var(--text-primary)" }}>
                             {s.period}
                             {inRange && <span className="ml-1.5 text-[10px] opacity-60">✓</span>}
                           </td>
-                          <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(s.gmv)}</td>
-                          <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.videos.toLocaleString()}</td>
-                          <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.liveStreams.toLocaleString()}</td>
-                          <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: s.blacklisted > 0 ? "#ef4444" : "var(--text-muted)" }}>
-                            <span className="inline-flex items-center gap-1 justify-end">
+                          <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(s.gmv)}</td>
+                          <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.videos.toLocaleString()}</td>
+                          <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.liveStreams.toLocaleString()}</td>
+                          <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap" style={{ color: s.blacklisted > 0 ? "#ef4444" : "var(--text-muted)" }}>
+                            <span className="inline-flex items-center gap-1 justify-center">
                               {s.blacklisted > 0 && <Ban size={11} />}
                               {s.blacklisted}
                             </span>

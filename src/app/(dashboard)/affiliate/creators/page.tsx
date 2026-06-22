@@ -195,13 +195,13 @@ export default function AffiliateCreatorsPage() {
     return nums;
   }
 
-  function SortableTh({ field, children, align = "left", tooltip }: { field: "rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission"; children: React.ReactNode; align?: "left" | "right"; tooltip?: string }) {
+  function SortableTh({ field, children, align = "left", tooltip }: { field: "rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission"; children: React.ReactNode; align?: "left" | "center" | "right"; tooltip?: string }) {
     const active = sortBy === field;
     return (
       <th
         scope="col"
         title={tooltip}
-        className={`px-2 sm:px-3 py-2 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none ${align === "right" ? "text-right" : "text-left"}`}
+        className={`px-2 sm:px-3 py-2 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none ${align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left"}`}
         style={{ color: active ? "var(--accent)" : "var(--text-secondary)" }}
         onClick={() => toggleSort(field)}
       >
@@ -302,19 +302,19 @@ export default function AffiliateCreatorsPage() {
           <table className="w-full text-sm">
             <thead style={{ background: "var(--bg-subtle)" }}>
               <tr>
-                <SortableTh field="rank" tooltip="GMV rank for the selected period — #1 is the top earner. Ties share the same rank.">Rank</SortableTh>
+                <SortableTh field="rank" align="center" tooltip="GMV rank for the selected period — #1 is the top earner. Ties share the same rank.">Rank</SortableTh>
                 <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Creator</th>
                 {brands.length > 1 && (
                   <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>Brand</th>
                 )}
-                <SortableTh field="gmv" align="right" tooltip="Gross Merchandise Value — total sales (RM) generated through this creator's content this period.">GMV</SortableTh>
-                <SortableTh field="estCommission" align="right" tooltip="Estimated commission payout to this creator based on their commission rate and GMV.">Est. Comm</SortableTh>
-                <SortableTh field="roi" align="right" tooltip="Return on Investment = GMV ÷ Est. Commission. Green ≥ 2x, red < 1x. Higher = more revenue per RM paid out.">ROI</SortableTh>
-                <th title="Shoppable video posts uploaded this period." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>
+                <SortableTh field="gmv" align="center" tooltip="Gross Merchandise Value — total sales (RM) generated through this creator's content this period.">GMV</SortableTh>
+                <SortableTh field="estCommission" align="center" tooltip="Estimated commission payout to this creator based on their commission rate and GMV.">Est. Comm</SortableTh>
+                <SortableTh field="roi" align="center" tooltip="Return on Investment = GMV ÷ Est. Commission. Green ≥ 2x, red < 1x. Higher = more revenue per RM paid out.">ROI</SortableTh>
+                <th title="Shoppable video posts uploaded this period." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>
                   <span className="cursor-pointer select-none" onClick={() => toggleSort("videos")}>Videos</span>
                 </th>
-                <th title="Live streams hosted this period." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Lives</th>
-                <th title="Sample units shipped to this creator — used as the cost basis when computing ROI." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>
+                <th title="Live streams hosted this period." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Lives</th>
+                <th title="Sample units shipped to this creator — used as the cost basis when computing ROI." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>
                   <span className="cursor-pointer select-none" onClick={() => toggleSort("samplesShipped")}>Samples</span>
                 </th>
               </tr>
@@ -328,8 +328,8 @@ export default function AffiliateCreatorsPage() {
               )}
               {rows.map((r) => (
                 <tr key={r.id} className="border-t" style={{ borderColor: "var(--border)", opacity: loading ? 0.5 : 1 }}>
-                  <td className="px-2 sm:px-3 py-2 font-mono text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
-                    <div className="flex items-center gap-1.5">
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                    <div className="flex items-center gap-1.5 justify-center">
                       <span>#{r.rank ?? "—"}</span>
                       {r.rankDelta != null && r.rankDelta !== 0 && (
                         <span className="inline-flex items-center text-[10px] gap-0.5" style={{ color: r.rankDelta > 0 ? "#10b981" : "#ef4444" }}>
@@ -355,16 +355,16 @@ export default function AffiliateCreatorsPage() {
                   {brands.length > 1 && (
                     <td className="px-2 sm:px-3 py-2 text-xs hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{r.brand.name}</td>
                   )}
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(r.gmv)}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(r.gmv)}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
                     {r.estCommission > 0 ? formatCurrency(r.estCommission) : "—"}
                   </td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: r.roi != null && r.roi >= 2 ? "#10b981" : r.roi != null && r.roi < 1 ? "#ef4444" : "var(--text-secondary)" }}>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: r.roi != null && r.roi >= 2 ? "#10b981" : r.roi != null && r.roi < 1 ? "#ef4444" : "var(--text-secondary)" }}>
                     {r.roi != null ? `${r.roi.toFixed(1)}x` : "—"}
                   </td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.videos}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.liveStreams}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.samplesShipped}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.videos}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.liveStreams}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums whitespace-nowrap hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{r.samplesShipped}</td>
                 </tr>
               ))}
             </tbody>

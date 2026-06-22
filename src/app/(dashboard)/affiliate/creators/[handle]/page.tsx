@@ -160,11 +160,11 @@ export default function CreatorProfilePage({ params }: { params: Promise<{ handl
             <thead style={{ background: "var(--bg-subtle)" }}>
               <tr>
                 <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-secondary)" }}>Brand</th>
-                <th title="Total sales (RM) generated with this brand across all tracked months." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Cumulative GMV</th>
-                <th title="Number of months this creator was active (had content or sales) with this brand." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Months</th>
-                <th title="Total shoppable video posts across all months with this brand." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Videos</th>
-                <th title="Total live streams across all months with this brand." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Lives</th>
-                <th title="Most recent label (tier) assigned for this brand. Click any label badge for full tier criteria." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Latest</th>
+                <th title="Total sales (RM) generated with this brand across all tracked months." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Cumulative GMV</th>
+                <th title="Number of months this creator was active (had content or sales) with this brand." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Months</th>
+                <th title="Total shoppable video posts across all months with this brand." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Videos</th>
+                <th title="Total live streams across all months with this brand." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Lives</th>
+                <th title="Most recent label (tier) assigned for this brand. Click any label badge for full tier criteria." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Latest</th>
               </tr>
             </thead>
             <tbody>
@@ -174,11 +174,11 @@ export default function CreatorProfilePage({ params }: { params: Promise<{ handl
                     <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: b.brand.color }} />
                     {b.brand.name}
                   </td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap font-semibold" style={{ color: "var(--accent)" }}>{formatCurrency(b.totalGmv)}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{b.months}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{b.totalVideos}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{b.totalLives}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right whitespace-nowrap">
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap font-semibold" style={{ color: "var(--accent)" }}>{formatCurrency(b.totalGmv)}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{b.months}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{b.totalVideos}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{b.totalLives}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center whitespace-nowrap">
                     <span className="inline-flex items-center gap-1.5">
                       <LabelChip label={b.latestLabel} />
                       <span className="text-[10px] tabular-nums" style={{ color: "var(--text-muted)" }}>{b.latestPeriod}</span>
@@ -198,37 +198,37 @@ export default function CreatorProfilePage({ params }: { params: Promise<{ handl
           <table className="w-full text-sm">
             <thead style={{ background: "var(--bg-subtle)" }}>
               <tr>
-                <th title="Reporting month in YYYY-MM format." className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Period</th>
+                <th title="Reporting month in YYYY-MM format." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Period</th>
                 {data.byBrand.length > 1 && (
                   <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>Brand</th>
                 )}
-                <th title="Creator tier for this month. STAR: top 10% GMV ≥ RM1,000, ROI ≥ 3x, consistency ≥ 80%, top-ranked 3+ consecutive months. A: top 30%, ROI ≥ 2x, consistency ≥ 60%. B: positive GMV, ROI ≥ 1x. F: zero content/GMV or ROI < 1x." className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Label</th>
-                <th title="Gross Merchandise Value — total sales (RM) generated this month." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>GMV</th>
-                <th title="Month-over-Month change in GMV vs the previous month for the same brand. Green = growth, red = decline." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>MoM</th>
-                <th title="Return on Investment = GMV ÷ Est. Commission this month. Green ≥ 2x, red < 1x." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>ROI</th>
-                <th title="Shoppable video posts uploaded this month." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Videos</th>
-                <th title="Live streams hosted this month." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Lives</th>
-                <th title="Sample units received this month — the cost basis for ROI calculation." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden md:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Samples</th>
+                <th title="Creator tier for this month. STAR: top 10% GMV ≥ RM1,000, ROI ≥ 3x, consistency ≥ 80%, top-ranked 3+ consecutive months. A: top 30%, ROI ≥ 2x, consistency ≥ 60%. B: positive GMV, ROI ≥ 1x. F: zero content/GMV or ROI < 1x." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>Label</th>
+                <th title="Gross Merchandise Value — total sales (RM) generated this month." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>GMV</th>
+                <th title="Month-over-Month change in GMV vs the previous month for the same brand. Green = growth, red = decline." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>MoM</th>
+                <th title="Return on Investment = GMV ÷ Est. Commission this month. Green ≥ 2x, red < 1x." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide cursor-help" style={{ color: "var(--text-secondary)" }}>ROI</th>
+                <th title="Shoppable video posts uploaded this month." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Videos</th>
+                <th title="Live streams hosted this month." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Lives</th>
+                <th title="Sample units received this month — the cost basis for ROI calculation." className="px-2 sm:px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide hidden md:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>Samples</th>
               </tr>
             </thead>
             <tbody>
               {histDesc.map((h) => (
                 <tr key={h.id} className="border-t" style={{ borderColor: "var(--border)" }}>
-                  <td className="px-2 sm:px-3 py-2 font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{h.period}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{h.period}</td>
                   {data.byBrand.length > 1 && (
                     <td className="px-2 sm:px-3 py-2 text-xs hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{h.brand.name}</td>
                   )}
-                  <td className="px-2 sm:px-3 py-2"><LabelChip label={h.label} /></td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(h.gmv)}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right whitespace-nowrap">
+                  <td className="px-2 sm:px-3 py-2 text-center"><LabelChip label={h.label} /></td>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(h.gmv)}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center whitespace-nowrap">
                     <DeltaBadge pct={deltaMap.get(h.id) ?? null} />
                   </td>
-                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: h.roi != null && h.roi >= 2 ? "#10b981" : h.roi != null && h.roi < 1 ? "#ef4444" : "var(--text-secondary)" }}>
+                  <td className="px-2 sm:px-3 py-2 text-center font-mono tabular-nums whitespace-nowrap" style={{ color: h.roi != null && h.roi >= 2 ? "#10b981" : h.roi != null && h.roi < 1 ? "#ef4444" : "var(--text-secondary)" }}>
                     {h.roi != null ? `${h.roi.toFixed(1)}x` : "—"}
                   </td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{h.videos}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{h.liveStreams}</td>
-                  <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{h.samplesShipped}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{h.videos}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{h.liveStreams}</td>
+                  <td className="px-2 sm:px-3 py-2 text-center tabular-nums hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{h.samplesShipped}</td>
                 </tr>
               ))}
             </tbody>
