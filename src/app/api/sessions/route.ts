@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { scheduledStart: "asc" },
   });
-  return Response.json(sessions);
+  return Response.json(sessions, {
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function POST(req: NextRequest) {

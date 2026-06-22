@@ -101,10 +101,10 @@ export default function SchedulePage() {
   }
 
   async function loadSessions(start: string, end: string) {
-    const params = new URLSearchParams({ start, end });
+    const params = new URLSearchParams({ start, end, _t: String(Date.now()) });
     if (filterHost) params.set("hostId", filterHost);
     if (filterBrand) params.set("brandId", filterBrand);
-    const res = await fetch(`/api/sessions?${params}`);
+    const res = await fetch(`/api/sessions?${params}`, { cache: "no-store" });
     setSessions(await res.json());
   }
 
@@ -195,14 +195,14 @@ export default function SchedulePage() {
     });
     setSaving(false);
     setOpen(false);
-    if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+    if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
   }
 
   async function deleteSession(id: string) {
     if (!confirm("Delete this session?")) return;
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     setDetailSession(null);
-    if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+    if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
   }
 
   async function loadSuggestions() {
@@ -284,7 +284,7 @@ export default function SchedulePage() {
     setAssignLoading(false);
     if (res.ok) {
       alert(`Assigned ${data.assigned} of ${data.total} unassigned slots!`);
-      if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+      if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
     } else {
       alert(`Error: ${data.error}`);
     }
@@ -334,7 +334,7 @@ export default function SchedulePage() {
     setImportLoading(false);
     if (data.ok) {
       setImportResult(data);
-      if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+      if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
     } else {
       alert(`Import failed: ${data.error}`);
     }
@@ -359,7 +359,7 @@ export default function SchedulePage() {
       }),
     });
     if (!res.ok) { arg.revert(); alert("Failed to update session time."); }
-    else if (viewRange.start) loadSessions(viewRange.start, viewRange.end);
+    else if (viewRange.start) await loadSessions(viewRange.start, viewRange.end);
   }
 
   return (
