@@ -3,6 +3,18 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await params;
+  const host = await prisma.liveHost.findUnique({
+    where: { id },
+    include: { user: { select: { id: true, name: true, email: true } } },
+  });
+  if (!host) return Response.json({ error: "Not found" }, { status: 404 });
+  return Response.json(host);
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session || (session.user as { role: string }).role !== "ADMIN")

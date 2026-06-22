@@ -92,17 +92,13 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/hosts/${id}`).then(r => r.json()),
-      fetch("/api/brands").then(r => r.json()),
-      fetch(`/api/hosts/${id}/preferences`).then(r => r.json()),
-    ]).then(([hostData, brandsData, prefsData]) => {
-      setHost(hostData);
-      setBrands(brandsData);
-      setNormalSlots(prefsData.normalSlots ?? []);
-      setCampaignSlots(prefsData.campaignSlots ?? []);
-      setPreferredBrands(prefsData.preferredBrands ?? []);
-      const raw = prefsData.offDays ?? [];
+    fetch(`/api/hosts/${id}`).then(r => r.ok ? r.json() : null).then(d => { if (d) setHost(d); });
+    fetch("/api/brands").then(r => r.json()).then((d: Brand[]) => { if (Array.isArray(d)) setBrands(d); });
+    fetch(`/api/hosts/${id}/preferences`).then(r => r.json()).then(d => {
+      setNormalSlots(d.normalSlots ?? []);
+      setCampaignSlots(d.campaignSlots ?? []);
+      setPreferredBrands(d.preferredBrands ?? []);
+      const raw = d.offDays ?? [];
       setOffDays(raw.filter((x: unknown) => typeof x === "number") as number[]);
     });
   }, [id]);
