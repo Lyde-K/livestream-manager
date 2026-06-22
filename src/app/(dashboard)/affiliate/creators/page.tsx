@@ -63,8 +63,8 @@ export default function AffiliateCreatorsPage() {
   });
   const [search, setSearch] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
-  const [sortBy, setSortBy] = useState<"rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission">("rank");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortBy, setSortBy] = useState<"rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission">("gmv");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [rows, setRows] = useState<CreatorRow[]>([]);
   const [total, setTotal] = useState(0);
   const [aggregateTotals, setAggregateTotals] = useState<AggregateTotals | null>(null);
