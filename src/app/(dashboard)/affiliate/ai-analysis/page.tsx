@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import { Sparkles, Loader2, RefreshCw, TrendingUp, AlertTriangle, Zap, UserX, Target, ArrowLeft } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 
 interface Brand { id: string; name: string; color: string; }
@@ -65,10 +66,13 @@ export default function AffiliateAIAnalysisPage() {
 
   const ytdYear = periods.length > 0 ? periods[0].substring(0, 4) : String(new Date().getFullYear());
 
+  const [streamText, setStreamText] = useState("");
+
   async function generate() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setStreamText("");
     try {
       const params = new URLSearchParams({ period });
       if (brandId) params.set("brandId", brandId);
@@ -77,8 +81,32 @@ export default function AffiliateAIAnalysisPage() {
         const err = await res.json();
         throw new Error(err.error ?? "Failed");
       }
-      const data = await res.json();
-      setResult(data);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        accumulated += decoder.decode(value, { stream: true });
+        const lines = accumulated.split("\n");
+        accumulated = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = JSON.parse(line.slice(6));
+          if (payload.type === "meta") {
+            setResult((r) => ({ ...(r ?? {} as ApiResponse), meta: payload.meta }));
+          } else if (payload.type === "chunk") {
+            setStreamText((t) => t + payload.text);
+          } else if (payload.type === "done") {
+            setResult((r) => ({ meta: r!.meta, analysis: payload.analysis }));
+            setStreamText("");
+          } else if (payload.type === "error") {
+            throw new Error(payload.error);
+          }
+        }
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -144,6 +172,29 @@ export default function AffiliateAIAnalysisPage() {
           </p>
         )}
       </div>
+
+      {/* Live streaming preview while Claude is writing */}
+      {loading && streamText && (
+        <div className="section-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Loader2 size={14} className="animate-spin" style={{ color: "var(--accent)" }} />
+            <span className="text-xs font-semibold" style={{ color: "var(--accent)" }}>Generating analysis…</span>
+          </div>
+          <pre className="text-xs whitespace-pre-wrap leading-relaxed font-sans" style={{ color: "var(--text-secondary)", maxHeight: 300, overflowY: "auto" }}>
+            {streamText}
+          </pre>
+        </div>
+      )}
+
+      {loading && !streamText && (
+        <div className="space-y-3">
+          <Skeleton className="h-32" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+          </div>
+          <Skeleton className="h-48" />
+        </div>
+      )}
 
       {error && (
         <div className="section-card p-4 border" style={{ borderColor: "#ef4444", background: "color-mix(in oklab, #ef4444 8%, var(--bg-card))" }}>

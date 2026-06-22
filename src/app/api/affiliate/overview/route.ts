@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAffiliateScope, assertBrandAccess } from "@/lib/affiliate/scope";
+import { cachedJson } from "@/lib/affiliate/cache";
 
 interface PeriodSnapshot {
   period: string;
@@ -174,7 +175,7 @@ export async function GET(req: NextRequest) {
       blacklisted:   aggregatedCreators.filter((c) => c.label === "F").length,
     };
 
-    return Response.json({
+    return cachedJson({
       snapshots,
       periods,
       activePeriod,
@@ -273,7 +274,7 @@ export async function GET(req: NextRequest) {
     for (const pp of prevProductStats) prevProductMap.set(`${pp.productId}|${pp.brandId}`, Number(pp.gmv));
   }
 
-  return Response.json({
+  return cachedJson({
     snapshots,
     periods,
     activePeriod,

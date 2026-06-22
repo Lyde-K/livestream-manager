@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAffiliateScope, assertBrandAccess } from "@/lib/affiliate/scope";
+import { cachedJson } from "@/lib/affiliate/cache";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -24,5 +25,5 @@ export async function GET(req: NextRequest) {
     orderBy: { period: "desc" },
   });
   const periods = rows.map((r) => r.period);
-  return Response.json({ periods });
+  return cachedJson({ periods }, 60);
 }

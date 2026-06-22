@@ -5,6 +5,7 @@ import { LabelChip } from "@/components/affiliate/label-chip";
 import { formatCurrency } from "@/lib/utils";
 import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, Sparkles } from "lucide-react";
 import { MonthRangePicker } from "@/components/ui/month-range-picker";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Brand { id: string; name: string; color: string; client: { user: { name: string } } | null; }
 
@@ -326,7 +327,18 @@ export default function AffiliateOverviewPage() {
       )}
 
       {!data && (
-        <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+          </div>
+        </div>
       )}
 
       {data && !displaySnapshot && (

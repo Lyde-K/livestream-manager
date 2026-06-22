@@ -171,33 +171,50 @@ Please provide a structured JSON analysis with the following fields:
 
 Be specific, data-driven, and actionable. Write in plain English suitable for a brand manager. Currency in RM with commas.`;
 
-  try {
-    const message = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
-    });
+  const meta = { brandLabel, periodLabel, totalGmv, totalCreators, labelCounts, ytdPeriods };
 
-    const raw = message.content[0].type === "text" ? message.content[0].text : "";
+  // Stream the response so the client gets data progressively
+  const stream = new TransformStream();
+  const writer = stream.writable.getWriter();
+  const encoder = new TextEncoder();
 
-    // Extract JSON from response
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON in response");
-    const analysis = JSON.parse(jsonMatch[0]);
+  (async () => {
+    try {
+      // Send meta immediately so the UI can render the header while Claude thinks
+      await writer.write(encoder.encode(`data: ${JSON.stringify({ type: "meta", meta })}\n\n`));
 
-    return Response.json({
-      analysis,
-      meta: {
-        brandLabel,
-        periodLabel,
-        totalGmv,
-        totalCreators,
-        labelCounts,
-        ytdPeriods,
-      },
-    });
-  } catch (err) {
-    console.error("AI analysis error:", err);
-    return Response.json({ error: "Failed to generate analysis" }, { status: 500 });
-  }
+      const message = await client.messages.create({
+        model: MODEL,
+        max_tokens: 2000,
+        stream: true,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      let fullText = "";
+      for await (const event of message) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          fullText += event.delta.text;
+          await writer.write(encoder.encode(`data: ${JSON.stringify({ type: "chunk", text: event.delta.text })}\n\n`));
+        }
+      }
+
+      const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON in response");
+      const analysis = JSON.parse(jsonMatch[0]);
+      await writer.write(encoder.encode(`data: ${JSON.stringify({ type: "done", analysis })}\n\n`));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      await writer.write(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
+    } finally {
+      await writer.close();
+    }
+  })();
+
+  return new Response(stream.readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 }

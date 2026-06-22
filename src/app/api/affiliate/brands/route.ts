@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAffiliateScope } from "@/lib/affiliate/scope";
+import { cachedJson } from "@/lib/affiliate/cache";
 
 export async function GET() {
   const session = await auth();
@@ -13,5 +14,5 @@ export async function GET() {
     select: { id: true, name: true, color: true, client: { select: { user: { select: { name: true } } } } },
     orderBy: { name: "asc" },
   });
-  return Response.json({ brands, isAdmin: scope.isAdmin });
+  return cachedJson({ brands, isAdmin: scope.isAdmin }, 60);
 }
