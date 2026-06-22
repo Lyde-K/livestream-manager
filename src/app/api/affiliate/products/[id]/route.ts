@@ -15,11 +15,23 @@ export async function GET(
 
   const { id } = await params;
 
-  // Fetch the target row to get productId + brandId, then load all periods for that product
-  const anchor = await prisma.affiliateProductStat.findUnique({
-    where: { id },
-    select: { productId: true, productName: true, brandId: true, brand: { select: { id: true, name: true, color: true } } },
-  });
+  // Support two id formats:
+  //  1. A real DB UUID (single-period rows)
+  //  2. "brandId|productId" composite (YTD aggregated rows with no latest-period entry)
+  let anchor: { productId: string; productName: string; brandId: string; brand: { id: string; name: string; color: string } } | null = null;
+
+  if (id.includes("|")) {
+    const [brandId, productId] = id.split("|");
+    anchor = await prisma.affiliateProductStat.findFirst({
+      where: { brandId, productId },
+      select: { productId: true, productName: true, brandId: true, brand: { select: { id: true, name: true, color: true } } },
+    });
+  } else {
+    anchor = await prisma.affiliateProductStat.findUnique({
+      where: { id },
+      select: { productId: true, productName: true, brandId: true, brand: { select: { id: true, name: true, color: true } } },
+    });
+  }
 
   if (!anchor || !scope.brandIds.includes(anchor.brandId)) {
     return Response.json({ error: "Not found" }, { status: 404 });
