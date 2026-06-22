@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
-import { ArrowDown, ArrowUp, Download, Loader2, Package, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Loader2, Package, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -70,8 +70,11 @@ export default function AffiliateProductsPage() {
   const [sortBy, setSortBy] = useState<"gmv" | "roi" | "itemsSold" | "videos">("gmv");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [rows, setRows] = useState<ProductRow[]>([]);
-  const [aggregateTotals, setAggregateTotals] = useState<{ totalGmv: number; totalCommission: number; totalItemsSold: number; totalLiveStreams: number } | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [aggregateTotals, setAggregateTotals] = useState<{ totalGmv: number; totalCommission: number; totalItemsSold: number; totalLiveStreams: number; totalSamples: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const PAGE_SIZE = 200;
 
   const syncUrl = useCallback((newBrandId: string, newPeriod: string) => {
     const sp = new URLSearchParams();
@@ -133,10 +136,14 @@ export default function AffiliateProductsPage() {
     return idx > 0 ? periods[idx - 1] : null;
   }, [periods, period]);
 
+  // Reset to page 1 when filters/sort change
+  useEffect(() => { setPage(1); }, [brandId, period, search, tier, category, sortBy, sortDir]);
+
   useEffect(() => {
-    if (!period) { setRows([]); return; }
+    if (!period) { setRows([]); setTotal(0); return; }
     setLoading(true);
-    const params = new URLSearchParams({ period, sortBy, sortDir });
+    const skip = (page - 1) * PAGE_SIZE;
+    const params = new URLSearchParams({ period, sortBy, sortDir, limit: String(PAGE_SIZE), skip: String(skip) });
     if (brandId) params.set("brandId", brandId);
     if (prevPeriod) params.set("prevPeriod", prevPeriod);
     if (search.trim()) params.set("search", search.trim());
@@ -145,20 +152,37 @@ export default function AffiliateProductsPage() {
 
     fetch(`/api/affiliate/products?${params}`)
       .then((r) => r.json())
-      .then((data: { rows: ProductRow[]; categories: string[]; aggregateTotals?: typeof aggregateTotals }) => {
+      .then((data: { rows: ProductRow[]; categories: string[]; total?: number; aggregateTotals?: typeof aggregateTotals }) => {
         setRows(data.rows ?? []);
         setCategories(data.categories ?? []);
+        setTotal(data.total ?? data.rows?.length ?? 0);
         setAggregateTotals(data.aggregateTotals ?? null);
       })
       .finally(() => setLoading(false));
-  }, [brandId, period, prevPeriod, search, tier, category, sortBy, sortDir]);
+  }, [brandId, period, prevPeriod, search, tier, category, sortBy, sortDir, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = useMemo(() => ({
-    totalGmv:        aggregateTotals?.totalGmv        ?? rows.reduce((s, r) => s + r.gmv, 0),
-    totalCommission: aggregateTotals?.totalCommission  ?? rows.reduce((s, r) => s + r.estCommission, 0),
-    totalItems:      aggregateTotals?.totalItemsSold   ?? rows.reduce((s, r) => s + r.itemsSold, 0),
-    totalLives:      aggregateTotals?.totalLiveStreams ?? rows.reduce((s, r) => s + r.liveStreams, 0),
+    totalGmv:        aggregateTotals?.totalGmv         ?? rows.reduce((s, r) => s + r.gmv, 0),
+    totalCommission: aggregateTotals?.totalCommission   ?? rows.reduce((s, r) => s + r.estCommission, 0),
+    totalItems:      aggregateTotals?.totalItemsSold    ?? rows.reduce((s, r) => s + r.itemsSold, 0),
+    totalLives:      aggregateTotals?.totalLiveStreams  ?? rows.reduce((s, r) => s + r.liveStreams, 0),
+    totalSamples:    aggregateTotals?.totalSamples      ?? rows.reduce((s, r) => s + r.samplesShipped, 0),
   }), [aggregateTotals, rows]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  function pageNumbers(): (number | "…")[] {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const delta = 2;
+    const left = Math.max(2, page - delta);
+    const right = Math.min(totalPages - 1, page + delta);
+    const nums: (number | "…")[] = [1];
+    if (left > 2) nums.push("…");
+    for (let i = left; i <= right; i++) nums.push(i);
+    if (right < totalPages - 1) nums.push("…");
+    nums.push(totalPages);
+    return nums;
+  }
 
   function toggleSort(field: typeof sortBy) {
     if (sortBy === field) setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -190,7 +214,7 @@ export default function AffiliateProductsPage() {
             <Package size={20} /> Affiliate Products
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-            {rows.length > 0 ? `${rows.length} products` : "No data"} · sorted by {sortBy} {sortDir}
+            {total > 0 ? `${total.toLocaleString()} products` : "No data"} · sorted by {sortBy} {sortDir}
           </p>
         </div>
         {rows.length > 0 && (
@@ -258,12 +282,13 @@ export default function AffiliateProductsPage() {
         </div>
       </div>
 
-      {rows.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {(rows.length > 0 || aggregateTotals) && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <SummaryCard label="Total GMV" value={formatCurrency(summary.totalGmv)} title={formatCurrency(summary.totalGmv)} />
           <SummaryCard label="Est. Commission" value={formatCurrency(summary.totalCommission)} title={formatCurrency(summary.totalCommission)} />
           <SummaryCard label="Items Sold" value={summary.totalItems.toLocaleString()} />
           <SummaryCard label="Lives" value={summary.totalLives.toLocaleString()} />
+          <SummaryCard label="Samples Sent" value={summary.totalSamples.toLocaleString()} />
         </div>
       )}
 
@@ -294,7 +319,7 @@ export default function AffiliateProductsPage() {
                 const momUp = mom != null && mom >= 0;
                 return (
                   <tr key={r.id} className="border-t cursor-pointer hover:bg-[var(--bg-subtle)] transition-colors" style={{ borderColor: "var(--border)" }}>
-                    <td className="px-2 sm:px-3 py-2 font-mono text-xs whitespace-nowrap text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</td>
+                    <td className="px-2 sm:px-3 py-2 font-mono text-xs whitespace-nowrap text-center" style={{ color: "var(--text-muted)" }}>#{(page - 1) * PAGE_SIZE + i + 1}</td>
                     <td className="px-2 sm:px-3 py-2 max-w-[220px] sm:max-w-[380px]">
                       <div className="flex items-center gap-2 min-w-0">
                         <TierChip tier={r.tier} />
@@ -325,6 +350,49 @@ export default function AffiliateProductsPage() {
             </tbody>
           </table>
         </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total.toLocaleString()}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ChevronLeft size={15} />
+              </button>
+              {pageNumbers().map((n, i) =>
+                n === "…" ? (
+                  <span key={`e${i}`} className="px-1 text-xs" style={{ color: "var(--text-muted)" }}>…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setPage(n as number)}
+                    className="min-w-[28px] h-7 px-2 rounded text-xs font-medium transition-all"
+                    style={{
+                      background: page === n ? "var(--accent)" : "transparent",
+                      color: page === n ? "#fff" : "var(--text-secondary)",
+                    }}
+                  >
+                    {n}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

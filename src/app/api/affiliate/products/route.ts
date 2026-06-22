@@ -21,6 +21,9 @@ export async function GET(req: NextRequest) {
   const prevPeriod = sp.get("prevPeriod");
   const sortBy = sp.get("sortBy") ?? "gmv";
   const sortDir = sp.get("sortDir") === "asc" ? "asc" : "desc";
+  const PAGE_SIZE = 200;
+  const skip = Math.max(0, parseInt(sp.get("skip") ?? "0", 10));
+  const take = Math.min(PAGE_SIZE, Math.max(1, parseInt(sp.get("limit") ?? String(PAGE_SIZE), 10)));
 
   if (!period) return Response.json({ error: "period is required" }, { status: 400 });
   if (brandId && !assertBrandAccess(scope, brandId)) {
@@ -101,14 +104,16 @@ export async function GET(req: NextRequest) {
     });
 
     const aggregateTotals = {
-      totalGmv:        results.reduce((s, r) => s + r.gmv, 0),
-      totalCommission: results.reduce((s, r) => s + r.estCommission, 0),
-      totalItemsSold:  results.reduce((s, r) => s + r.itemsSold, 0),
-      totalLiveStreams: results.reduce((s, r) => s + r.liveStreams, 0),
+      totalGmv:          results.reduce((s, r) => s + r.gmv, 0),
+      totalCommission:   results.reduce((s, r) => s + r.estCommission, 0),
+      totalItemsSold:    results.reduce((s, r) => s + r.itemsSold, 0),
+      totalLiveStreams:  results.reduce((s, r) => s + r.liveStreams, 0),
+      totalSamples:      results.reduce((s, r) => s + r.samplesShipped, 0),
     };
 
     return Response.json({
-      rows: results.slice(0, 200),
+      rows: results.slice(skip, skip + take),
+      total: results.length,
       categories: catRows.map((c) => c.category).filter((c): c is string => !!c).sort(),
       aggregateTotals,
     });
@@ -129,13 +134,15 @@ export async function GET(req: NextRequest) {
   if (tier) where.tier = tier;
   if (category) where.category = category;
 
-  const [rows, categories, totalsAgg] = await Promise.all([
+  const [rows, total, categories, totalsAgg] = await Promise.all([
     prisma.affiliateProductStat.findMany({
       where,
       orderBy: { [sortBy]: sortDir },
-      take: 200,
+      take,
+      skip,
       include: { brand: { select: { id: true, name: true, color: true } } },
     }),
+    prisma.affiliateProductStat.count({ where }),
     prisma.affiliateProductStat.findMany({
       where: { brandId: brandFilter, period },
       select: { category: true },
@@ -143,7 +150,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.affiliateProductStat.aggregate({
       where,
-      _sum: { gmv: true, estCommission: true, itemsSold: true, liveStreams: true },
+      _sum: { gmv: true, estCommission: true, itemsSold: true, liveStreams: true, samplesShipped: true },
     }),
   ]);
 
@@ -162,14 +169,16 @@ export async function GET(req: NextRequest) {
   }
 
   const aggregateTotals = {
-    totalGmv:        Number(totalsAgg._sum.gmv ?? 0),
-    totalCommission: Number(totalsAgg._sum.estCommission ?? 0),
-    totalItemsSold:  totalsAgg._sum.itemsSold ?? 0,
-    totalLiveStreams: totalsAgg._sum.liveStreams ?? 0,
+    totalGmv:         Number(totalsAgg._sum.gmv ?? 0),
+    totalCommission:  Number(totalsAgg._sum.estCommission ?? 0),
+    totalItemsSold:   totalsAgg._sum.itemsSold ?? 0,
+    totalLiveStreams:  totalsAgg._sum.liveStreams ?? 0,
+    totalSamples:     totalsAgg._sum.samplesShipped ?? 0,
   };
 
   return Response.json({
     aggregateTotals,
+    total,
     rows: rows.map((p) => ({
       id: p.id,
       productId: p.productId,
