@@ -166,9 +166,18 @@ export default function HostPreferencesPage({ params }: { params: Promise<{ id: 
             className="flex-1"
           >
             <option value="">Select a brand to add…</option>
-            {availableBrands.map(b => (
-              <option key={b.id} value={b.id}>{b.name} ({b.platform})</option>
-            ))}
+            {["TIKTOK", "SHOPEE", "BOTH"].map(platform => {
+              const group = availableBrands.filter(b => b.platform === platform);
+              if (group.length === 0) return null;
+              const label = platform === "TIKTOK" ? "TikTok" : platform === "SHOPEE" ? "Shopee" : "Both";
+              return (
+                <optgroup key={platform} label={label}>
+                  {group.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </Select>
           <Button onClick={addBrand} disabled={!brandToAdd} variant="outline">
             <Plus size={14} /> Add
