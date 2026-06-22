@@ -35,9 +35,9 @@ const navItems: NavItem[] = [
   { label: "AI Analysis",       href: "/affiliate/ai-analysis",     icon: Sparkles,        roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Import",            href: "/affiliate/import",          icon: Upload,          roles: ["ADMIN"],          group: "AFFILIATE" },
   // MANAGEMENT (admin only)
-  { label: "Campaign Calendar",  href: "/admin/campaign-calendar",   icon: Flag,            roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Brands",            href: "/admin/brands",              icon: Building2,       roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Live Hosts",        href: "/admin/hosts",               icon: Users,           roles: ["ADMIN"], group: "MANAGEMENT" },
+  { label: "Campaign Calendar",  href: "/admin/campaign-calendar",   icon: Flag,            roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Clients",           href: "/admin/clients",             icon: UserCheck,       roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Staff Accounts",    href: "/admin/users",               icon: UsersRound,      roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Rooms",             href: "/admin/rooms",               icon: DoorOpen,        roles: ["ADMIN"], group: "MANAGEMENT" },

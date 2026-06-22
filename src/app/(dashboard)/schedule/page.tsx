@@ -150,6 +150,7 @@ export default function SchedulePage() {
     if (viewMode === "grid") {
       const { start, end } = gridMonthRange(gridDate);
       loadSessions(start, end);
+      loadCampaigns(start, end);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, gridDate]);
@@ -215,18 +216,16 @@ export default function SchedulePage() {
   }));
 
   // Check if a given date + brand falls within any campaign
-  function isDateInCampaign(dateStr: string, brandId: string): boolean {
+  function isDateInCampaign(dateStr: string, brandId: string, sessionPlatform?: string): boolean {
     const d = dateStr.slice(0, 10);
-    const brand = brands.find(b => b.id === brandId);
+    const platform = sessionPlatform ?? form.platform;
     return campaigns.some(c => {
       const start = c.startDate.slice(0, 10);
       const end   = c.endDate.slice(0, 10);
       if (d < start || d > end) return false;
       if (c.brandId && c.brandId !== brandId) return false;
-      if (brand) {
-        if (c.platform === "TIKTOK" && brand.platform === "SHOPEE") return false;
-        if (c.platform === "SHOPEE" && brand.platform === "TIKTOK") return false;
-      }
+      // Campaign platform must match or be BOTH; session platform must match campaign
+      if (c.platform !== "BOTH" && c.platform !== platform) return false;
       return true;
     });
   }
@@ -1000,7 +999,7 @@ export default function SchedulePage() {
                 : selectedBrand?.platform === "TIKTOK" ? "TIKTOK"
                 : form.platform;
               const autoIsCampaign = form.scheduledStart
-                ? isDateInCampaign(form.scheduledStart, e.target.value)
+                ? isDateInCampaign(form.scheduledStart, e.target.value, autoPlatform)
                 : form.isCampaignDay;
               setForm({ ...form, brandId: e.target.value, platform: autoPlatform, isCampaignDay: autoIsCampaign });
             }}>
@@ -1017,7 +1016,13 @@ export default function SchedulePage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
-            <Select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })}>
+            <Select value={form.platform} onChange={(e) => {
+              const newPlatform = e.target.value;
+              const autoIsCampaign = form.scheduledStart && form.brandId
+                ? isDateInCampaign(form.scheduledStart, form.brandId, newPlatform)
+                : form.isCampaignDay;
+              setForm({ ...form, platform: newPlatform, isCampaignDay: autoIsCampaign });
+            }}>
               <option value="TIKTOK">TikTok</option>
               <option value="SHOPEE">Shopee</option>
             </Select>
