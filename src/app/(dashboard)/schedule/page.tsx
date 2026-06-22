@@ -662,22 +662,28 @@ export default function SchedulePage() {
       <div className="section-card p-3 space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <Filter size={14} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
+          {/* 1. Host Type */}
+          <Select value={filterType} onChange={(e) => { setFilterType(e.target.value); setFilterHost(""); }} className="flex-1 min-w-[110px] lg:w-36 lg:flex-none">
+            <option value="">All Types</option>
+            <option value="FULL_TIME">Full Time</option>
+            <option value="PART_TIME">Part Time</option>
+          </Select>
+          {/* 2. Host Name — filtered by type */}
           <Select value={filterHost} onChange={(e) => setFilterHost(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
             <option value="">All Hosts</option>
-            {hosts.map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
+            {hosts
+              .filter((h) => !filterType || h.type === filterType)
+              .map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
           </Select>
+          {/* 3. Brands */}
           <Select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
             <option value="">All Brands</option>
             {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>
+          {/* 4. Rooms */}
           <Select value={filterRoom} onChange={(e) => setFilterRoom(e.target.value)} className="flex-1 min-w-[100px] lg:w-36 lg:flex-none">
             <option value="">All Rooms</option>
             {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </Select>
-          <Select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="flex-1 min-w-[110px] lg:w-36 lg:flex-none">
-            <option value="">All Types</option>
-            <option value="FULL_TIME">Full Time</option>
-            <option value="PART_TIME">Part Time</option>
           </Select>
           {(filterHost || filterBrand || filterRoom || filterType) && (
             <Button size="sm" variant="ghost" onClick={() => { setFilterHost(""); setFilterBrand(""); setFilterRoom(""); setFilterType(""); }}>
@@ -730,6 +736,7 @@ export default function SchedulePage() {
           rooms={rooms}
           hosts={hosts}
           brands={brands}
+          filterHost={filterHost}
           filterBrand={filterBrand}
           filterRoom={filterRoom}
           filterType={filterType}
@@ -1734,7 +1741,7 @@ function sessionOverlapsSlot(session: Session, slot: { start: number; end: numbe
 }
 
 function DailyGridView({
-  gridDate, setGridDate, sessions, rooms, hosts: _hosts, brands: _brands, filterBrand, filterRoom, filterType, onSessionClick, onAddSlot,
+  gridDate, setGridDate, sessions, rooms, hosts, brands: _brands, filterBrand, filterRoom, filterType, filterHost, onSessionClick, onAddSlot,
 }: {
   gridDate: string;
   setGridDate: (d: string) => void;
@@ -1745,6 +1752,7 @@ function DailyGridView({
   filterBrand: string;
   filterRoom: string;
   filterType: string;
+  filterHost: string;
   onSessionClick: (s: Session) => void;
   onAddSlot: (roomId: string, start: string, end: string) => void;
 }) {
@@ -1779,6 +1787,7 @@ function DailyGridView({
     const myt = new Date(d.getTime() + 8 * 3600_000);
     const sessionDate = myt.toISOString().slice(0, 10);
     return sessionDate === gridDate &&
+      (!filterHost || s.liveHostId === filterHost) &&
       (!filterBrand || s.brandId === filterBrand) &&
       (!filterRoom || s.roomId === filterRoom) &&
       (!filterType || ((s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME") === filterType);
@@ -2018,11 +2027,13 @@ function DailyGridView({
         </table>
       </div>
 
-      {daySessions.length === 0 && (
-        <p className="text-center text-sm py-4" style={{ color: "var(--text-muted)" }}>
-          No sessions scheduled for this day.
-        </p>
-      )}
+      {daySessions.length === 0 && (() => {
+        const selectedHost = filterHost ? hosts.find((h) => h.id === filterHost) : null;
+        const msg = selectedHost
+          ? `${selectedHost.user.name} has no session for the day.`
+          : "No sessions scheduled for this day.";
+        return <p className="text-center text-sm py-4" style={{ color: "var(--text-muted)" }}>{msg}</p>;
+      })()}
     </div>
   );
 }
