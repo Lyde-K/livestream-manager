@@ -1105,9 +1105,6 @@ interface BulkScheduleModalProps {
 interface SmartPreviewSession {
   date: string;
   dayOfWeek: string;
-  hostId: string;
-  hostName: string;
-  displayName: string;
   slotValue: string;
   isCampaignDay: boolean;
   scheduledStart: string;
@@ -1119,6 +1116,7 @@ interface SmartSummary {
   totalHours: number;
   campaignDaySessions: number;
   regularDaySessions: number;
+  hoursShortfall: number;
   strategy: string;
 }
 
@@ -1271,10 +1269,15 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
             <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Preview Summary</p>
             <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
               <span>Sessions: <strong>{summary.totalSessions}</strong></span>
-              <span>Total Hours: <strong>{summary.totalHours}h</strong></span>
+              <span>Total Hours: <strong>{summary.totalHours}h / {targetHours}h target</strong></span>
               <span>Campaign Days: <strong>{summary.campaignDaySessions}</strong></span>
               <span>Regular Days: <strong>{summary.regularDaySessions}</strong></span>
             </div>
+            {summary.hoursShortfall > 0 && (
+              <p className="text-[11px] font-medium mt-1" style={{ color: "#f59e0b" }}>
+                ⚠ {summary.hoursShortfall}h shortfall — not enough days/slots in the month to reach target.
+              </p>
+            )}
             <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>{summary.strategy}</p>
             {autoPlatform && (
               <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -1302,7 +1305,6 @@ function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleMo
                     <span className="w-24 font-mono" style={{ color: "var(--text-muted)" }}>{s.date}</span>
                     <span style={{ color: "var(--text-secondary)" }}>{s.dayOfWeek}</span>
                     <span style={{ color: "var(--text-secondary)" }}>{s.slotValue}</span>
-                    <span className="font-medium" style={{ color: "var(--text-primary)" }}>{s.displayName}</span>
                     {s.isCampaignDay && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Campaign</span>
                     )}

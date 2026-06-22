@@ -15,23 +15,28 @@ const ALL_SLOTS = [
   { value: "12am-2am",  startH: 24, endH: 26 },
 ];
 
+// Slot 1 (8am-10am) always excluded.
+// Slot 8 (12am-2am, startH=24) campaign days only.
+const EXCLUDED_SLOTS    = new Set([8]);
+const CAMPAIGN_ONLY_SLOTS = new Set([24]);
+
 function slotToISO(dateStr: string, startH: number, endH: number) {
-  // Slots with startH >= 24 spill into next day
   const base = new Date(`${dateStr}T00:00:00+08:00`);
   const startDate = startH >= 24 ? addDays(base, 1) : base;
   const endDate   = endH   >= 24 ? addDays(base, 1) : base;
   const sh = startH >= 24 ? startH - 24 : startH;
   const eh = endH   >= 24 ? endH   - 24 : endH;
-  const start = `${format(startDate, "yyyy-MM-dd")}T${String(sh).padStart(2,"0")}:00:00+08:00`;
-  const end   = `${format(endDate,   "yyyy-MM-dd")}T${String(eh).padStart(2,"0")}:00:00+08:00`;
-  return { start, end };
+  return {
+    start: `${format(startDate, "yyyy-MM-dd")}T${String(sh).padStart(2,"0")}:00:00+08:00`,
+    end:   `${format(endDate,   "yyyy-MM-dd")}T${String(eh).padStart(2,"0")}:00:00+08:00`,
+  };
 }
 
-/** How many slots per day to aim for based on target hours and day type */
-function getStrategy(targetHours: number): { campaignSlots: number; regularSlots: number; fillToTarget: boolean } {
-  if (targetHours >= 300) return { campaignSlots: 6, regularSlots: 6, fillToTarget: true };
-  if (targetHours >= 200) return { campaignSlots: 6, regularSlots: 3, fillToTarget: false };
-  return { campaignSlots: 4, regularSlots: 2, fillToTarget: false }; // 60-199h
+/** Slots per day cap based on target hours and day type */
+function getStrategy(targetHours: number): { campaignSlots: number; regularSlots: number } {
+  if (targetHours >= 300) return { campaignSlots: 6, regularSlots: 6 };
+  if (targetHours >= 200) return { campaignSlots: 6, regularSlots: 3 };
+  return { campaignSlots: 4, regularSlots: 2 }; // 60–199h
 }
 
 export async function POST(req: NextRequest) {
@@ -52,42 +57,21 @@ export async function POST(req: NextRequest) {
   if (!brand) return Response.json({ error: "Brand not found" }, { status: 404 });
   const platform = brand.platform;
 
-  // ── 2. Load campaigns for month → campaign dates ──
+  // ── 2. Campaign dates for the month ──
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const campaigns: { startDate: Date; endDate: Date }[] = await (prisma as any).campaign.findMany({
-    where: {
-      month, year,
-      OR: [{ platform }, { platform: "BOTH" }],
-    },
+    where: { month, year, OR: [{ platform }, { platform: "BOTH" }] },
     select: { startDate: true, endDate: true },
   });
 
   const campaignDates = new Set<string>();
   for (const c of campaigns) {
-    const days = eachDayOfInterval({ start: new Date(c.startDate), end: new Date(c.endDate) });
-    days.forEach(d => campaignDates.add(format(d, "yyyy-MM-dd")));
+    eachDayOfInterval({ start: new Date(c.startDate), end: new Date(c.endDate) })
+      .forEach(d => campaignDates.add(format(d, "yyyy-MM-dd")));
   }
 
-  // ── 3. Load hosts with preferences ──
-  const hosts = await prisma.liveHost.findMany({
-    where: { isActive: true, type: "FULL_TIME" },
-    include: {
-      user: { select: { name: true } },
-      preferences: true,
-      sessions: {
-        where: {
-          scheduledStart: {
-            gte: new Date(year, month - 1, 1),
-            lte: new Date(year, month, 0),
-          },
-        },
-        select: { scheduledStart: true },
-      },
-    },
-  });
-
-  // ── 4. Historical performance: which (host, brand) combos perform best ──
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 3600 * 1000);
+  // ── 3. Historical slot performance (GMV/hour per slot) ──
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 3600_000);
   const perfSessions = await prisma.session.findMany({
     where: {
       brandId,
@@ -96,171 +80,142 @@ export async function POST(req: NextRequest) {
       gmv: { not: null },
       actualDurationMinutes: { not: null },
     },
-    select: { liveHostId: true, gmv: true, actualDurationMinutes: true, scheduledStart: true },
+    select: { gmv: true, actualDurationMinutes: true, scheduledStart: true },
   });
 
-  // GMV/hour per host for this brand
-  const hostPerf = new Map<string, { totalGmv: number; totalHours: number }>();
-  // Best performing start hours (slot preference from history)
   const slotPerf = new Map<number, { totalGmv: number; totalHours: number }>();
-
   for (const ps of perfSessions) {
     if (!ps.gmv || !ps.actualDurationMinutes) continue;
-    const hours = ps.actualDurationMinutes / 60;
-    // Host performance
-    if (ps.liveHostId) {
-      const cur = hostPerf.get(ps.liveHostId) ?? { totalGmv: 0, totalHours: 0 };
-      hostPerf.set(ps.liveHostId, { totalGmv: cur.totalGmv + ps.gmv, totalHours: cur.totalHours + hours });
-    }
-    // Slot performance: which start hour is best?
-    const startHour = new Date(ps.scheduledStart).getUTCHours() + 8; // MYT
-    const slotHour = startHour >= 24 ? startHour - 24 : startHour;
-    const slot = ALL_SLOTS.find(s => s.startH === slotHour || (s.startH >= 24 && s.startH - 24 === slotHour));
-    if (slot) {
-      const cur = slotPerf.get(slot.startH) ?? { totalGmv: 0, totalHours: 0 };
-      slotPerf.set(slot.startH, { totalGmv: cur.totalGmv + ps.gmv, totalHours: cur.totalHours + hours });
-    }
+    const startHour = (new Date(ps.scheduledStart).getUTCHours() + 8) % 24;
+    const slot = ALL_SLOTS.find(s => (s.startH % 24) === startHour);
+    if (!slot) continue;
+    const cur = slotPerf.get(slot.startH) ?? { totalGmv: 0, totalHours: 0 };
+    slotPerf.set(slot.startH, {
+      totalGmv: cur.totalGmv + ps.gmv,
+      totalHours: cur.totalHours + ps.actualDurationMinutes / 60,
+    });
   }
 
-  // Slot 1 (8am-10am) is always excluded.
-  // Slot 8 (12am-2am, startH=24) is only allowed on campaign days — filtered per-day below.
-  const EXCLUDED_SLOTS = new Set([8]);       // startH=8 → 8am-10am, slot 1
-  const CAMPAIGN_ONLY_SLOTS = new Set([24]); // startH=24 → 12am-2am, slot 8
+  // Sort eligible slots by historical GMV/hour (best first)
+  const sortedSlots = ALL_SLOTS
+    .filter(s => !EXCLUDED_SLOTS.has(s.startH))
+    .sort((a, b) => {
+      const ga = slotPerf.get(a.startH);
+      const gb = slotPerf.get(b.startH);
+      const va = ga && ga.totalHours > 0 ? ga.totalGmv / ga.totalHours : 0;
+      const vb = gb && gb.totalHours > 0 ? gb.totalGmv / gb.totalHours : 0;
+      return vb - va;
+    });
 
-  const eligibleSlots = ALL_SLOTS.filter(s => !EXCLUDED_SLOTS.has(s.startH));
-
-  // Sort slots by historical GMV/hour, fallback to default order
-  const sortedSlots = [...eligibleSlots].sort((a, b) => {
-    const pa = slotPerf.get(a.startH);
-    const pb = slotPerf.get(b.startH);
-    const ga = pa && pa.totalHours > 0 ? pa.totalGmv / pa.totalHours : 0;
-    const gb = pb && pb.totalHours > 0 ? pb.totalGmv / pb.totalHours : 0;
-    return gb - ga; // best first
-  });
-
-  // Sort hosts by GMV/hour for this brand
-  const rankedHosts = hosts
-    .map(h => {
-      const p = hostPerf.get(h.id);
-      return { ...h, gmvPerHour: p && p.totalHours > 0 ? p.totalGmv / p.totalHours : 0 };
-    })
-    .sort((a, b) => b.gmvPerHour - a.gmvPerHour);
-
-  // ── 5. Strategy ──
+  // ── 4. Generate sessions — no host assigned ──
   const strategy = getStrategy(targetHours);
-  const monthStart = startOfMonth(new Date(year, month - 1));
-  const monthEnd = endOfMonth(new Date(year, month - 1));
-  const allDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
-
-  // Get working days (Mon-Fri, excluding weekends for 5-day hosts)
-  const workingDays = allDays.filter(d => {
-    const dow = getDay(d);
-    return dow !== 0 && dow !== 6; // skip Sun/Sat by default
+  const allDays = eachDayOfInterval({
+    start: startOfMonth(new Date(year, month - 1)),
+    end:   endOfMonth(new Date(year, month - 1)),
   });
 
-  let totalSlotsNeeded = Math.ceil(targetHours / 2); // each slot = 2h
-  const campaignWorkingDays = workingDays.filter(d => campaignDates.has(format(d, "yyyy-MM-dd")));
-  const regularWorkingDays  = workingDays.filter(d => !campaignDates.has(format(d, "yyyy-MM-dd")));
+  const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-  // For fillToTarget: calculate how many regular-day slots are needed to hit target
-  let regularSlotsPerDay = strategy.regularSlots;
-  if (strategy.fillToTarget) {
-    const campaignHours = campaignWorkingDays.length * strategy.campaignSlots * 2;
-    const remainingHours = Math.max(0, targetHours - campaignHours);
-    if (regularWorkingDays.length > 0) {
-      regularSlotsPerDay = Math.min(6, Math.ceil(remainingHours / (regularWorkingDays.length * 2)));
-    }
-  }
-
-  // ── 6. Generate sessions ──
   interface SessionPlan {
     date: string; dayOfWeek: string;
-    hostId: string; hostName: string; displayName: string;
-    startH: number; endH: number; slotValue: string;
+    slotValue: string; startH: number; endH: number;
     isCampaignDay: boolean;
     scheduledStart: string; scheduledEnd: string;
   }
 
   const plannedSessions: SessionPlan[] = [];
-  // Track existing + planned per host per day to avoid doubles
-  const hostDaySlots = new Map<string, Set<number>>(); // key: hostId|date → set of startH
+  let slotsRemaining = Math.ceil(targetHours / 2); // each slot = 2h
 
-  function getAvailableHost(dateStr: string, slotStartH: number): typeof rankedHosts[0] | null {
-    const dow = getDay(new Date(dateStr));
-    for (const host of rankedHosts) {
-      // Parse off days (DOW indices)
-      let offDows: number[] = [];
-      try {
-        const raw = JSON.parse(host.preferences?.offDays ?? "[]");
-        offDows = raw.filter((x: unknown) => typeof x === "number");
-      } catch { /**/ }
-      if (offDows.includes(dow)) continue;
+  // Pass 1: campaign days first (to prioritise them)
+  const campaignDaysList = allDays.filter(d => campaignDates.has(format(d, "yyyy-MM-dd")));
+  const regularDaysList  = allDays.filter(d => !campaignDates.has(format(d, "yyyy-MM-dd")));
 
-      // Check not already assigned this slot this day
-      const key = `${host.id}|${dateStr}`;
-      const used = hostDaySlots.get(key) ?? new Set<number>();
-      if (used.has(slotStartH)) continue;
-
-      // Check no existing session in the month already at this slot
-      const alreadyScheduled = host.sessions.some(s => {
-        const sDate = format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000), "yyyy-MM-dd");
-        const sHour = (new Date(s.scheduledStart).getUTCHours() + 8) % 24;
-        return sDate === dateStr && sHour === slotStartH % 24;
-      });
-      if (alreadyScheduled) continue;
-
-      return host;
-    }
-    return null;
-  }
-
-  for (const day of workingDays) {
+  for (const day of [...campaignDaysList, ...regularDaysList]) {
+    if (slotsRemaining <= 0) break;
     const dateStr = format(day, "yyyy-MM-dd");
     const isCampaignDay = campaignDates.has(dateStr);
-    const slotsNeeded = isCampaignDay ? strategy.campaignSlots : regularSlotsPerDay;
+    const cap = isCampaignDay ? strategy.campaignSlots : strategy.regularSlots;
 
-    // Slot 8 (12am-2am) is only available on campaign days
     const availableSlots = isCampaignDay
       ? sortedSlots
       : sortedSlots.filter(s => !CAMPAIGN_ONLY_SLOTS.has(s.startH));
-    const slotsForDay = availableSlots.slice(0, slotsNeeded);
 
-    for (const slot of slotsForDay) {
-      if (totalSlotsNeeded <= 0) break;
-      const host = getAvailableHost(dateStr, slot.startH);
-      if (!host) continue;
+    const take = Math.min(cap, slotsRemaining, availableSlots.length);
 
-      const key = `${host.id}|${dateStr}`;
-      const used = hostDaySlots.get(key) ?? new Set<number>();
-      used.add(slot.startH);
-      hostDaySlots.set(key, used);
-
+    for (let i = 0; i < take; i++) {
+      const slot = availableSlots[i];
       const { start, end } = slotToISO(dateStr, slot.startH, slot.endH);
-      const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
       plannedSessions.push({
         date: dateStr,
         dayOfWeek: DOW_LABELS[getDay(day)],
-        hostId: host.id,
-        hostName: host.user.name,
-        displayName: host.displayName,
+        slotValue: slot.value,
         startH: slot.startH,
         endH: slot.endH,
-        slotValue: slot.value,
         isCampaignDay,
         scheduledStart: start,
         scheduledEnd: end,
       });
-      totalSlotsNeeded--;
+      slotsRemaining--;
     }
-    if (totalSlotsNeeded <= 0) break;
   }
+
+  // Pass 2: if target still not met, allow re-using days up to 6 slots max
+  // (adds extra sessions on days that have capacity left)
+  if (slotsRemaining > 0) {
+    const usedPerDay = new Map<string, number>();
+    for (const s of plannedSessions) {
+      usedPerDay.set(s.date, (usedPerDay.get(s.date) ?? 0) + 1);
+    }
+    const usedSlotsPerDay = new Map<string, Set<number>>();
+    for (const s of plannedSessions) {
+      const set = usedSlotsPerDay.get(s.date) ?? new Set<number>();
+      set.add(s.startH);
+      usedSlotsPerDay.set(s.date, set);
+    }
+
+    for (const day of [...campaignDaysList, ...regularDaysList]) {
+      if (slotsRemaining <= 0) break;
+      const dateStr = format(day, "yyyy-MM-dd");
+      const isCampaignDay = campaignDates.has(dateStr);
+      const currentCount = usedPerDay.get(dateStr) ?? 0;
+      if (currentCount >= 6) continue; // already maxed
+
+      const usedStartHours = usedSlotsPerDay.get(dateStr) ?? new Set<number>();
+      const availableSlots = (isCampaignDay ? sortedSlots : sortedSlots.filter(s => !CAMPAIGN_ONLY_SLOTS.has(s.startH)))
+        .filter(s => !usedStartHours.has(s.startH));
+
+      const remaining = Math.min(6 - currentCount, slotsRemaining, availableSlots.length);
+      for (let i = 0; i < remaining; i++) {
+        const slot = availableSlots[i];
+        const { start, end } = slotToISO(dateStr, slot.startH, slot.endH);
+        plannedSessions.push({
+          date: dateStr,
+          dayOfWeek: DOW_LABELS[getDay(day)],
+          slotValue: slot.value,
+          startH: slot.startH,
+          endH: slot.endH,
+          isCampaignDay,
+          scheduledStart: start,
+          scheduledEnd: end,
+        });
+        usedStartHours.add(slot.startH);
+        usedSlotsPerDay.set(dateStr, usedStartHours);
+        usedPerDay.set(dateStr, (usedPerDay.get(dateStr) ?? 0) + 1);
+        slotsRemaining--;
+      }
+    }
+  }
+
+  // Sort output by date
+  plannedSessions.sort((a, b) => a.date.localeCompare(b.date) || a.startH - b.startH);
 
   const totalHours = plannedSessions.length * 2;
   const summary = {
     totalSessions: plannedSessions.length,
     totalHours,
     campaignDaySessions: plannedSessions.filter(s => s.isCampaignDay).length,
-    regularDaySessions: plannedSessions.filter(s => !s.isCampaignDay).length,
+    regularDaySessions:  plannedSessions.filter(s => !s.isCampaignDay).length,
+    hoursShortfall: Math.max(0, targetHours - totalHours),
     strategy: targetHours >= 300 ? "Heavy (12h campaign + fill to target)"
       : targetHours >= 200 ? "Medium (12h campaign, 6h regular)"
       : "Focused (campaign priority + historical best times)",
@@ -269,13 +224,13 @@ export async function POST(req: NextRequest) {
   if (confirm) {
     const created = await prisma.session.createMany({
       data: plannedSessions.map(s => ({
-        liveHostId: s.hostId,
+        liveHostId: null,
         brandId,
         roomId,
         platform,
         scheduledStart: new Date(s.scheduledStart),
-        scheduledEnd: new Date(s.scheduledEnd),
-        isCampaignDay: s.isCampaignDay,
+        scheduledEnd:   new Date(s.scheduledEnd),
+        isCampaignDay:  s.isCampaignDay,
         status: "PENDING",
         notes: null,
       })),
