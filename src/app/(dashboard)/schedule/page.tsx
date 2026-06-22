@@ -102,7 +102,7 @@ export default function SchedulePage() {
   const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [hoursLoading, setHoursLoading] = useState(false);
   const [clearAllLoading, setClearAllLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<"calendar" | "grid">("calendar");
+  const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
   async function loadMeta() {
