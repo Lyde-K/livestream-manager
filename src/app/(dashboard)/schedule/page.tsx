@@ -824,9 +824,10 @@ export default function SchedulePage() {
         <FullCalendar
           ref={calRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
-          initialView="dayGridMonth"
-          headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,timeGridWeek,timeGridDay,listWeek" }}
-          buttonText={{ month: "Month", week: "Week", day: "Day", list: "List" }}
+          initialView="listMonth"
+          headerToolbar={{ left: "prev,next today", center: "title", right: "listWeek,listMonth" }}
+          buttonText={{ listWeek: "Week List", listMonth: "Month List" }}
+          views={{ listWeek: { buttonText: "Week List" }, listMonth: { buttonText: "Month List" } }}
           height="calc(100vh - 310px)"
           events={[...calEvents, ...campaignEvents]}
           selectable selectMirror editable dayMaxEvents={5}
