@@ -510,6 +510,12 @@ export default function AffiliateOverviewPage() {
                 </Link>
               </div>
               <div className="space-y-0">
+                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
+                  <span className="w-5 flex-shrink-0" />
+                  <span className="w-14 flex-shrink-0" />
+                  <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Creator</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>GMV</span>
+                </div>
                 {filteredTopCreators.map((c, i) => (
                   <Link
                     key={c.id}
@@ -541,6 +547,11 @@ export default function AffiliateOverviewPage() {
                 </Link>
               </div>
               <div className="space-y-0">
+                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
+                  <span className="w-5 flex-shrink-0" />
+                  <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Product</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>GMV</span>
+                </div>
                 {data.topProducts.map((p, i) => (
                   <Link
                     key={p.id}
@@ -573,6 +584,13 @@ export default function AffiliateOverviewPage() {
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>{data.activePeriod}</span>
               </div>
               <div className="space-y-0">
+                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
+                  <span className="w-5 flex-shrink-0" />
+                  <span className="w-14 flex-shrink-0" />
+                  <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Creator</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap mr-1" style={{ color: "var(--text-muted)" }}>GMV</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>Lives</span>
+                </div>
                 {data.topLiveCreators.map((c, i) => (
                   <Link
                     key={c.id}
@@ -603,6 +621,13 @@ export default function AffiliateOverviewPage() {
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>{data.activePeriod}</span>
               </div>
               <div className="space-y-0">
+                <div className="flex items-center gap-2 py-1.5 -mx-1 px-1">
+                  <span className="w-5 flex-shrink-0" />
+                  <span className="w-14 flex-shrink-0" />
+                  <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Creator</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap mr-1" style={{ color: "var(--text-muted)" }}>GMV</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ color: "var(--text-muted)" }}>Videos</span>
+                </div>
                 {data.topVideoCreators.map((c, i) => (
                   <Link
                     key={c.id}
