@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users } from "lucide-react";
+import { Plus, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
 import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
@@ -90,6 +90,8 @@ export default function SchedulePage() {
   const [hoursOpen, setHoursOpen] = useState(false);
   const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [hoursLoading, setHoursLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<"calendar" | "grid">("calendar");
+  const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
   async function loadMeta() {
     const [r, h, b] = await Promise.all([fetch("/api/rooms"), fetch("/api/hosts"), fetch("/api/brands")]);
@@ -107,6 +109,10 @@ export default function SchedulePage() {
   }
 
   useEffect(() => { loadMeta(); }, []);
+  useEffect(() => {
+    if (viewMode === "grid") loadSessions(gridDate, gridDate);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, gridDate]);
 
   // Restore time-format preference from localStorage
   useEffect(() => {
@@ -620,8 +626,47 @@ export default function SchedulePage() {
         </div>
       </div>
 
+      {/* View mode toggle */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setViewMode("calendar")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+          style={{
+            borderColor: viewMode === "calendar" ? "var(--accent)" : "var(--border)",
+            color: viewMode === "calendar" ? "var(--accent)" : "var(--text-secondary)",
+            background: viewMode === "calendar" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
+          }}
+        >
+          <Calendar size={13} /> Calendar
+        </button>
+        <button
+          onClick={() => setViewMode("grid")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+          style={{
+            borderColor: viewMode === "grid" ? "var(--accent)" : "var(--border)",
+            color: viewMode === "grid" ? "var(--accent)" : "var(--text-secondary)",
+            background: viewMode === "grid" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
+          }}
+        >
+          <LayoutGrid size={13} /> Daily Grid
+        </button>
+      </div>
+
+      {/* Daily Grid View */}
+      {viewMode === "grid" && (
+        <DailyGridView
+          gridDate={gridDate}
+          setGridDate={setGridDate}
+          sessions={sessions}
+          rooms={rooms}
+          filterBrand={filterBrand}
+          filterRoom={filterRoom}
+          onSessionClick={(s) => setDetailSession(s)}
+        />
+      )}
+
       {/* Calendar */}
-      <div className="section-card p-4">
+      {viewMode === "calendar" && <div className="section-card p-4">
         <FullCalendar
           ref={calRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
@@ -664,7 +709,7 @@ export default function SchedulePage() {
             );
           }}
         />
-      </div>
+      </div>}
 
       {/* Session Detail Modal */}
       {detailSession && (
@@ -1573,6 +1618,289 @@ function HoursTrackerPanel({
             {data.brands.map(row => <HoursRow key={row.id} row={row} type="BRAND" />)}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Daily Grid View ──────────────────────────────────────────────────────────
+
+const TIME_SLOTS = [
+  { label: "10am–12pm", start: 10, end: 12 },
+  { label: "12pm–2pm",  start: 12, end: 14 },
+  { label: "3pm–5pm",   start: 15, end: 17 },
+  { label: "5pm–7pm",   start: 17, end: 19 },
+  { label: "8pm–10pm",  start: 20, end: 22 },
+  { label: "10pm–12am", start: 22, end: 24 },
+  { label: "12am–2am",  start: 24, end: 26 },
+];
+
+function sessionOverlapsSlot(session: Session, slot: { start: number; end: number }): boolean {
+  const d = new Date(session.scheduledStart);
+  const myt = new Date(d.getTime() + 8 * 3600_000);
+  let h = myt.getUTCHours() + myt.getUTCMinutes() / 60;
+  // after midnight counts as 24+
+  if (h < 4) h += 24;
+  const endD = new Date(session.scheduledEnd);
+  const endMyt = new Date(endD.getTime() + 8 * 3600_000);
+  let eh = endMyt.getUTCHours() + endMyt.getUTCMinutes() / 60;
+  if (eh < 4) eh += 24;
+  return h < slot.end && eh > slot.start;
+}
+
+function DailyGridView({
+  gridDate, setGridDate, sessions, rooms, filterBrand, filterRoom, onSessionClick,
+}: {
+  gridDate: string;
+  setGridDate: (d: string) => void;
+  sessions: Session[];
+  rooms: Room[];
+  filterBrand: string;
+  filterRoom: string;
+  onSessionClick: (s: Session) => void;
+}) {
+
+  const dateObj = parseISO(gridDate);
+  const dayLabel = format(dateObj, "d/M/yyyy EEEE");
+
+  function prevDay() {
+    const d = parseISO(gridDate);
+    d.setDate(d.getDate() - 1);
+    setGridDate(format(d, "yyyy-MM-dd"));
+  }
+  function nextDay() {
+    const d = parseISO(gridDate);
+    d.setDate(d.getDate() + 1);
+    setGridDate(format(d, "yyyy-MM-dd"));
+  }
+
+  // Sessions for this day
+  const daySessions = sessions.filter((s) => {
+    const d = new Date(s.scheduledStart);
+    const myt = new Date(d.getTime() + 8 * 3600_000);
+    const sessionDate = myt.toISOString().slice(0, 10);
+    return sessionDate === gridDate &&
+      (!filterBrand || s.brandId === filterBrand) &&
+      (!filterRoom || s.roomId === filterRoom);
+  });
+
+  // Rooms to show (all rooms, optionally filtered)
+  const visibleRooms = filterRoom ? rooms.filter((r) => r.id === filterRoom) : rooms;
+
+  // Campaign sessions (isCampaignDay) — build per-slot set
+  const campaignSessions = daySessions.filter((s) => s.isCampaignDay);
+
+  // For each slot, check if any campaign session spans it
+  function getCampaignForSlot(slot: typeof TIME_SLOTS[0]) {
+    return campaignSessions.filter((s) => sessionOverlapsSlot(s, slot));
+  }
+
+  function getSessionForRoomSlot(roomId: string, slot: typeof TIME_SLOTS[0]): Session | null {
+    return daySessions.find((s) => s.roomId === roomId && sessionOverlapsSlot(s, slot)) ?? null;
+  }
+
+  // Build unique brand groups for campaign banner
+  const campaignBrandSlots: Record<string, Set<number>> = {};
+  for (const s of campaignSessions) {
+    TIME_SLOTS.forEach((slot, i) => {
+      if (sessionOverlapsSlot(s, slot)) {
+        const key = `${s.brandId}|${s.brand.name}|${s.brand.color}|${s.platform}`;
+        if (!campaignBrandSlots[key]) campaignBrandSlots[key] = new Set();
+        campaignBrandSlots[key].add(i);
+      }
+    });
+  }
+
+  const colWidth = 120;
+  const labelWidth = 140;
+
+  return (
+    <div className="section-card p-4 space-y-3">
+      {/* Date nav */}
+      <div className="flex items-center gap-3">
+        <button onClick={prevDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+          <ChevronLeft size={15} />
+        </button>
+        <input
+          type="date"
+          value={gridDate}
+          onChange={(e) => setGridDate(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border text-sm font-medium"
+          style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
+        />
+        <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+          <ChevronRight size={15} />
+        </button>
+        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{dayLabel}</span>
+      </div>
+
+      {/* Grid table */}
+      <div className="overflow-x-auto">
+        <table style={{ borderCollapse: "collapse", minWidth: labelWidth + colWidth * TIME_SLOTS.length }}>
+          <colgroup>
+            <col style={{ width: labelWidth }} />
+            {TIME_SLOTS.map((_, i) => <col key={i} style={{ width: colWidth }} />)}
+          </colgroup>
+
+          {/* Header row: slot numbers + time ranges */}
+          <thead>
+            <tr>
+              <th style={{
+                background: "var(--bg-subtle)", border: "1px solid var(--border)",
+                padding: "6px 10px", textAlign: "left", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
+              }}>
+                Room / Date
+              </th>
+              {TIME_SLOTS.map((slot, i) => (
+                <th key={i} style={{
+                  background: "var(--bg-subtle)", border: "1px solid var(--border)",
+                  padding: "6px 8px", textAlign: "center", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}>
+                  <div style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Slot {i + 1}</div>
+                  <div>{slot.label}</div>
+                </th>
+              ))}
+            </tr>
+            {/* Campaign banner row */}
+            {Object.keys(campaignBrandSlots).length > 0 && (
+              <tr>
+                <td style={{
+                  background: "var(--bg-subtle)", border: "1px solid var(--border)",
+                  padding: "4px 10px", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
+                }}>Campaign</td>
+                {TIME_SLOTS.map((_, i) => {
+                  const entries = Object.entries(campaignBrandSlots).filter(([, slots]) => slots.has(i));
+                  if (entries.length === 0) return (
+                    <td key={i} style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)" }} />
+                  );
+                  return (
+                    <td key={i} style={{ border: "1px solid var(--border)", padding: 0, verticalAlign: "top" }}>
+                      {entries.map(([key]) => {
+                        const [, brandName, color, platform] = key.split("|");
+                        const bg = color || "#888";
+                        return (
+                          <div key={key} style={{
+                            background: bg, color: "#fff", fontSize: 10, fontWeight: 700,
+                            padding: "3px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          }}>
+                            {platform}: {brandName}
+                          </div>
+                        );
+                      })}
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
+          </thead>
+
+          <tbody>
+            {visibleRooms.length === 0 && (
+              <tr>
+                <td colSpan={TIME_SLOTS.length + 1} style={{
+                  padding: "24px", textAlign: "center", fontSize: 13, color: "var(--text-muted)",
+                  border: "1px solid var(--border)",
+                }}>
+                  No rooms configured
+                </td>
+              </tr>
+            )}
+            {visibleRooms.map((room) => {
+              // Check if any session exists in this room today
+              const roomSessions = daySessions.filter((s) => s.roomId === room.id);
+              const brand = roomSessions[0]?.brand ?? null;
+              const roomLabel = brand ? `${room.name} [${brand.name}]` : room.name;
+
+              return (
+                <React.Fragment key={room.id}>
+                  {/* Room header row */}
+                  <tr>
+                    <td colSpan={TIME_SLOTS.length + 1} style={{
+                      background: brand?.color ? `${brand.color}22` : "var(--bg-subtle)",
+                      border: "1px solid var(--border)",
+                      padding: "4px 10px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: brand?.color ?? "var(--text-secondary)",
+                    }}>
+                      {roomLabel}
+                    </td>
+                  </tr>
+
+                  {/* Store sub-row (brand) */}
+                  <tr key={`store-${room.id}`}>
+                    <td style={{
+                      border: "1px solid var(--border)", padding: "4px 10px",
+                      fontSize: 11, color: "var(--text-muted)", background: "var(--bg-subtle)",
+                    }}>
+                      Store
+                    </td>
+                    {TIME_SLOTS.map((slot, si) => {
+                      const session = getSessionForRoomSlot(room.id, slot);
+                      if (!session) return (
+                        <td key={si} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }} />
+                      );
+                      const bg = session.brand.color || "#888";
+                      return (
+                        <td key={si} style={{
+                          border: "1px solid var(--border)", padding: "3px 6px",
+                          background: bg, cursor: "pointer", verticalAlign: "middle",
+                        }}
+                          onClick={() => onSessionClick(session)}
+                        >
+                          <div style={{ color: "#fff", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {session.brand.name}
+                          </div>
+                          <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 9 }}>
+                            {session.platform}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+
+                  {/* Host sub-row */}
+                  <tr key={`host-${room.id}`}>
+                    <td style={{
+                      border: "1px solid var(--border)", padding: "4px 10px",
+                      fontSize: 11, color: "var(--text-muted)", background: "var(--bg-subtle)",
+                    }}>
+                      Host
+                    </td>
+                    {TIME_SLOTS.map((slot, si) => {
+                      const session = getSessionForRoomSlot(room.id, slot);
+                      if (!session) return (
+                        <td key={si} style={{ border: "1px solid var(--border)", background: "var(--bg-card)" }} />
+                      );
+                      const hostName = session.liveHost?.displayName ?? "—";
+                      return (
+                        <td key={si} style={{
+                          border: "1px solid var(--border)", padding: "3px 6px",
+                          background: "var(--bg-card)", cursor: "pointer", verticalAlign: "middle",
+                        }}
+                          onClick={() => onSessionClick(session)}
+                        >
+                          <div style={{ fontSize: 10, color: "var(--text-primary)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {hostName}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {daySessions.length === 0 && (
+        <p className="text-center text-sm py-4" style={{ color: "var(--text-muted)" }}>
+          No sessions scheduled for this day.
+        </p>
       )}
     </div>
   );
