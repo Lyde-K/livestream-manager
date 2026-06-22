@@ -15,11 +15,12 @@ export async function GET(req: NextRequest) {
 
   const [hosts, brands, targets, sessions] = await Promise.all([
     prisma.liveHost.findMany({
-      where: { isActive: true },
+      where: { isActive: true, type: "FULL_TIME" },
       select: { id: true, displayName: true, user: { select: { name: true } } },
       orderBy: { displayName: "asc" },
     }),
     prisma.brand.findMany({
+      where: { isActive: true, hasLivestream: true },
       select: { id: true, name: true, color: true },
       orderBy: { name: "asc" },
     }),
