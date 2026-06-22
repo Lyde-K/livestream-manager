@@ -95,7 +95,8 @@ export default function SchedulePage() {
 
   async function loadMeta() {
     const [r, h, b] = await Promise.all([fetch("/api/rooms"), fetch("/api/hosts"), fetch("/api/brands")]);
-    setRooms(await r.json());
+    const roomData: Room[] = await r.json();
+    setRooms(roomData.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })));
     setHosts(await h.json());
     setBrands(await b.json());
   }
@@ -1727,7 +1728,10 @@ function DailyGridView({
   });
 
   // Rooms to show (all rooms, optionally filtered)
-  const visibleRooms = filterRoom ? rooms.filter((r) => r.id === filterRoom) : rooms;
+  const sortedRooms = [...rooms].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+  );
+  const visibleRooms = filterRoom ? sortedRooms.filter((r) => r.id === filterRoom) : sortedRooms;
 
   // Campaign sessions (isCampaignDay) — build per-slot set
   const campaignSessions = daySessions.filter((s) => s.isCampaignDay);
