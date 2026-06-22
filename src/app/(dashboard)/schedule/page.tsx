@@ -64,10 +64,16 @@ export default function SchedulePage() {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  // Applied filters (drive data fetching + rendering)
   const [filterHost, setFilterHost] = useState("");
   const [filterBrand, setFilterBrand] = useState("");
   const [filterRoom, setFilterRoom] = useState("");
   const [filterType, setFilterType] = useState("");
+  // Pending filters (bound to dropdowns — only committed on Apply)
+  const [pendingHost, setPendingHost] = useState("");
+  const [pendingBrand, setPendingBrand] = useState("");
+  const [pendingRoom, setPendingRoom] = useState("");
+  const [pendingType, setPendingType] = useState("");
   const [viewRange, setViewRange] = useState({ start: "", end: "" });
 
   const [open, setOpen] = useState(false);
@@ -252,6 +258,18 @@ export default function SchedulePage() {
     } else {
       alert(`Error: ${data.error}`);
     }
+  }
+
+  function applyFilters() {
+    setFilterType(pendingType);
+    setFilterHost(pendingHost);
+    setFilterBrand(pendingBrand);
+    setFilterRoom(pendingRoom);
+  }
+
+  function clearFilters() {
+    setPendingType(""); setPendingHost(""); setPendingBrand(""); setPendingRoom("");
+    setFilterType(""); setFilterHost(""); setFilterBrand(""); setFilterRoom("");
   }
 
   async function reloadCurrentRange() {
@@ -663,33 +681,37 @@ export default function SchedulePage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Filter size={14} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
           {/* 1. Host Type */}
-          <Select value={filterType} onChange={(e) => { setFilterType(e.target.value); setFilterHost(""); }} className="flex-1 min-w-[110px] lg:w-36 lg:flex-none">
+          <Select value={pendingType} onChange={(e) => { setPendingType(e.target.value); setPendingHost(""); }} className="flex-1 min-w-[110px] lg:w-36 lg:flex-none">
             <option value="">All Types</option>
             <option value="FULL_TIME">Full Time</option>
             <option value="PART_TIME">Part Time</option>
           </Select>
-          {/* 2. Host Name — filtered by type */}
-          <Select value={filterHost} onChange={(e) => setFilterHost(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
+          {/* 2. Host Name — filtered by pending type */}
+          <Select value={pendingHost} onChange={(e) => setPendingHost(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
             <option value="">All Hosts</option>
             {hosts
-              .filter((h) => !filterType || h.type === filterType)
+              .filter((h) => !pendingType || h.type === pendingType)
               .map((h) => <option key={h.id} value={h.id}>{h.user.name}</option>)}
           </Select>
           {/* 3. Brands */}
-          <Select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
+          <Select value={pendingBrand} onChange={(e) => setPendingBrand(e.target.value)} className="flex-1 min-w-[120px] lg:w-40 lg:flex-none">
             <option value="">All Brands</option>
             {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>
           {/* 4. Rooms */}
-          <Select value={filterRoom} onChange={(e) => setFilterRoom(e.target.value)} className="flex-1 min-w-[100px] lg:w-36 lg:flex-none">
+          <Select value={pendingRoom} onChange={(e) => setPendingRoom(e.target.value)} className="flex-1 min-w-[100px] lg:w-36 lg:flex-none">
             <option value="">All Rooms</option>
             {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
-          {(filterHost || filterBrand || filterRoom || filterType) && (
-            <Button size="sm" variant="ghost" onClick={() => { setFilterHost(""); setFilterBrand(""); setFilterRoom(""); setFilterType(""); }}>
-              Clear
+          <div className="flex items-center gap-2 ml-auto">
+            {(filterHost || filterBrand || filterRoom || filterType) && (
+              <Button size="sm" variant="ghost" onClick={clearFilters}>Clear</Button>
+            )}
+            <Button size="sm" onClick={applyFilters}
+              style={{ background: "var(--accent)", color: "#fff" }}>
+              Apply Filter
             </Button>
-          )}
+          </div>
         </div>
         <div className="flex items-center gap-3 text-xs flex-wrap" style={{ color: "var(--text-muted)" }}>
           <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "var(--text-muted)" }} />Scheduled</span>
@@ -1797,7 +1819,16 @@ function DailyGridView({
   const sortedRooms = [...rooms].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
   );
-  const visibleRooms = filterRoom ? sortedRooms.filter((r) => r.id === filterRoom) : sortedRooms;
+  const allRoomsForDay = filterRoom ? sortedRooms.filter((r) => r.id === filterRoom) : sortedRooms;
+
+  // When any filter is active, hide rooms and slots with no sessions
+  const filtersActive = !!(filterHost || filterBrand || filterRoom || filterType);
+  const visibleRooms = filtersActive
+    ? allRoomsForDay.filter((r) => daySessions.some((s) => s.roomId === r.id))
+    : allRoomsForDay;
+  const activeSlots = filtersActive
+    ? TIME_SLOTS.filter((slot) => daySessions.some((s) => sessionOverlapsSlot(s, slot)))
+    : TIME_SLOTS;
 
   // Campaign sessions (isCampaignDay) — build per-slot set
   const campaignSessions = daySessions.filter((s) => s.isCampaignDay);
@@ -1814,7 +1845,7 @@ function DailyGridView({
   // Build unique brand groups for campaign banner
   const campaignBrandSlots: Record<string, Set<number>> = {};
   for (const s of campaignSessions) {
-    TIME_SLOTS.forEach((slot, i) => {
+    activeSlots.forEach((slot, i) => {
       if (sessionOverlapsSlot(s, slot)) {
         const key = `${s.brandId}|${s.brand.name}|${s.brand.color}|${s.platform}`;
         if (!campaignBrandSlots[key]) campaignBrandSlots[key] = new Set();
@@ -1848,12 +1879,18 @@ function DailyGridView({
         <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{dayLabel}</span>
       </div>
 
-      {/* Grid table */}
-      <div className="overflow-x-auto">
-        <table style={{ borderCollapse: "collapse", minWidth: labelWidth + colWidth * TIME_SLOTS.length }}>
+      {/* Grid table or no-session message */}
+      {daySessions.length === 0 ? (() => {
+        const selectedHost = filterHost ? hosts.find((h) => h.id === filterHost) : null;
+        const msg = selectedHost
+          ? `${selectedHost.user.name} has no session for the day.`
+          : "No sessions scheduled for this day.";
+        return <p className="text-center text-sm py-8" style={{ color: "var(--text-muted)" }}>{msg}</p>;
+      })() : <div className="overflow-x-auto">
+        <table style={{ borderCollapse: "collapse", minWidth: labelWidth + colWidth * activeSlots.length }}>
           <colgroup>
             <col style={{ width: labelWidth }} />
-            {TIME_SLOTS.map((_, i) => <col key={i} style={{ width: colWidth }} />)}
+            {activeSlots.map((_, i) => <col key={i} style={{ width: colWidth }} />)}
           </colgroup>
 
           {/* Header row: slot numbers + time ranges */}
@@ -1865,13 +1902,13 @@ function DailyGridView({
               }}>
                 Room / Date
               </th>
-              {TIME_SLOTS.map((slot, i) => (
+              {activeSlots.map((slot, i) => (
                 <th key={i} style={{
                   background: "var(--bg-subtle)", border: "1px solid var(--border)",
                   padding: "6px 8px", textAlign: "center", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
                   whiteSpace: "nowrap",
                 }}>
-                  <div style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Slot {i + 1}</div>
+                  <div style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Slot {TIME_SLOTS.indexOf(slot) + 1}</div>
                   <div>{slot.label}</div>
                 </th>
               ))}
@@ -1883,7 +1920,7 @@ function DailyGridView({
                   background: "var(--bg-subtle)", border: "1px solid var(--border)",
                   padding: "4px 10px", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
                 }}>Campaign</td>
-                {TIME_SLOTS.map((_, i) => {
+                {activeSlots.map((_, i) => {
                   const entries = Object.entries(campaignBrandSlots).filter(([, slots]) => slots.has(i));
                   if (entries.length === 0) return (
                     <td key={i} style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)" }} />
@@ -1912,7 +1949,7 @@ function DailyGridView({
           <tbody>
             {visibleRooms.length === 0 && (
               <tr>
-                <td colSpan={TIME_SLOTS.length + 1} style={{
+                <td colSpan={activeSlots.length + 1} style={{
                   padding: "24px", textAlign: "center", fontSize: 13, color: "var(--text-muted)",
                   border: "1px solid var(--border)",
                 }}>
@@ -1930,7 +1967,7 @@ function DailyGridView({
                 <React.Fragment key={room.id}>
                   {/* Room header row */}
                   <tr>
-                    <td colSpan={TIME_SLOTS.length + 1} style={{
+                    <td colSpan={activeSlots.length + 1} style={{
                       background: brand?.color ? `${brand.color}22` : "var(--bg-subtle)",
                       border: "1px solid var(--border)",
                       padding: "4px 10px",
@@ -1950,7 +1987,7 @@ function DailyGridView({
                     }}>
                       Store
                     </td>
-                    {TIME_SLOTS.map((slot, si) => {
+                    {activeSlots.map((slot, si) => {
                       const session = getSessionForRoomSlot(room.id, slot);
                       if (!session) return (
                         <td key={si}
@@ -1991,7 +2028,7 @@ function DailyGridView({
                     }}>
                       Host
                     </td>
-                    {TIME_SLOTS.map((slot, si) => {
+                    {activeSlots.map((slot, si) => {
                       const session = getSessionForRoomSlot(room.id, slot);
                       if (!session) return (
                         <td key={si}
@@ -2025,15 +2062,7 @@ function DailyGridView({
             })}
           </tbody>
         </table>
-      </div>
-
-      {daySessions.length === 0 && (() => {
-        const selectedHost = filterHost ? hosts.find((h) => h.id === filterHost) : null;
-        const msg = selectedHost
-          ? `${selectedHost.user.name} has no session for the day.`
-          : "No sessions scheduled for this day.";
-        return <p className="text-center text-sm py-4" style={{ color: "var(--text-muted)" }}>{msg}</p>;
-      })()}
+      </div>}
     </div>
   );
 }
