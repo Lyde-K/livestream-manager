@@ -289,7 +289,7 @@ export function BrandDashboardPanel({
             {/* Use explicit pixel heights — avoids percentage-of-auto-height resolving to 0 */}
             {(() => {
               const CHART_H = 100; // px — usable bar height
-              const LABEL_H = 36;  // px — reserved above bars for labels
+              const LABEL_H = 48;  // px — reserved above bars for labels
               return (
                 <>
                   {/* Chart rows: label zone + bar zone */}
@@ -313,27 +313,27 @@ export function BrandDashboardPanel({
                           <div
                             style={{
                               position: "absolute",
-                              bottom: barH + 5,
+                              bottom: barH + 6,
                               left: 0,
                               right: 0,
                               display: "flex",
                               flexDirection: "column",
                               alignItems: "center",
-                              gap: "1px",
+                              gap: "2px",
                             }}
                           >
                             {mom !== null && (
                               <span style={{
-                                fontSize: "8px",
+                                fontSize: "11px",
                                 fontWeight: 700,
-                                lineHeight: 1.3,
+                                lineHeight: 1.2,
                                 color: mom >= 0 ? "var(--success)" : "var(--danger)",
                               }}>
                                 {mom > 0 ? "+" : ""}{mom.toFixed(0)}%
                               </span>
                             )}
                             {m.gmv > 0 && (
-                              <span style={{ fontSize: "8px", lineHeight: 1.3, color: "var(--text-muted)" }}>
+                              <span style={{ fontSize: "11px", lineHeight: 1.2, color: "var(--text-secondary)", fontWeight: 600 }}>
                                 {m.gmv >= 1000 ? `${(m.gmv / 1000).toFixed(0)}k` : m.gmv.toFixed(0)}
                               </span>
                             )}
@@ -361,8 +361,8 @@ export function BrandDashboardPanel({
                         <div key={i} className="flex-1 text-center">
                           <span
                             style={{
-                              fontSize: "9px",
-                              fontWeight: isSelected ? 600 : 400,
+                              fontSize: "12px",
+                              fontWeight: isSelected ? 700 : 400,
                               color: isSelected ? "var(--text-primary)" : "var(--text-muted)",
                             }}
                           >

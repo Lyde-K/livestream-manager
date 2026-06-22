@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { LabelChip } from "@/components/affiliate/label-chip";
 import { formatCurrency } from "@/lib/utils";
-import { ArrowDown, ArrowUp, Minus, Search, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus, Search, Users, Download, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+
+const PAGE_SIZE = 200;
 
 interface Brand {
   id: string;
@@ -32,6 +34,13 @@ interface CreatorRow {
 
 const LABELS = ["STAR", "A", "B", "F"] as const;
 
+interface AggregateTotals {
+  totalGmv: number;
+  totalCommission: number;
+  totalVideos: number;
+  totalLiveStreams: number;
+}
+
 export default function AffiliateCreatorsPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [periods, setPeriods] = useState<string[]>([]);
@@ -39,11 +48,14 @@ export default function AffiliateCreatorsPage() {
   const [period, setPeriod] = useState("");
   const [search, setSearch] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
-  const [sortBy, setSortBy] = useState<"rank" | "gmv" | "roi" | "videos" | "samplesShipped">("rank");
+  const [sortBy, setSortBy] = useState<"rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission">("rank");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [rows, setRows] = useState<CreatorRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [aggregateTotals, setAggregateTotals] = useState<AggregateTotals | null>(null);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetch("/api/affiliate/brands")
@@ -60,38 +72,58 @@ export default function AffiliateCreatorsPage() {
       .then((r) => r.json())
       .then((data: { periods: string[] }) => {
         setPeriods(data.periods);
-        if (data.periods.length > 0 && !data.periods.includes(period)) setPeriod(data.periods[0]);
+        if (data.periods.length > 0 && period !== "YTD" && !data.periods.includes(period)) {
+          setPeriod("YTD");
+        }
       });
   }, [brandId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Derive the YTD year from the most recent available period
+  const ytdYear = periods.length > 0 ? periods[0].substring(0, 4) : String(new Date().getFullYear());
+
+  // Reset to page 1 when any filter or sort changes
+  useEffect(() => { setPage(1); }, [brandId, period, search, labelFilter, sortBy, sortDir]);
+
   useEffect(() => {
-    if (!period) {
-      setRows([]);
-      setTotal(0);
-      return;
-    }
+    if (!period) { setRows([]); setTotal(0); return; }
     setLoading(true);
-    const params = new URLSearchParams({ period, sortBy, sortDir, limit: "200" });
+    const skip = (page - 1) * PAGE_SIZE;
+    const params = new URLSearchParams({ period, sortBy, sortDir, limit: String(PAGE_SIZE), skip: String(skip) });
     if (brandId) params.set("brandId", brandId);
     if (search.trim()) params.set("search", search.trim());
     if (labelFilter) params.set("label", labelFilter);
 
     fetch(`/api/affiliate/creators?${params}`)
       .then((r) => r.json())
-      .then((data: { rows: CreatorRow[]; total: number }) => {
+      .then((data: { rows: CreatorRow[]; total: number; aggregateTotals?: AggregateTotals }) => {
         setRows(data.rows ?? []);
         setTotal(data.total ?? 0);
+        setAggregateTotals(data.aggregateTotals ?? null);
       })
       .finally(() => setLoading(false));
-  }, [brandId, period, search, labelFilter, sortBy, sortDir]);
+  }, [brandId, period, search, labelFilter, sortBy, sortDir, page]);
 
+  // Totals: prefer server-provided (accurate across all pages), then sum visible rows
   const summary = useMemo(() => {
-    const totalGmv = rows.reduce((s, r) => s + r.gmv, 0);
-    const totalCommission = rows.reduce((s, r) => s + r.estCommission, 0);
-    const totalVideos = rows.reduce((s, r) => s + r.videos, 0);
-    const totalLives = rows.reduce((s, r) => s + r.liveStreams, 0);
-    return { totalGmv, totalCommission, totalVideos, totalLives };
-  }, [rows]);
+    if (aggregateTotals) {
+      return {
+        totalGmv:       aggregateTotals.totalGmv,
+        totalCommission: aggregateTotals.totalCommission,
+        totalVideos:    aggregateTotals.totalVideos,
+        totalLives:     aggregateTotals.totalLiveStreams,
+      };
+    }
+    return {
+      totalGmv:       rows.reduce((s, r) => s + r.gmv, 0),
+      totalCommission: rows.reduce((s, r) => s + r.estCommission, 0),
+      totalVideos:    rows.reduce((s, r) => s + r.videos, 0),
+      totalLives:     rows.reduce((s, r) => s + r.liveStreams, 0),
+    };
+  }, [rows, aggregateTotals]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageStart = total > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const pageEnd = Math.min(page * PAGE_SIZE, total);
 
   function toggleSort(field: typeof sortBy) {
     if (sortBy === field) {
@@ -102,7 +134,44 @@ export default function AffiliateCreatorsPage() {
     }
   }
 
-  function SortableTh({ field, children, align = "left", tooltip }: { field: typeof sortBy; children: React.ReactNode; align?: "left" | "right"; tooltip?: string }) {
+  async function handleExport() {
+    if (!period || exporting) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ period, sortBy, sortDir });
+      if (brandId) params.set("brandId", brandId);
+      if (search.trim()) params.set("search", search.trim());
+      if (labelFilter) params.set("label", labelFilter);
+
+      const res = await fetch(`/api/affiliate/creators/export?${params}`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `affiliate-creators-${period.replace(/\s/g, "-")}${labelFilter ? `-${labelFilter}` : ""}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // Compact page number list with ellipsis
+  function pageNumbers(): (number | "…")[] {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const delta = 2;
+    const left = Math.max(2, page - delta);
+    const right = Math.min(totalPages - 1, page + delta);
+    const nums: (number | "…")[] = [1];
+    if (left > 2) nums.push("…");
+    for (let i = left; i <= right; i++) nums.push(i);
+    if (right < totalPages - 1) nums.push("…");
+    nums.push(totalPages);
+    return nums;
+  }
+
+  function SortableTh({ field, children, align = "left", tooltip }: { field: "rank" | "gmv" | "roi" | "videos" | "samplesShipped" | "estCommission"; children: React.ReactNode; align?: "left" | "right"; tooltip?: string }) {
     const active = sortBy === field;
     return (
       <th
@@ -131,6 +200,24 @@ export default function AffiliateCreatorsPage() {
             {total > 0 ? `${total.toLocaleString()} creators` : "No data"} · sorted by {sortBy} {sortDir}
           </p>
         </div>
+
+        {/* Export button */}
+        {total > 0 && (
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer"
+            style={{
+              background: "var(--bg-subtle)",
+              color: "var(--text-secondary)",
+              border: "1px solid var(--border)",
+              opacity: exporting ? 0.6 : 1,
+            }}
+          >
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {exporting ? "Exporting…" : "Export Excel"}
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -144,10 +231,13 @@ export default function AffiliateCreatorsPage() {
             </Select>
           </div>
         )}
-        <div className="min-w-[140px]">
+        <div className="min-w-[160px]">
           <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Period</label>
           <Select value={period} onChange={(e) => setPeriod(e.target.value)}>
             {periods.length === 0 && <option value="">No data</option>}
+            {periods.length > 0 && (
+              <option value="YTD">📅 {ytdYear} — Year to Date</option>
+            )}
             {periods.map((p) => (<option key={p} value={p}>{p}</option>))}
           </Select>
         </div>
@@ -167,7 +257,7 @@ export default function AffiliateCreatorsPage() {
         </div>
       </div>
 
-      {/* Summary */}
+      {/* Summary cards */}
       {rows.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <SummaryCard label="Total GMV" value={formatCurrency(summary.totalGmv)} title={formatCurrency(summary.totalGmv)} />
@@ -189,6 +279,7 @@ export default function AffiliateCreatorsPage() {
                   <th className="px-2 sm:px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>Brand</th>
                 )}
                 <SortableTh field="gmv" align="right" tooltip="Gross Merchandise Value — total sales (RM) generated through this creator's content this period.">GMV</SortableTh>
+                <SortableTh field="estCommission" align="right" tooltip="Estimated commission payout to this creator based on their commission rate and GMV.">Est. Comm</SortableTh>
                 <SortableTh field="roi" align="right" tooltip="Return on Investment = GMV ÷ Est. Commission. Green ≥ 2x, red < 1x. Higher = more revenue per RM paid out.">ROI</SortableTh>
                 <th title="Shoppable video posts uploaded this period." className="px-2 sm:px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide hidden sm:table-cell cursor-help" style={{ color: "var(--text-secondary)" }}>
                   <span className="cursor-pointer select-none" onClick={() => toggleSort("videos")}>Videos</span>
@@ -201,13 +292,13 @@ export default function AffiliateCreatorsPage() {
             </thead>
             <tbody>
               {loading && rows.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>Loading…</td></tr>
+                <tr><td colSpan={9} className="px-3 py-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>Loading…</td></tr>
               )}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>No creators for this filter.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>No creators for this filter.</td></tr>
               )}
               {rows.map((r) => (
-                <tr key={r.id} className="border-t" style={{ borderColor: "var(--border)" }}>
+                <tr key={r.id} className="border-t" style={{ borderColor: "var(--border)", opacity: loading ? 0.5 : 1 }}>
                   <td className="px-2 sm:px-3 py-2 font-mono text-xs whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
                     <div className="flex items-center gap-1.5">
                       <span>#{r.rank ?? "—"}</span>
@@ -236,6 +327,9 @@ export default function AffiliateCreatorsPage() {
                     <td className="px-2 sm:px-3 py-2 text-xs hidden md:table-cell" style={{ color: "var(--text-secondary)" }}>{r.brand.name}</td>
                   )}
                   <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(r.gmv)}</td>
+                  <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>
+                    {r.estCommission > 0 ? formatCurrency(r.estCommission) : "—"}
+                  </td>
                   <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: r.roi != null && r.roi >= 2 ? "#10b981" : r.roi != null && r.roi < 1 ? "#ef4444" : "var(--text-secondary)" }}>
                     {r.roi != null ? `${r.roi.toFixed(1)}x` : "—"}
                   </td>
@@ -247,6 +341,50 @@ export default function AffiliateCreatorsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination footer */}
+        {total > PAGE_SIZE && (
+          <div className="flex items-center justify-between px-3 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {pageStart.toLocaleString()}–{pageEnd.toLocaleString()} of {total.toLocaleString()}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="p-1.5 rounded cursor-pointer disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              {pageNumbers().map((n, i) =>
+                n === "…" ? (
+                  <span key={`e${i}`} className="px-1.5 text-xs" style={{ color: "var(--text-muted)" }}>…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setPage(n)}
+                    className="min-w-[28px] h-7 px-2 rounded text-xs font-medium cursor-pointer transition-all"
+                    style={{
+                      background: page === n ? "var(--accent)" : "transparent",
+                      color: page === n ? "#fff" : "var(--text-secondary)",
+                    }}
+                  >
+                    {n}
+                  </button>
+                )
+              )}
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages || loading}
+                className="p-1.5 rounded cursor-pointer disabled:opacity-40 transition-colors hover:bg-[var(--bg-subtle)]"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

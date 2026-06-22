@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
     select: {
       id: true,
       scheduledStart: true,
+      platform: true,
       gmv: true,
       adsCost: true,
       actualDurationMinutes: true,
@@ -113,7 +114,10 @@ export async function GET(req: NextRequest) {
     orderBy: { scheduledStart: "asc" },
   });
 
-  const noAdsSessions = allCompleted
+  // Shopee livestream doesn't run ads — exclude from both ads-analysis lists
+  const tiktokCompleted = allCompleted.filter(s => s.platform !== "SHOPEE");
+
+  const noAdsSessions = tiktokCompleted
     .filter(s => (s.gmv ?? 0) > 0 && (s.adsCost === null || s.adsCost === 0))
     .map(s => ({
       id:       s.id,
@@ -123,7 +127,7 @@ export async function GET(req: NextRequest) {
       hostName: s.liveHost?.displayName || s.liveHost?.user.name || "Unassigned",
     }));
 
-  const highAdsSessions = allCompleted
+  const highAdsSessions = tiktokCompleted
     .filter(s => {
       const gmv = s.gmv ?? 0;
       const ads = s.adsCost ?? 0;

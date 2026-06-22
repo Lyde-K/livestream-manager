@@ -202,7 +202,11 @@ export function buildTopBottomSessions(rows: AnalyzedRow[]): {
   }));
 
   const top = [...summaries].sort((a, b) => b.gmv - a.gmv).slice(0, 5);
-  const bottom = [...summaries].sort((a, b) => a.gmv - b.gmv).slice(0, 5);
+  // Exclude sessions shorter than 30 min — likely aborted/restart sessions, not true underperformers
+  const bottom = [...summaries]
+    .filter(s => s.durationHours == null || s.durationHours >= 0.5)
+    .sort((a, b) => a.gmv - b.gmv)
+    .slice(0, 5);
   return { top, bottom };
 }
 

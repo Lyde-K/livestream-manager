@@ -315,7 +315,11 @@ model SyncLog {
   message   String
   resolved  Boolean  @default(false)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  // Unique constraint prevents the same sync error from being logged repeatedly
+  // on every GAS sync run — skipDuplicates will silently ignore re-inserts.
+  @@unique([platform, rawHost, rawBrand, startTime, errorType])
   @@index([resolved, createdAt])
 }
 

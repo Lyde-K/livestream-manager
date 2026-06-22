@@ -31,7 +31,6 @@ const navItems: NavItem[] = [
   { label: "Overview",          href: "/affiliate",                 icon: LayoutDashboard, roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Creators",          href: "/affiliate/creators",        icon: Users,           roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Products",          href: "/affiliate/products",        icon: Package,         roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
-  { label: "AI Analysis",       href: "/affiliate/ai-analysis",     icon: Sparkles,        roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Blacklist",         href: "/affiliate/blacklist",       icon: Ban,             roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Import",            href: "/affiliate/import",          icon: Upload,          roles: ["ADMIN"],          group: "AFFILIATE" },
   // MANAGEMENT (admin only)

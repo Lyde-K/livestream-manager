@@ -291,10 +291,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Batch-insert all sync log errors in one query
+  // Batch-insert all sync log errors in one query.
+  // skipDuplicates relies on the unique constraint (platform, rawHost, rawBrand, startTime, errorType)
+  // to silently ignore re-inserts — preventing millions of duplicate rows accumulating.
   if (syncLogErrors.length > 0) {
     await prisma.syncLog.createMany({ data: syncLogErrors, skipDuplicates: true });
   }
+
+  // Retention: delete resolved SyncLog entries older than 30 days to keep storage low.
+  // Unresolved errors are kept indefinitely so admins can still action them.
+  await prisma.syncLog.deleteMany({
+    where: { resolved: true, createdAt: { lt: new Date(Date.now() - 30 * 24 * 3600_000) } },
+  });
 
   // Mark past PENDING sessions (> 6 hours ago) as MISSED if they weren't synced
   const cutoff = new Date(Date.now() - 6 * 3600_000);

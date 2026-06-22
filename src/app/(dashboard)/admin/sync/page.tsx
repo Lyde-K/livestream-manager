@@ -61,8 +61,9 @@ const SHOPEE_COLS = [
 
 const GAS_TEMPLATE = `/**
  * 13 Media · Google Sheets → App Sync (TikTok + Shopee)
- * Paste into Extensions > Apps Script, then run syncAll().
- * Schedule via ⏱ Triggers for auto-sync every 15 minutes.
+ * Paste into Extensions > Apps Script, then save.
+ * Run manually via the "13 Media Sync" menu that appears in your sheet toolbar.
+ * DO NOT add time-based triggers — run on-demand only.
  *
  * TikTok tab layout  — 28 cols (A–AB):
  *   A:Brand  B:Host  C:Hours  D:Campaign  E:Ads Cost
@@ -84,6 +85,31 @@ const GAS_TEMPLATE = `/**
 
 const APP_URL = "https://your-app-url.vercel.app";  // ← base URL only, no path e.g. https://livestream-manager-beryl.vercel.app
 const API_KEY = "PASTE_YOUR_SYNC_KEY_HERE";  // ← paste SHEETS_SYNC_KEY from .env
+
+/** Adds a "13 Media Sync" menu to the sheet toolbar when the spreadsheet opens. */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("13 Media Sync")
+    .addItem("▶ Sync TikTok + Shopee", "syncAll")
+    .addItem("▶ Sync TikTok only",     "syncTikTok")
+    .addItem("▶ Sync Shopee only",     "syncShopee")
+    .addSeparator()
+    .addItem("🔍 Show valid hosts & brands", "loadLookups")
+    .addItem("🗑 Delete all auto-triggers",  "deleteAllTriggers")
+    .addToUi();
+}
+
+/** Removes every time-based trigger from this script (call once to clean up). */
+function deleteAllTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const t of triggers) {
+    ScriptApp.deleteTrigger(t);
+  }
+  const msg = triggers.length === 0
+    ? "No triggers found — nothing to delete."
+    : triggers.length + " trigger(s) deleted. Sync is now manual-only.";
+  SpreadsheetApp.getUi().alert(msg);
+}
 
 function syncAll() {
   syncTikTok();
@@ -336,7 +362,7 @@ export default function SyncPage() {
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Google Sheets Sync</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-            Your team fills TikTok &amp; Shopee data in Google Sheets — run sync manually or via GAS trigger.
+            Your team fills TikTok &amp; Shopee data in Google Sheets — run sync manually from the sheet menu.
           </p>
         </div>
         {lastSyncAt && (
@@ -438,10 +464,10 @@ export default function SyncPage() {
         </div>
         <div className="ml-8 space-y-3">
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            Preferred: run sync on-demand from Apps Script — open your sheet, go to <strong>Extensions → Apps Script</strong>, then click <strong>Run → syncAll()</strong>.
+            After saving the script, reload your Google Sheet. A <strong>13 Media Sync</strong> menu will appear in the toolbar. Use it to run <strong>Sync TikTok + Shopee</strong>, sync each platform separately, or load valid host/brand names.
           </p>
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            <strong>Optional auto-trigger:</strong> If you want automatic syncing, set a time-driven trigger in Apps Script (⏱ icon → + Add Trigger → function: <code className="px-1 rounded text-xs" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>syncAll</code> → every 15 minutes). Syncing is safe to run repeatedly — rows are matched by platform + start time + host + brand and never duplicated.
+            Syncing is safe to run repeatedly — rows are matched by platform + start time + host + brand and never duplicated. <strong>Do not add time-based triggers</strong>; use the menu for on-demand sync only.
           </p>
         </div>
       </div>
@@ -457,7 +483,7 @@ export default function SyncPage() {
             ["1. Fill manual columns first", "For each session: fill A (Brand), B (Host), C (Hours worked), D (Campaign yes/no). TikTok also needs E (Ads Cost). These go in Row 2 onwards."],
             ["2. Export from TikTok/Shopee", "Go to your platform dashboard → export the livestream report for the date range."],
             ["3. Paste export data after the manual columns", "TikTok: paste starting from Column F. Shopee: paste starting from Column E. The export columns match exactly — no reformatting needed."],
-            ["4. Auto-sync picks it up", "The 15-min trigger syncs new rows automatically. Or click Run → syncAll() for instant sync. Punctuality is calculated automatically."],
+            ["4. Sync from the sheet menu", "Open the sheet, click the \"13 Media Sync\" toolbar menu → \"▶ Sync TikTok + Shopee\". Punctuality is calculated automatically."],
           ].map(([label, desc]) => (
             <div key={label} className="flex gap-2">
               <span className="font-semibold whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{label}:</span>

@@ -52,8 +52,8 @@ export function HostLeaderboardTable({ hosts }: HostLeaderboardTableProps) {
           <thead>
             <tr style={{ background: "var(--bg-subtle)" }}>
               <Th align="left" rowSpan={2}>Host</Th>
-              <Th align="left" colSpan={2} accent>BAU</Th>
-              <Th align="left" colSpan={2} accent>Campaign</Th>
+              <Th align="center" colSpan={2} accent>BAU</Th>
+              <Th align="center" colSpan={2} accent>Campaign</Th>
               <Th align="right" rowSpan={2}>GMV / hr<br/><Sub>vs median</Sub></Th>
               <Th align="right" rowSpan={2}>CTOR<br/><Sub>vs median</Sub></Th>
               <Th align="left" rowSpan={2}>Tier mix</Th>
@@ -179,7 +179,7 @@ function Th({
   colSpan,
 }: {
   children: React.ReactNode;
-  align?: "left" | "right";
+  align?: "left" | "right" | "center";
   sub?: boolean;
   accent?: boolean;
   rowSpan?: number;
@@ -220,7 +220,7 @@ function Td({
   mono,
 }: {
   children: React.ReactNode;
-  align?: "left" | "right";
+  align?: "left" | "right" | "center";
   mono?: boolean;
 }) {
   return (

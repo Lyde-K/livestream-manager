@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LabelChip } from "@/components/affiliate/label-chip";
 import { formatCurrency } from "@/lib/utils";
-import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown } from "lucide-react";
+import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, ChevronDown } from "lucide-react";
 
 interface Brand { id: string; name: string; color: string; client: { user: { name: string } } | null; }
 
@@ -20,6 +20,9 @@ interface OverviewData {
   periods: string[];
   activePeriod: string | null;
   prevPeriod: string | null;
+  rangeMode: boolean;
+  rangeSnapshot: PeriodSnapshot | null;
+  rangePeriods: string[];
   topCreators: TopCreator[];
   topProducts: TopProduct[];
   topLiveCreators: TopLiveCreator[];
@@ -27,6 +30,8 @@ interface OverviewData {
   labelDistribution: Record<string, number>;
   prevLabelDistribution: Record<string, number>;
 }
+
+type FilterMode = "month" | "ytd" | "range";
 
 function labelDelta(curr: number, prev: number | undefined) {
   if (prev == null || prev === 0) return null;
@@ -114,7 +119,10 @@ const LABEL_EXPLANATIONS: Record<string, { title: string; criteria: string[]; co
 export default function AffiliateOverviewPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandId, setBrandId] = useState("");
-  const [period, setPeriod] = useState("");
+  const [period, setPeriod] = useState("");         // for single-month mode
+  const [filterMode, setFilterMode] = useState<FilterMode>("month");
+  const [customFrom, setCustomFrom] = useState(""); // "YYYY-MM"
+  const [customTo, setCustomTo] = useState("");     // "YYYY-MM"
   const [data, setData] = useState<OverviewData | null>(null);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
 
@@ -130,21 +138,50 @@ export default function AffiliateOverviewPage() {
   useEffect(() => {
     const params = new URLSearchParams();
     if (brandId) params.set("brandId", brandId);
-    if (period) params.set("period", period);
+
+    if (filterMode === "ytd") {
+      params.set("period", "YTD");
+    } else if (filterMode === "range" && customFrom && customTo) {
+      params.set("from", customFrom);
+      params.set("to", customTo);
+    } else if (filterMode === "month" && period) {
+      params.set("period", period);
+    }
+
     setData(null);
     fetch(`/api/affiliate/overview?${params}`).then((r) => r.json()).then(setData);
-  }, [brandId, period]);
+  }, [brandId, filterMode, period, customFrom, customTo]);
 
-  // When data loads and we have no period selected yet, sync to activePeriod
+  // Sync period from API response on first load
   useEffect(() => {
-    if (data?.activePeriod && !period) setPeriod(data.activePeriod);
+    if (data?.activePeriod && filterMode === "month" && !period) {
+      setPeriod(data.activePeriod);
+    }
   }, [data?.activePeriod]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const snapshot = data?.snapshots.find((s) => s.period === data.activePeriod);
-  const prevSnapshot = data?.prevPeriod ? data.snapshots.find((s) => s.period === data.prevPeriod) : undefined;
-  const gmvDelta = snapshot && prevSnapshot && prevSnapshot.gmv > 0 ? ((snapshot.gmv - prevSnapshot.gmv) / prevSnapshot.gmv) * 100 : null;
-  const videosDelta = snapshot && prevSnapshot && prevSnapshot.videos > 0 ? ((snapshot.videos - prevSnapshot.videos) / prevSnapshot.videos) * 100 : null;
-  const livesDelta = snapshot && prevSnapshot && prevSnapshot.liveStreams > 0 ? ((snapshot.liveStreams - prevSnapshot.liveStreams) / prevSnapshot.liveStreams) * 100 : null;
+  // The active display snapshot (range or single-month)
+  const displaySnapshot = data?.rangeMode
+    ? data.rangeSnapshot
+    : data?.snapshots.find((s) => s.period === data?.activePeriod);
+
+  const prevSnapshot = !data?.rangeMode && data?.prevPeriod
+    ? data.snapshots.find((s) => s.period === data?.prevPeriod)
+    : undefined;
+
+  const gmvDelta = displaySnapshot && prevSnapshot && prevSnapshot.gmv > 0
+    ? ((displaySnapshot.gmv - prevSnapshot.gmv) / prevSnapshot.gmv) * 100
+    : null;
+  const videosDelta = displaySnapshot && prevSnapshot && prevSnapshot.videos > 0
+    ? ((displaySnapshot.videos - prevSnapshot.videos) / prevSnapshot.videos) * 100
+    : null;
+  const livesDelta = displaySnapshot && prevSnapshot && prevSnapshot.liveStreams > 0
+    ? ((displaySnapshot.liveStreams - prevSnapshot.liveStreams) / prevSnapshot.liveStreams) * 100
+    : null;
+
+  // Derive YTD year label from most recent period
+  const ytdYear = data?.periods?.length
+    ? data.periods[data.periods.length - 1].substring(0, 4)
+    : new Date().getFullYear().toString();
 
   return (
     <div className="space-y-5 animate-in">
@@ -178,25 +215,83 @@ export default function AffiliateOverviewPage() {
         </div>
       )}
 
-      {/* Period selector */}
-      {data && (data.periods?.length ?? 0) > 1 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Period:</span>
-          <div className="flex gap-1 flex-wrap">
-            {[...data.periods].reverse().map((p) => (
+      {/* Period filter — mode switcher + controls */}
+      {data && (data.periods?.length ?? 0) > 0 && (
+        <div className="section-card p-3 flex flex-wrap items-start gap-3">
+          {/* Mode buttons */}
+          <div className="flex gap-1">
+            {(["month", "ytd", "range"] as FilterMode[]).map((m) => (
               <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                key={m}
+                onClick={() => setFilterMode(m)}
+                className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
                 style={{
-                  background: period === p ? "var(--accent)" : "var(--bg-subtle)",
-                  color: period === p ? "#fff" : "var(--text-secondary)",
+                  background: filterMode === m ? "var(--accent)" : "var(--bg-subtle)",
+                  color: filterMode === m ? "#fff" : "var(--text-secondary)",
                 }}
               >
-                {p}
+                {m === "month" ? "Monthly" : m === "ytd" ? `📅 YTD ${ytdYear}` : "Custom range"}
               </button>
             ))}
           </div>
+
+          {/* Monthly pill selector */}
+          {filterMode === "month" && (
+            <div className="flex gap-1 flex-wrap flex-1">
+              {[...data.periods].reverse().map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                  style={{
+                    background: period === p ? "var(--accent)" : "var(--bg-subtle)",
+                    color: period === p ? "#fff" : "var(--text-secondary)",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* YTD info */}
+          {filterMode === "ytd" && (
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+              <Calendar size={13} />
+              Aggregating {data.rangePeriods?.length ?? 0} months of {ytdYear}
+            </div>
+          )}
+
+          {/* Custom range pickers */}
+          {filterMode === "range" && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>From</label>
+              <input
+                type="month"
+                value={customFrom}
+                min={data.periods[0]}
+                max={data.periods[data.periods.length - 1]}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="px-2 py-1 rounded text-xs border"
+                style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>To</label>
+              <input
+                type="month"
+                value={customTo}
+                min={customFrom || data.periods[0]}
+                max={data.periods[data.periods.length - 1]}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="px-2 py-1 rounded text-xs border"
+                style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}
+              />
+              {customFrom && customTo && data.rangePeriods?.length > 0 && (
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {data.rangePeriods.length} month{data.rangePeriods.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -204,7 +299,7 @@ export default function AffiliateOverviewPage() {
         <div className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div>
       )}
 
-      {data && !snapshot && (
+      {data && !displaySnapshot && (
         <div className="section-card p-10 text-center">
           <Handshake size={32} className="mx-auto opacity-30 mb-3" />
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>Import affiliate data first to see overview.</p>
@@ -214,22 +309,41 @@ export default function AffiliateOverviewPage() {
         </div>
       )}
 
-      {data && snapshot && (
+      {data && displaySnapshot && (
         <>
+          {/* Range mode label */}
+          {data.rangeMode && (
+            <div className="flex items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
+              <Calendar size={13} />
+              <span>
+                Showing aggregated data for{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>
+                  {data.rangePeriods.join(", ")}
+                </strong>
+                {" "}· Label distribution as of {data.rangePeriods[data.rangePeriods.length - 1]}
+              </span>
+            </div>
+          )}
+
           {/* KPI cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KpiCard label="GMV" value={formatCurrency(snapshot.gmv)} fullValue={formatCurrency(snapshot.gmv)} delta={gmvDelta} />
-            <KpiCard label="Est. Commission" value={formatCurrency(snapshot.estCommission)} fullValue={formatCurrency(snapshot.estCommission)} delta={null} />
-            <KpiCard label="Videos" value={snapshot.videos.toLocaleString()} fullValue={snapshot.videos.toLocaleString()} delta={videosDelta} />
-            <KpiCard label="Live streams" value={snapshot.liveStreams.toLocaleString()} fullValue={snapshot.liveStreams.toLocaleString()} delta={livesDelta} />
+            <KpiCard label="GMV" value={formatCurrency(displaySnapshot.gmv)} fullValue={formatCurrency(displaySnapshot.gmv)} delta={gmvDelta} />
+            <KpiCard label="Est. Commission" value={formatCurrency(displaySnapshot.estCommission)} fullValue={formatCurrency(displaySnapshot.estCommission)} delta={null} />
+            <KpiCard label="Videos" value={displaySnapshot.videos.toLocaleString()} fullValue={displaySnapshot.videos.toLocaleString()} delta={videosDelta} />
+            <KpiCard label="Live streams" value={displaySnapshot.liveStreams.toLocaleString()} fullValue={displaySnapshot.liveStreams.toLocaleString()} delta={livesDelta} />
           </div>
 
-          {/* Label distribution with MoM delta */}
+          {/* Label distribution */}
           {Object.keys(data.labelDistribution).length > 0 && (
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Creator labels — {data.activePeriod}</div>
-                {data.prevPeriod && (
+                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Creator labels
+                  {data.rangeMode
+                    ? ` — as of ${data.rangePeriods[data.rangePeriods.length - 1]}`
+                    : ` — ${data.activePeriod}`}
+                </div>
+                {!data.rangeMode && data.prevPeriod && (
                   <div className="text-xs" style={{ color: "var(--text-muted)" }}>vs {data.prevPeriod}</div>
                 )}
               </div>
@@ -251,7 +365,7 @@ export default function AffiliateOverviewPage() {
                       <LabelChip label={l} showTooltip={false} />
                       <div className="flex items-baseline gap-1 mt-2">
                         <span className="text-xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{curr.toLocaleString()}</span>
-                        {prev != null && <LabelDeltaBadge curr={curr} prev={prev} />}
+                        {!data.rangeMode && prev != null && <LabelDeltaBadge curr={curr} prev={prev} />}
                       </div>
                       <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>creators · click for info</div>
                     </button>
@@ -263,17 +377,10 @@ export default function AffiliateOverviewPage() {
               {selectedLabel && LABEL_EXPLANATIONS[selectedLabel] && (() => {
                 const info = LABEL_EXPLANATIONS[selectedLabel];
                 return (
-                  <div
-                    className="mt-3 rounded-lg p-4 border"
-                    style={{ background: "var(--bg-subtle)", borderColor: "var(--border)" }}
-                  >
+                  <div className="mt-3 rounded-lg p-4 border" style={{ background: "var(--bg-subtle)", borderColor: "var(--border)" }}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-sm font-semibold" style={{ color: info.color }}>{info.title}</div>
-                      <button
-                        onClick={() => setSelectedLabel(null)}
-                        className="text-xs px-2 py-0.5 rounded cursor-pointer"
-                        style={{ color: "var(--text-muted)" }}
-                      >✕</button>
+                      <button onClick={() => setSelectedLabel(null)} className="text-xs px-2 py-0.5 rounded cursor-pointer" style={{ color: "var(--text-muted)" }}>✕</button>
                     </div>
                     <ul className="space-y-1">
                       {info.criteria.map((c, i) => (
@@ -308,28 +415,39 @@ export default function AffiliateOverviewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...data.snapshots].reverse().map((s) => (
-                      <tr
-                        key={s.period}
-                        className="border-t cursor-pointer transition-colors"
-                        style={{
-                          borderColor: "var(--border)",
-                          background: s.period === data.activePeriod ? "color-mix(in oklab, var(--accent) 8%, transparent)" : "transparent",
-                        }}
-                        onClick={() => setPeriod(s.period)}
-                      >
-                        <td className="px-2 sm:px-3 py-2 font-medium tabular-nums" style={{ color: s.period === data.activePeriod ? "var(--accent)" : "var(--text-primary)" }}>{s.period}</td>
-                        <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(s.gmv)}</td>
-                        <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.videos.toLocaleString()}</td>
-                        <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.liveStreams.toLocaleString()}</td>
-                        <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: s.blacklisted > 0 ? "#ef4444" : "var(--text-muted)" }}>
-                          <span className="inline-flex items-center gap-1 justify-end">
-                            {s.blacklisted > 0 && <Ban size={11} />}
-                            {s.blacklisted}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {[...data.snapshots].reverse().map((s) => {
+                      const inRange = data.rangeMode && data.rangePeriods.includes(s.period);
+                      const isActive = !data.rangeMode && s.period === data.activePeriod;
+                      return (
+                        <tr
+                          key={s.period}
+                          className="border-t cursor-pointer transition-colors"
+                          style={{
+                            borderColor: "var(--border)",
+                            background: isActive
+                              ? "color-mix(in oklab, var(--accent) 8%, transparent)"
+                              : inRange
+                              ? "color-mix(in oklab, var(--accent) 4%, transparent)"
+                              : "transparent",
+                          }}
+                          onClick={() => { setFilterMode("month"); setPeriod(s.period); }}
+                        >
+                          <td className="px-2 sm:px-3 py-2 font-medium tabular-nums" style={{ color: isActive || inRange ? "var(--accent)" : "var(--text-primary)" }}>
+                            {s.period}
+                            {inRange && <span className="ml-1.5 text-[10px] opacity-60">✓</span>}
+                          </td>
+                          <td className="px-2 sm:px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(s.gmv)}</td>
+                          <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.videos.toLocaleString()}</td>
+                          <td className="px-2 sm:px-3 py-2 text-right tabular-nums hidden sm:table-cell" style={{ color: "var(--text-secondary)" }}>{s.liveStreams.toLocaleString()}</td>
+                          <td className="px-2 sm:px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: s.blacklisted > 0 ? "#ef4444" : "var(--text-muted)" }}>
+                            <span className="inline-flex items-center gap-1 justify-end">
+                              {s.blacklisted > 0 && <Ban size={11} />}
+                              {s.blacklisted}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -340,7 +458,10 @@ export default function AffiliateOverviewPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top 10 creators by GMV</div>
+                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Top 10 creators by GMV
+                  {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
+                </div>
                 <Link href="/affiliate/creators" className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
                   View all <ArrowRight size={11} />
                 </Link>
@@ -356,7 +477,7 @@ export default function AffiliateOverviewPage() {
                     <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
                     <LabelChip label={c.label} />
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }}>{c.creatorName}</span>
-                    <GmvDeltaBadge curr={c.gmv} prev={c.prevGmv} />
+                    {!data.rangeMode && <GmvDeltaBadge curr={c.gmv} prev={c.prevGmv} />}
                     <span className="font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(c.gmv)}</span>
                   </Link>
                 ))}
@@ -368,7 +489,10 @@ export default function AffiliateOverviewPage() {
 
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Top 10 products by GMV</div>
+                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Top 10 products by GMV
+                  {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
+                </div>
                 <Link href="/affiliate/products" className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
                   View all <ArrowRight size={11} />
                 </Link>
@@ -383,7 +507,7 @@ export default function AffiliateOverviewPage() {
                   >
                     <span className="font-mono text-xs w-5 flex-shrink-0" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
                     <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }} title={p.productName}>{p.productName}</span>
-                    <GmvDeltaBadge curr={p.gmv} prev={p.prevGmv} />
+                    {!data.rangeMode && <GmvDeltaBadge curr={p.gmv} prev={p.prevGmv} />}
                     <span className="font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(p.gmv)}</span>
                   </Link>
                 ))}
@@ -394,12 +518,13 @@ export default function AffiliateOverviewPage() {
             </div>
           </div>
 
-          {/* Top live + video creators — now with GMV */}
+          {/* Top live + video creators */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
                   <Radio size={14} style={{ color: "var(--accent)" }} /> Top 10 by Live streams
+                  {data.rangeMode && <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
                 </div>
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>{data.activePeriod}</span>
               </div>
@@ -429,6 +554,7 @@ export default function AffiliateOverviewPage() {
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-semibold flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
                   <Video size={14} style={{ color: "var(--accent)" }} /> Top 10 by Videos
+                  {data.rangeMode && <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
                 </div>
                 <span className="text-xs" style={{ color: "var(--text-muted)" }}>{data.activePeriod}</span>
               </div>

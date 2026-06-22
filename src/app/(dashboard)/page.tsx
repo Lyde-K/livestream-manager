@@ -4,11 +4,12 @@ import { redirect } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
 import {
   Users, Building2, DoorOpen, Calendar, TrendingUp, Clock,
-  CheckCircle2, ArrowUpRight, Medal, RefreshCw, BarChart2,
+  CheckCircle2, ArrowUpRight, Medal, RefreshCw,
 } from "lucide-react";
 import { PlatformBadge } from "@/components/ui/platform-badge";
 import { MonthSelector } from "@/components/ui/month-selector";
 import { BrandDashboardPanel } from "@/components/dashboard/brand-dashboard-panel";
+import { AllBrandsAnalyticsPanel } from "@/components/dashboard/all-brands-analytics-panel";
 import { format, startOfMonth, endOfMonth, startOfDay, endOfDay, formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
@@ -325,7 +326,7 @@ export default async function DashboardPage(props: {
           </div>
         </div>
 
-        {/* Brand-specific dashboard panel */}
+        {/* Brand-specific dashboard panel OR All-brands analytics */}
         {selectedBrand ? (
           <BrandDashboardPanel
             brandId={selectedBrand.id}
@@ -336,62 +337,7 @@ export default async function DashboardPage(props: {
             currentGMV={stats.monthGMV}
           />
         ) : (
-          /* Analytics — All-brands breakdown table */
-          <div className="section-card">
-            <div className="section-card-header">
-              <h2 className="flex items-center gap-1.5 text-sm">
-                <BarChart2 size={13} style={{ color: "var(--accent)" }} />
-                {`Analytics — ${displayMonthLabel}${isMTD ? " (MTD)" : ""}`}
-              </h2>
-              <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
-                Full analytics <ArrowUpRight size={11} />
-              </Link>
-            </div>
-            {stats.brandBreakdown.length === 0 ? (
-              <div className="empty-state py-6 text-xs">No completed sessions yet for this period.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="data-table text-xs w-full">
-                  <thead>
-                    <tr>
-                      <th className="text-left">Brand</th>
-                      <th className="text-right">Sessions</th>
-                      <th className="text-right">Hours</th>
-                      <th className="text-right">GMV</th>
-                      <th className="text-right">GMV/hr</th>
-                      <th className="text-right">Ads Cost</th>
-                      <th className="text-right">Net</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stats.brandBreakdown.map((b, i) => (
-                      <tr key={b.name}>
-                        <td>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm">{medals[i] ?? ""}</span>
-                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
-                            <span className="font-medium" style={{ color: "var(--text-primary)" }}>{b.name}</span>
-                          </div>
-                        </td>
-                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.sessions}</td>
-                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>{b.hours.toFixed(1)}h</td>
-                        <td className="text-right font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.gmv)}</td>
-                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>
-                          {b.gmvPerHour > 0 ? formatCurrency(b.gmvPerHour) : "—"}
-                        </td>
-                        <td className="text-right" style={{ color: "var(--text-muted)" }}>
-                          {b.adsCost > 0 ? formatCurrency(b.adsCost) : "—"}
-                        </td>
-                        <td className="text-right" style={{ color: b.netRevenue >= 0 ? "var(--success)" : "var(--danger)" }}>
-                          {b.gmv > 0 ? formatCurrency(b.netRevenue) : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <AllBrandsAnalyticsPanel month={month} year={year} />
         )}
 
       </div>
