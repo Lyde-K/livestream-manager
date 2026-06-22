@@ -1,5 +1,6 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -30,26 +31,44 @@ function cmp(a: string, b: string): number {
 export function MonthRangePicker({ from, to, minPeriod, maxPeriod, isActive, onActivate, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
-  const [selecting, setSelecting] = useState<string | null>(null); // first click anchor
+  const [selecting, setSelecting] = useState<string | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   const [leftYear, setLeftYear] = useState<number>(() => {
     if (from) return parseYM(from).year;
     if (maxPeriod) return parseYM(maxPeriod).year;
     return new Date().getFullYear();
   });
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const rightYear = leftYear + 1;
 
+  const updatePos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setDropdownPos({ top: rect.bottom + window.scrollY + 6, left: rect.left + window.scrollX });
+  }, []);
+
   useEffect(() => {
     function onClickOut(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        triggerRef.current && !triggerRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setOpen(false);
         setSelecting(null);
       }
     }
     document.addEventListener("mousedown", onClickOut);
-    return () => document.removeEventListener("mousedown", onClickOut);
-  }, []);
+    window.addEventListener("scroll", updatePos, true);
+    window.addEventListener("resize", updatePos);
+    return () => {
+      document.removeEventListener("mousedown", onClickOut);
+      window.removeEventListener("scroll", updatePos, true);
+      window.removeEventListener("resize", updatePos);
+    };
+  }, [updatePos]);
 
   function handleMonthClick(ym: string) {
     if (cmp(ym, minPeriod) < 0 || cmp(ym, maxPeriod) > 0) return;
@@ -140,12 +159,15 @@ export function MonthRangePicker({ from, to, minPeriod, maxPeriod, isActive, onA
   const active = isActive ?? (from !== "" || to !== "");
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
+        ref={triggerRef}
         onClick={() => {
           if (!isActive) onActivate?.();
-          setOpen((o) => !o);
+          const next = !open;
+          setOpen(next);
           setSelecting(null);
+          if (next) updatePos();
         }}
         className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
         style={{
@@ -157,14 +179,17 @@ export function MonthRangePicker({ from, to, minPeriod, maxPeriod, isActive, onA
         {label}
       </button>
 
-      {open && (
+      {open && dropdownPos && typeof window !== "undefined" && createPortal(
         <div
-          className="absolute mt-2 p-4 rounded-xl shadow-2xl border"
+          ref={dropdownRef}
+          className="p-4 rounded-xl shadow-2xl border"
           style={{
+            position: "absolute",
+            top: dropdownPos.top,
+            left: dropdownPos.left,
             background: "var(--bg-card)",
             borderColor: "var(--border)",
             minWidth: 420,
-            left: 0,
             zIndex: 9999,
           }}
         >
@@ -210,7 +235,8 @@ export function MonthRangePicker({ from, to, minPeriod, maxPeriod, isActive, onA
               </button>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
