@@ -91,7 +91,6 @@ export default function SchedulePage() {
   const [saving, setSaving] = useState(false);
   const [is24h, setIs24h] = useState(true);
   const [emailLoading, setEmailLoading] = useState(false);
-  const [assignLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -217,7 +216,7 @@ export default function SchedulePage() {
         : (s.slotColor ?? s.brand.color);
       const durationMs = new Date(s.scheduledEnd).getTime() - new Date(s.scheduledStart).getTime();
       const durationHours = Math.round((durationMs / 3600000) * 10) / 10;
-      const durationLabel = durationHours % 1 === 0 ? `${durationHours}h` : `${durationHours}h`;
+      const durationLabel = `${durationHours}h`;
       return {
         id: s.id,
         title: `${s.liveHost?.user.name ?? "Unassigned"} · ${durationLabel}`,
@@ -393,6 +392,12 @@ export default function SchedulePage() {
     setOpen(true);
   }
 
+  function openAddSession() {
+    setEditing(null);
+    setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "" });
+    setOpen(true);
+  }
+
   async function exportMonthEmail() {
     setEmailLoading(true);
     const cal = calRef.current;
@@ -480,8 +485,7 @@ export default function SchedulePage() {
             style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
             <Wand2 size={14} /> Auto-Schedule
           </Button>
-          <Button variant="outline" onClick={() => setAssignOpen(true)} loading={assignLoading}
-            style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
+          <Button variant="outline" onClick={() => setAssignOpen(true)}            style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
             <Users size={14} /> Assign Hosts
           </Button>
           <Button variant="outline" onClick={() => setManualOpen(true)}>
@@ -519,11 +523,7 @@ export default function SchedulePage() {
               <Trash2 size={14} /> Clear Sessions
             </Button>
           )}
-          <Button onClick={() => {
-            setEditing(null);
-            setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "" });
-            setOpen(true);
-          }}>
+          <Button onClick={openAddSession}>
             <Plus size={14} /> Add Session
           </Button>
         </div>
@@ -531,14 +531,7 @@ export default function SchedulePage() {
         <div className="lg:hidden w-full space-y-2">
           {/* Primary row */}
           <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={() => {
-                setEditing(null);
-                setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "" });
-                setOpen(true);
-              }}
-            >
+            <Button className="flex-1" onClick={openAddSession}>
               <Plus size={14} /> Add Session
             </Button>
             <Button variant="outline" className="flex-1" onClick={() => setBulkOpen(true)}
@@ -548,8 +541,7 @@ export default function SchedulePage() {
           </div>
           {/* Secondary row */}
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setAssignOpen(true)} loading={assignLoading}
-              style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
+            <Button variant="outline" className="flex-1" onClick={() => setAssignOpen(true)}              style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
               <Users size={14} /> Assign Hosts
             </Button>
             <Button variant="outline" className="flex-1" onClick={() => setManualOpen(true)}>
@@ -698,8 +690,8 @@ export default function SchedulePage() {
         <HoursTrackerPanel
           data={hoursData}
           loading={hoursLoading}
-          onRefresh={(m, y) => loadHours(m, y)}
-          onTargetSaved={(m, y) => loadHours(m, y)}
+          onRefresh={loadHours}
+          onTargetSaved={loadHours}
         />
       )}
 
@@ -795,7 +787,6 @@ export default function SchedulePage() {
           sessions={sessions}
           rooms={rooms}
           hosts={hosts}
-          brands={brands}
           filterHost={filterHost}
           filterBrand={filterBrand}
           filterRoom={filterRoom}
@@ -816,8 +807,6 @@ export default function SchedulePage() {
           gridDate={gridDate}
           setGridDate={setGridDate}
           sessions={sessions}
-          hosts={hosts}
-          brands={brands}
           filterHost={filterHost}
           filterBrand={filterBrand}
           filterRoom={filterRoom}
@@ -1765,12 +1754,13 @@ function MonthDatePicker({
   const d = parseISO(gridDate);
   const label = format(d, "MMMM yyyy");
 
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const activeMonth = d.getMonth();
+  const activeYear  = d.getFullYear();
 
   return (
     <div className="relative">
       <button
-        onClick={() => { setOpen(v => !v); setPickerYear(parseISO(gridDate).getFullYear()); }}
+        onClick={() => { setOpen(v => !v); setPickerYear(activeYear); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
         style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
       >
@@ -1793,8 +1783,8 @@ function MonthDatePicker({
           </div>
           {/* Month grid */}
           <div className="grid grid-cols-3 gap-1.5">
-            {months.map((m, i) => {
-              const isActive = parseISO(gridDate).getMonth() === i && parseISO(gridDate).getFullYear() === pickerYear;
+            {MONTHS_SHORT.map((m, i) => {
+              const isActive = activeMonth === i && activeYear === pickerYear;
               return (
                 <button key={m}
                   onClick={() => {
@@ -1823,8 +1813,6 @@ interface DailyListViewProps {
   gridDate: string;
   setGridDate: (d: string) => void;
   sessions: Session[];
-  hosts: Host[];
-  brands: Brand[];
   filterHost: string;
   filterBrand: string;
   filterRoom: string;
@@ -1833,40 +1821,33 @@ interface DailyListViewProps {
   onSessionClick: (s: Session) => void;
 }
 
-function DailyListView({ gridDate, setGridDate, sessions, hosts: _hosts, brands: _brands, filterHost, filterBrand, filterRoom, filterType, is24h, onSessionClick }: DailyListViewProps) {
+function DailyListView({ gridDate, setGridDate, sessions, filterHost, filterBrand, filterRoom, filterType, is24h, onSessionClick }: DailyListViewProps) {
   // Show all sessions for the selected month, grouped by day
   const monthStr = gridDate.slice(0, 7); // "YYYY-MM"
 
-  const filtered = useMemo(() => sessions.filter(s => {
-    const sDate = s.scheduledStart.slice(0, 10);
-    if (!sDate.startsWith(monthStr)) return false;
-    if (filterHost && s.liveHostId !== filterHost) return false;
-    if (filterBrand && s.brandId !== filterBrand) return false;
-    if (filterRoom && s.roomId !== filterRoom) return false;
-    if (filterType && s.platform !== filterType) return false;
-    return true;
-  }), [sessions, monthStr, filterHost, filterBrand, filterRoom, filterType]);
-
-  // Group by date
+  // Single pass: filter + group by MYT date
   const byDay = useMemo(() => {
     const map = new Map<string, Session[]>();
-    for (const s of filtered) {
-      // Use MYT date (add 8h offset to UTC time)
-      const myt = new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000);
-      const dateStr = format(myt, "yyyy-MM-dd");
+    for (const s of sessions) {
+      if (!s.scheduledStart.slice(0, 7).startsWith(monthStr)) continue;
+      if (filterHost && s.liveHostId !== filterHost) continue;
+      if (filterBrand && s.brandId !== filterBrand) continue;
+      if (filterRoom && s.roomId !== filterRoom) continue;
+      if (filterType && s.platform !== filterType) continue;
+      const dateStr = format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000), "yyyy-MM-dd");
       const arr = map.get(dateStr) ?? [];
       arr.push(s);
       map.set(dateStr, arr);
     }
-    // Sort sessions within each day
     for (const [, arr] of map) arr.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart));
     return map;
-  }, [filtered]);
+  }, [sessions, monthStr, filterHost, filterBrand, filterRoom, filterType]);
 
   const sortedDays = useMemo(() => [...byDay.keys()].sort(), [byDay]);
   const timeFmt = is24h ? "HH:mm" : "h:mm a";
+  const todayStr = format(new Date(), "yyyy-MM-dd");
 
-  function goToday() { setGridDate(format(new Date(), "yyyy-MM-dd")); }
+  function goToday() { setGridDate(todayStr); }
   function prevMonth() {
     const d = parseISO(gridDate);
     setGridDate(format(new Date(d.getFullYear(), d.getMonth() - 1, 1), "yyyy-MM-dd"));
@@ -1894,7 +1875,7 @@ function DailyListView({ gridDate, setGridDate, sessions, hosts: _hosts, brands:
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
           <ChevronRight size={15} />
         </button>
-        <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{filtered.length} session(s)</span>
+        <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{[...byDay.values()].reduce((n, arr) => n + arr.length, 0)} session(s)</span>
       </div>
 
       {/* Day groups */}
@@ -1906,7 +1887,7 @@ function DailyListView({ gridDate, setGridDate, sessions, hosts: _hosts, brands:
             const daySessions = byDay.get(dateStr)!;
             const dayObj = parseISO(dateStr);
             const dayLabel = format(dayObj, "EEEE, d MMMM yyyy");
-            const isToday = dateStr === format(new Date(), "yyyy-MM-dd");
+            const isToday = dateStr === todayStr;
             return (
               <div key={dateStr}>
                 <div className="flex items-center gap-2 mb-2">
@@ -2006,7 +1987,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ created: number; errors: string[] } | null>(null);
 
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const dowLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
   const monthStart = startOfMonth(new Date(year, month - 1));
@@ -2194,7 +2174,7 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
             <div className="flex items-center gap-2">
               <Select value={month} onChange={e => { setMonth(Number(e.target.value)); setSelectedDates(new Set()); }}
                 className="text-xs">
-                {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                {MONTHS_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
               </Select>
               <Input type="number" value={year} min={2024} max={2030} className="w-16 text-xs"
                 onChange={e => { setYear(Number(e.target.value)); setSelectedDates(new Set()); }} />
@@ -2284,7 +2264,6 @@ function HoursTrackerPanel({
   const now = new Date();
   const [month, setMonth] = useState<number>(data?.month ?? (now.getMonth() + 1));
   const [year, setYear] = useState<number>(data?.year ?? now.getFullYear());
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   async function saveTarget(type: "HOST" | "BRAND", id: string) {
     const hrs = parseFloat(editVal);
@@ -2365,7 +2344,7 @@ function HoursTrackerPanel({
           </span>
           {data && (
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {months[(data.month ?? 1) - 1]} {data.year}
+              {MONTHS_SHORT[(data.month ?? 1) - 1]} {data.year}
             </span>
           )}
         </div>
@@ -2373,7 +2352,7 @@ function HoursTrackerPanel({
           {data && (
             <>
               <Select value={month ?? data.month} onChange={e => setMonth(Number(e.target.value))} className="text-xs">
-                {months.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                {MONTHS_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
               </Select>
               <Input type="number" value={year ?? data.year} min={2024} max={2030}
                 onChange={e => setYear(Number(e.target.value))} className="w-20 text-xs" />
@@ -2432,14 +2411,13 @@ function sessionOverlapsSlot(session: Session, slot: { start: number; end: numbe
 }
 
 function DailyGridView({
-  gridDate, setGridDate, sessions, rooms, hosts, brands: _brands, filterBrand, filterRoom, filterType, filterHost, onSessionClick, onAddSlot,
+  gridDate, setGridDate, sessions, rooms, hosts, filterBrand, filterRoom, filterType, filterHost, onSessionClick, onAddSlot,
 }: {
   gridDate: string;
   setGridDate: (d: string) => void;
   sessions: Session[];
   rooms: Room[];
   hosts: Host[];
-  brands: Brand[];
   filterBrand: string;
   filterRoom: string;
   filterType: string;
@@ -2524,29 +2502,6 @@ function DailyGridView({
   }
 
   // Pre-build O(1) lookup: slotIndex → campaign sessions
-  const slotCampaignMap = useMemo(() => {
-    const map = new Map<number, Session[]>();
-    activeSlots.forEach((slot, i) => {
-      map.set(i, campaignSessions.filter(s => sessionOverlapsSlot(s, slot)));
-    });
-    return map;
-  }, [campaignSessions, activeSlots]);
-
-  // Build unique brand groups for campaign banner
-  const campaignBrandSlots = useMemo(() => {
-    const result: Record<string, Set<number>> = {};
-    for (const s of campaignSessions) {
-      activeSlots.forEach((slot, i) => {
-        if (sessionOverlapsSlot(s, slot)) {
-          const key = `${s.brandId}|${s.brand.name}|${s.brand.color}|${s.platform}`;
-          if (!result[key]) result[key] = new Set();
-          result[key].add(i);
-        }
-      });
-    }
-    return result;
-  }, [campaignSessions, activeSlots]);
-
   const colWidth = 120;
   const labelWidth = 140;
 

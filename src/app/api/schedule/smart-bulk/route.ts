@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
     totalSessions: plannedSessions.length,
     totalHours,
     campaignDaySessions: plannedSessions.filter(s => s.isCampaignDay).length,
-    regularDaySessions:  plannedSessions.filter(s => !s.isCampaignDay).length,
+    get regularDaySessions() { return plannedSessions.length - this.campaignDaySessions; },
     hoursShortfall: Math.max(0, targetHours - totalHours),
     strategy: targetHours >= 300 ? "Heavy (12h campaign + fill to target)"
       : targetHours >= 200 ? "Medium (12h campaign, 6h regular)"

@@ -81,32 +81,34 @@ export async function POST(req: NextRequest) {
     return slots.some(s => s.start < end && s.end > start);
   }
 
-  // Get default room (first active room) for assignment
-  const defaultRoom = await prisma.room.findFirst({ where: { isActive: true } });
+  // Lazy-fetch default room only if any slot lacks one
+  const needsRoom = unassignedSlots.some(s => !s.roomId);
+  const defaultRoom = needsRoom ? await prisma.room.findFirst({ where: { isActive: true } }) : null;
 
-  // Assign hosts by performance rank, respecting conflicts
-  let assigned = 0;
+  // Assign hosts by performance rank, respecting conflicts; collect updates
+  const updates: { id: string; liveHostId: string; roomId?: string }[] = [];
   for (const slot of unassignedSlots) {
     const slotStart = new Date(slot.scheduledStart);
     const slotEnd = new Date(slot.scheduledEnd);
 
-    // Find first ranked host without a conflict
     const host = rankedHosts.find(h => !hasConflict(h.id, slotStart, slotEnd));
-    if (!host) continue; // skip if all hosts are busy at this time
+    if (!host) continue;
 
-    await prisma.session.update({
-      where: { id: slot.id },
-      data: {
-        liveHostId: host.id,
-        ...(slot.roomId ? {} : { roomId: defaultRoom?.id ?? null }),
-      },
+    updates.push({
+      id: slot.id,
+      liveHostId: host.id,
+      ...(!slot.roomId && defaultRoom ? { roomId: defaultRoom.id } : {}),
     });
 
-    // Record this assignment for future conflict checks
     const list = assignments.get(host.id)!;
     list.push({ start: slotStart, end: slotEnd });
-    assigned++;
   }
 
-  return Response.json({ assigned, total: unassignedSlots.length });
+  if (updates.length > 0) {
+    await prisma.$transaction(
+      updates.map(u => prisma.session.update({ where: { id: u.id }, data: { liveHostId: u.liveHostId, ...(u.roomId ? { roomId: u.roomId } : {}) } }))
+    );
+  }
+
+  return Response.json({ assigned: updates.length, total: unassignedSlots.length });
 }
