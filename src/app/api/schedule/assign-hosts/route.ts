@@ -8,10 +8,10 @@ export async function POST(req: NextRequest) {
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const { month, year, brandId } = await req.json();
+  const { month, year, brandId, hostType, hostId: specificHostId, startDate, endDate } = await req.json();
 
-  const monthStart = startOfMonth(new Date(year, month - 1));
-  const monthEnd = endOfMonth(new Date(year, month - 1));
+  const monthStart = startDate ? new Date(startDate) : startOfMonth(new Date(year, month - 1));
+  const monthEnd   = endDate   ? new Date(endDate)   : endOfMonth(new Date(year, month - 1));
 
   // Get all unassigned PENDING slots for the month
   const unassignedSlots = await prisma.session.findMany({
@@ -28,10 +28,13 @@ export async function POST(req: NextRequest) {
   if (unassignedSlots.length === 0)
     return Response.json({ assigned: 0, message: "No unassigned slots found" });
 
-  // Get all active full-time hosts ranked by recent performance
+  // Get hosts filtered by type/specific selection
   const perfStart = subDays(monthStart, 90);
   const hosts = await prisma.liveHost.findMany({
-    where: { isActive: true, type: "FULL_TIME" },
+    where: {
+      isActive: true,
+      ...(specificHostId ? { id: specificHostId } : hostType ? { type: hostType } : { type: "FULL_TIME" }),
+    },
     include: {
       user: { select: { name: true } },
       sessions: {

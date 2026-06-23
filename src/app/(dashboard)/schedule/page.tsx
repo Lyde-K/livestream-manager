@@ -91,7 +91,7 @@ export default function SchedulePage() {
   const [saving, setSaving] = useState(false);
   const [is24h, setIs24h] = useState(true);
   const [emailLoading, setEmailLoading] = useState(false);
-  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
@@ -106,7 +106,8 @@ export default function SchedulePage() {
   const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [hoursLoading, setHoursLoading] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"calendar" | "grid" | "dailyList">("grid");
   const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
   async function loadMeta() {
@@ -156,7 +157,7 @@ export default function SchedulePage() {
 
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => {
-    if (viewMode === "grid") {
+    if (viewMode === "grid" || viewMode === "dailyList") {
       const { start, end } = gridMonthRange(gridDate);
       loadSessions(start, end);
       loadCampaigns(start, end);
@@ -392,27 +393,6 @@ export default function SchedulePage() {
     setOpen(true);
   }
 
-  async function autoAssignHosts() {
-    setAssignLoading(true);
-    const cal = calRef.current;
-    const now = cal ? cal.getApi().getDate() : new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
-    const res = await fetch("/api/schedule/assign-hosts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month, year }),
-    });
-    const data = await res.json();
-    setAssignLoading(false);
-    if (res.ok) {
-      alert(`Assigned ${data.assigned} of ${data.total} unassigned slots!`);
-      await reloadCurrentRange();
-    } else {
-      alert(`Error: ${data.error}`);
-    }
-  }
-
   async function exportMonthEmail() {
     setEmailLoading(true);
     const cal = calRef.current;
@@ -500,7 +480,7 @@ export default function SchedulePage() {
             style={{ borderColor: "var(--accent)", color: "var(--accent)" }}>
             <Wand2 size={14} /> Auto-Schedule
           </Button>
-          <Button variant="outline" onClick={autoAssignHosts} loading={assignLoading}
+          <Button variant="outline" onClick={() => setAssignOpen(true)} loading={assignLoading}
             style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
             <Users size={14} /> Assign Hosts
           </Button>
@@ -568,7 +548,7 @@ export default function SchedulePage() {
           </div>
           {/* Secondary row */}
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={autoAssignHosts} loading={assignLoading}
+            <Button variant="outline" className="flex-1" onClick={() => setAssignOpen(true)} loading={assignLoading}
               style={{ borderColor: "var(--accent-purple)", color: "var(--accent-purple)" }}>
               <Users size={14} /> Assign Hosts
             </Button>
@@ -784,6 +764,17 @@ export default function SchedulePage() {
           <LayoutGrid size={13} /> Daily Schedule
         </button>
         <button
+          onClick={() => setViewMode("dailyList")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
+          style={{
+            borderColor: viewMode === "dailyList" ? "var(--accent)" : "var(--border)",
+            color: viewMode === "dailyList" ? "var(--accent)" : "var(--text-secondary)",
+            background: viewMode === "dailyList" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
+          }}
+        >
+          <Calendar size={13} /> Daily List
+        </button>
+        <button
           onClick={() => setViewMode("calendar")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
           style={{
@@ -819,15 +810,32 @@ export default function SchedulePage() {
         />
       )}
 
+      {/* Daily List View */}
+      {viewMode === "dailyList" && (
+        <DailyListView
+          gridDate={gridDate}
+          setGridDate={setGridDate}
+          sessions={sessions}
+          hosts={hosts}
+          brands={brands}
+          filterHost={filterHost}
+          filterBrand={filterBrand}
+          filterRoom={filterRoom}
+          filterType={filterType}
+          is24h={is24h}
+          onSessionClick={(s) => setDetailSession(s)}
+        />
+      )}
+
       {/* Calendar */}
       {viewMode === "calendar" && <div className="section-card p-4">
         <FullCalendar
           ref={calRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
           initialView="listMonth"
-          headerToolbar={{ left: "prev,next today", center: "title", right: "listWeek,listMonth" }}
-          buttonText={{ listWeek: "Week List", listMonth: "Month List" }}
-          views={{ listWeek: { buttonText: "Week List" }, listMonth: { buttonText: "Month List" } }}
+          headerToolbar={{ left: "prev,next today", center: "title", right: "listDay,listWeek,listMonth" }}
+          buttonText={{ listDay: "Daily List", listWeek: "Week List", listMonth: "Month List" }}
+          views={{ listDay: { buttonText: "Daily List" }, listWeek: { buttonText: "Week List" }, listMonth: { buttonText: "Month List" } }}
           height="calc(100vh - 310px)"
           events={[...calEvents, ...campaignEvents]}
           selectable selectMirror editable dayMaxEvents={5}
@@ -970,6 +978,15 @@ export default function SchedulePage() {
           hosts={hosts} brands={brands} rooms={rooms}
           onClose={() => setBulkOpen(false)}
           onCreated={() => { setBulkOpen(false); reloadCurrentRange(); }}
+        />
+      )}
+
+      {/* Assign Hosts Modal */}
+      {assignOpen && (
+        <AssignHostsModal
+          hosts={hosts}
+          onClose={() => setAssignOpen(false)}
+          onAssigned={() => { setAssignOpen(false); reloadCurrentRange(); }}
         />
       )}
 
@@ -1605,6 +1622,361 @@ function ClearSessionsModal({ brands, onClose, onCleared }: { brands: Brand[]; o
   );
 }
 
+// ── Assign Hosts Modal ────────────────────────────────────────────────────────
+
+function AssignHostsModal({ hosts, onClose, onAssigned }: { hosts: Host[]; onClose: () => void; onAssigned: () => void }) {
+  const now = new Date();
+  const [hostType, setHostType] = useState<"FULL_TIME" | "PART_TIME">("FULL_TIME");
+  const [specificHostId, setSpecificHostId] = useState<string>("ALL");
+  const [rangeType, setRangeType] = useState<"month" | "custom">("month");
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [customStart, setCustomStart] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
+  const [customEnd, setCustomEnd] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
+  const [saving, setSaving] = useState(false);
+
+  const filteredHosts = hosts.filter(h => h.type === hostType);
+
+  async function doAssign() {
+    setSaving(true);
+    const body: Record<string, unknown> = {
+      hostType,
+      ...(specificHostId !== "ALL" ? { hostId: specificHostId } : {}),
+    };
+    if (rangeType === "month") {
+      body.month = month;
+      body.year = year;
+    } else {
+      body.startDate = `${customStart}T00:00:00+08:00`;
+      body.endDate   = `${customEnd}T23:59:59+08:00`;
+      // Derive month/year from start for compat
+      const d = new Date(customStart);
+      body.month = d.getMonth() + 1;
+      body.year  = d.getFullYear();
+    }
+    const res = await fetch("/api/schedule/assign-hosts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (res.ok) {
+      const label = specificHostId !== "ALL"
+        ? (hosts.find(h => h.id === specificHostId)?.user.name ?? specificHostId)
+        : `All ${hostType === "FULL_TIME" ? "Full Time" : "Part Time"} Hosts`;
+      alert(`Assigned ${data.assigned} of ${data.total ?? "?"} unassigned slot(s) to ${label}.`);
+      onAssigned();
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Assign Hosts" size="md">
+      <div className="space-y-5">
+        {/* Host Type */}
+        <div>
+          <label className="block text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Host Type</label>
+          <div className="flex gap-2">
+            {(["FULL_TIME", "PART_TIME"] as const).map(t => (
+              <button key={t} onClick={() => { setHostType(t); setSpecificHostId("ALL"); }}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={hostType === t
+                  ? { background: "var(--accent)", color: "#fff", border: "none" }
+                  : { background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+                {t === "FULL_TIME" ? "Full Time" : "Part Time"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Host Selection */}
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Live Host</label>
+          <Select value={specificHostId} onChange={e => setSpecificHostId(e.target.value)}>
+            <option value="ALL">All {hostType === "FULL_TIME" ? "Full Time" : "Part Time"} Hosts</option>
+            {filteredHosts.map(h => (
+              <option key={h.id} value={h.id}>{h.user.name} ({h.displayName})</option>
+            ))}
+          </Select>
+          {filteredHosts.length === 0 && (
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+              No active {hostType === "FULL_TIME" ? "full time" : "part time"} hosts registered.
+            </p>
+          )}
+        </div>
+
+        {/* Date Range */}
+        <div>
+          <label className="block text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Date Range</label>
+          <div className="flex gap-2 mb-3">
+            {(["month", "custom"] as const).map(t => (
+              <button key={t} onClick={() => setRangeType(t)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={rangeType === t
+                  ? { background: "var(--accent)", color: "#fff", border: "none" }
+                  : { background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+                {t === "month" ? "By Month" : "Custom Range"}
+              </button>
+            ))}
+          </div>
+          {rangeType === "month" ? (
+            <div className="flex gap-2">
+              <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="flex-1">
+                {MONTHS_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </Select>
+              <Input type="number" value={year} min={2020} max={2030}
+                onChange={e => setYear(Number(e.target.value))} className="w-24" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>From</label>
+                <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>To</label>
+                <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={doAssign} loading={saving}>
+            <Users size={13} /> Assign Hosts
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Daily List View ────────────────────────────────────────────────────────────
+
+function MonthDatePicker({
+  gridDate, setGridDate,
+}: { gridDate: string; setGridDate: (d: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => new Date(gridDate).getFullYear());
+
+  const d = parseISO(gridDate);
+  const label = format(d, "MMMM yyyy");
+
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => { setOpen(v => !v); setPickerYear(parseISO(gridDate).getFullYear()); }}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
+        style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
+      >
+        {label} <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 rounded-xl shadow-lg p-4 w-72"
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+          {/* Year nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => setPickerYear(y => y - 1)}
+              className="p-1 rounded cursor-pointer" style={{ color: "var(--text-secondary)" }}>
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{pickerYear}</span>
+            <button onClick={() => setPickerYear(y => y + 1)}
+              className="p-1 rounded cursor-pointer" style={{ color: "var(--text-secondary)" }}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          {/* Month grid */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {months.map((m, i) => {
+              const isActive = parseISO(gridDate).getMonth() === i && parseISO(gridDate).getFullYear() === pickerYear;
+              return (
+                <button key={m}
+                  onClick={() => {
+                    // Set to 1st of selected month
+                    const newDate = format(new Date(pickerYear, i, 1), "yyyy-MM-dd");
+                    setGridDate(newDate);
+                    setOpen(false);
+                  }}
+                  className="py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                  style={{
+                    background: isActive ? "var(--accent)" : "var(--bg-subtle)",
+                    color: isActive ? "#fff" : "var(--text-secondary)",
+                  }}>
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface DailyListViewProps {
+  gridDate: string;
+  setGridDate: (d: string) => void;
+  sessions: Session[];
+  hosts: Host[];
+  brands: Brand[];
+  filterHost: string;
+  filterBrand: string;
+  filterRoom: string;
+  filterType: string;
+  is24h: boolean;
+  onSessionClick: (s: Session) => void;
+}
+
+function DailyListView({ gridDate, setGridDate, sessions, hosts: _hosts, brands: _brands, filterHost, filterBrand, filterRoom, filterType, is24h, onSessionClick }: DailyListViewProps) {
+  // Show all sessions for the selected month, grouped by day
+  const monthStr = gridDate.slice(0, 7); // "YYYY-MM"
+
+  const filtered = useMemo(() => sessions.filter(s => {
+    const sDate = s.scheduledStart.slice(0, 10);
+    if (!sDate.startsWith(monthStr)) return false;
+    if (filterHost && s.liveHostId !== filterHost) return false;
+    if (filterBrand && s.brandId !== filterBrand) return false;
+    if (filterRoom && s.roomId !== filterRoom) return false;
+    if (filterType && s.platform !== filterType) return false;
+    return true;
+  }), [sessions, monthStr, filterHost, filterBrand, filterRoom, filterType]);
+
+  // Group by date
+  const byDay = useMemo(() => {
+    const map = new Map<string, Session[]>();
+    for (const s of filtered) {
+      // Use MYT date (add 8h offset to UTC time)
+      const myt = new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000);
+      const dateStr = format(myt, "yyyy-MM-dd");
+      const arr = map.get(dateStr) ?? [];
+      arr.push(s);
+      map.set(dateStr, arr);
+    }
+    // Sort sessions within each day
+    for (const [, arr] of map) arr.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart));
+    return map;
+  }, [filtered]);
+
+  const sortedDays = useMemo(() => [...byDay.keys()].sort(), [byDay]);
+  const timeFmt = is24h ? "HH:mm" : "h:mm a";
+
+  function goToday() { setGridDate(format(new Date(), "yyyy-MM-dd")); }
+  function prevMonth() {
+    const d = parseISO(gridDate);
+    setGridDate(format(new Date(d.getFullYear(), d.getMonth() - 1, 1), "yyyy-MM-dd"));
+  }
+  function nextMonth() {
+    const d = parseISO(gridDate);
+    setGridDate(format(new Date(d.getFullYear(), d.getMonth() + 1, 1), "yyyy-MM-dd"));
+  }
+
+  return (
+    <div className="section-card p-4 space-y-4">
+      {/* Nav */}
+      <div className="flex items-center gap-2">
+        <button onClick={goToday}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
+          Today
+        </button>
+        <button onClick={prevMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+          <ChevronLeft size={15} />
+        </button>
+        <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
+        <button onClick={nextMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+          <ChevronRight size={15} />
+        </button>
+        <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{filtered.length} session(s)</span>
+      </div>
+
+      {/* Day groups */}
+      {sortedDays.length === 0 ? (
+        <p className="text-center text-sm py-10" style={{ color: "var(--text-muted)" }}>No sessions for this month.</p>
+      ) : (
+        <div className="space-y-4">
+          {sortedDays.map(dateStr => {
+            const daySessions = byDay.get(dateStr)!;
+            const dayObj = parseISO(dateStr);
+            const dayLabel = format(dayObj, "EEEE, d MMMM yyyy");
+            const isToday = dateStr === format(new Date(), "yyyy-MM-dd");
+            return (
+              <div key={dateStr}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0"
+                    style={isToday
+                      ? { background: "var(--accent)", color: "#fff" }
+                      : { background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+                    {format(dayObj, "d")}
+                  </div>
+                  <span className="text-sm font-semibold" style={{ color: isToday ? "var(--accent)" : "var(--text-primary)" }}>
+                    {dayLabel}
+                  </span>
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>{daySessions.length} session(s)</span>
+                </div>
+                <div className="ml-9 space-y-1.5">
+                  {daySessions.map(s => {
+                    const startLabel = formatMYT(s.scheduledStart, timeFmt);
+                    const endLabel   = formatMYT(s.scheduledEnd,   timeFmt);
+                    const hostName = s.liveHost?.displayName ?? s.liveHost?.user?.name ?? "Unassigned";
+                    return (
+                      <button key={s.id} onClick={() => onSessionClick(s)}
+                        className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer"
+                        style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
+                        {/* Brand colour bar */}
+                        <div className="w-1 self-stretch rounded-full flex-shrink-0"
+                          style={{ background: s.brand?.color ?? "var(--accent)" }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                              {s.brand?.name ?? "—"}
+                            </span>
+                            {s.isCampaignDay && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Campaign</span>
+                            )}
+                            <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--bg-card)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                              {s.platform}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+                            <span>{startLabel} – {endLabel}</span>
+                            <span>·</span>
+                            <span>{hostName}</span>
+                            {s.room && <><span>·</span><span>{s.room.name}</span></>}
+                          </div>
+                        </div>
+                        <div className="flex-shrink-0">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-medium capitalize"
+                            style={{
+                              background: s.status === "COMPLETED" ? "#22c55e20" : s.status === "MISSED" ? "#ef444420" : "var(--bg-card)",
+                              color: s.status === "COMPLETED" ? "#22c55e" : s.status === "MISSED" ? "#ef4444" : "var(--text-muted)",
+                              border: "1px solid currentColor",
+                            }}>
+                            {s.status.toLowerCase()}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Manual Slot Modal ─────────────────────────────────────────────────────────
 
 interface TimeSlotRow { id: string; startTime: string; durationH: string; color: string; }
@@ -2181,11 +2553,23 @@ function DailyGridView({
   return (
     <div className="section-card p-4 space-y-3">
       {/* Date nav */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setGridDate(format(new Date(), "yyyy-MM-dd"))}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
+          Today
+        </button>
         <button onClick={prevDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
           style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
           <ChevronLeft size={15} />
         </button>
+        <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
+        <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+          <ChevronRight size={15} />
+        </button>
+        {/* Direct date picker still available as secondary */}
         <input
           type="date"
           value={gridDate}
@@ -2193,10 +2577,6 @@ function DailyGridView({
           className="px-3 py-1.5 rounded-lg border text-sm font-medium"
           style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
         />
-        <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-          <ChevronRight size={15} />
-        </button>
         <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{dayLabel}</span>
       </div>
 
