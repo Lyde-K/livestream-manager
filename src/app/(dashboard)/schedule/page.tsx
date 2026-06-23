@@ -105,7 +105,7 @@ export default function SchedulePage() {
   const [hoursOpen, setHoursOpen] = useState(false);
   const [hoursData, setHoursData] = useState<HoursData | null>(null);
   const [hoursLoading, setHoursLoading] = useState(false);
-  const [clearAllLoading, setClearAllLoading] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"calendar" | "grid">("grid");
   const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
 
@@ -305,31 +305,6 @@ export default function SchedulePage() {
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     setDetailSession(null);
     await reloadCurrentRange();
-  }
-
-  async function clearAllMonth() {
-    // Derive the active month: use gridDate in grid mode, else calendar's active date
-    const activeDate = viewMode === "grid"
-      ? parseISO(gridDate)
-      : calRef.current ? calRef.current.getApi().getDate() : new Date();
-    const monthLabel = format(activeDate, "MMMM yyyy");
-    if (!confirm(`Delete ALL sessions in ${monthLabel}? This cannot be undone.`)) return;
-    setClearAllLoading(true);
-    const start = `${format(startOfMonth(activeDate), "yyyy-MM-dd")}T00:00:00+08:00`;
-    const end   = `${format(endOfMonth(activeDate),   "yyyy-MM-dd")}T23:59:59+08:00`;
-    const res = await fetch("/api/sessions/bulk", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start, end }),
-    });
-    const data = await res.json();
-    setClearAllLoading(false);
-    if (res.ok) {
-      alert(`Cleared ${data.deleted} session(s) from ${monthLabel}.`);
-      await reloadCurrentRange();
-    } else {
-      alert(`Error: ${data.error}`);
-    }
   }
 
   function applyFilters() {
@@ -559,9 +534,9 @@ export default function SchedulePage() {
             <Mail size={14} /> Email to Clients
           </Button>
           {isAdmin && (
-            <Button variant="outline" onClick={clearAllMonth} loading={clearAllLoading}
+            <Button variant="outline" onClick={() => setClearOpen(true)}
               style={{ borderColor: "#ef4444", color: "#ef4444" }}>
-              <Trash2 size={14} /> Clear All
+              <Trash2 size={14} /> Clear Sessions
             </Button>
           )}
           <Button onClick={() => {
@@ -995,6 +970,15 @@ export default function SchedulePage() {
           hosts={hosts} brands={brands} rooms={rooms}
           onClose={() => setBulkOpen(false)}
           onCreated={() => { setBulkOpen(false); reloadCurrentRange(); }}
+        />
+      )}
+
+      {/* Clear Sessions Modal */}
+      {clearOpen && (
+        <ClearSessionsModal
+          brands={brands}
+          onClose={() => setClearOpen(false)}
+          onCleared={() => { setClearOpen(false); reloadCurrentRange(); }}
         />
       )}
 
@@ -1465,6 +1449,159 @@ function SmartCalendarPreview({ month, year, sessions }: { month: number; year: 
         </div>
       ))}
     </div>
+  );
+}
+
+// ── Clear Sessions Modal ──────────────────────────────────────────────────────
+
+const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function ClearSessionsModal({ brands, onClose, onCleared }: { brands: Brand[]; onClose: () => void; onCleared: () => void }) {
+  const now = new Date();
+  const livestreamBrands = brands.filter(b => (b as Brand & { hasLivestream?: boolean }).hasLivestream !== false);
+
+  // Step 1: config; Step 2: confirm
+  const [step, setStep] = useState<1 | 2>(1);
+
+  const [brandId, setBrandId] = useState<string>("ALL");
+  const [rangeType, setRangeType] = useState<"month" | "custom">("month");
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [customStart, setCustomStart] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
+  const [customEnd, setCustomEnd] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
+  const [deleting, setDeleting] = useState(false);
+
+  const brandLabel = brandId === "ALL" ? "All Brands" : (brands.find(b => b.id === brandId)?.name ?? brandId);
+
+  function dateRange(): { start: string; end: string } {
+    if (rangeType === "month") {
+      const d = new Date(year, month - 1, 1);
+      return {
+        start: `${format(startOfMonth(d), "yyyy-MM-dd")}T00:00:00+08:00`,
+        end:   `${format(endOfMonth(d),   "yyyy-MM-dd")}T23:59:59+08:00`,
+      };
+    }
+    return {
+      start: `${customStart}T00:00:00+08:00`,
+      end:   `${customEnd}T23:59:59+08:00`,
+    };
+  }
+
+  function rangeLabel(): string {
+    if (rangeType === "month") return `${MONTHS_FULL[month - 1]} ${year}`;
+    return `${customStart} to ${customEnd}`;
+  }
+
+  async function doDelete() {
+    setDeleting(true);
+    const { start, end } = dateRange();
+    const res = await fetch("/api/sessions/bulk", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start, end, brandId: brandId === "ALL" ? null : brandId }),
+    });
+    const data = await res.json();
+    setDeleting(false);
+    if (res.ok) {
+      alert(`Deleted ${data.deleted} session(s) for ${brandLabel} in ${rangeLabel()}.`);
+      onCleared();
+    } else {
+      alert(`Error: ${data.error}`);
+    }
+  }
+
+  if (step === 2) {
+    return (
+      <Modal open onClose={() => setStep(1)} title="Confirm Deletion" size="sm">
+        <div className="space-y-4">
+          <div className="rounded-xl p-4 space-y-2" style={{ background: "#ef444415", border: "1px solid #ef444440" }}>
+            <p className="text-sm font-semibold" style={{ color: "#ef4444" }}>This cannot be undone.</p>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              You are about to permanently delete all <strong>scheduled sessions</strong> for:
+            </p>
+            <ul className="text-sm space-y-1 ml-2" style={{ color: "var(--text-primary)" }}>
+              <li>• Brand: <strong>{brandLabel}</strong></li>
+              <li>• Period: <strong>{rangeLabel()}</strong></li>
+            </ul>
+            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+              Only PENDING and COMPLETED sessions within this date range will be removed.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setStep(1)}>Go Back</Button>
+            <Button onClick={doDelete} loading={deleting}
+              style={{ background: "#ef4444", color: "#fff", borderColor: "#ef4444" }}>
+              <Trash2 size={13} /> Yes, Delete Sessions
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Clear Sessions" size="md">
+      <div className="space-y-4">
+        {/* Brand */}
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
+          <Select value={brandId} onChange={e => setBrandId(e.target.value)}>
+            <option value="ALL">All Brands</option>
+            {livestreamBrands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </Select>
+        </div>
+
+        {/* Range type */}
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Date Range</label>
+          <div className="flex gap-2 mb-3">
+            {(["month", "custom"] as const).map(t => (
+              <button key={t} onClick={() => setRangeType(t)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={rangeType === t
+                  ? { background: "var(--accent)", color: "#fff", border: "none" }
+                  : { background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}>
+                {t === "month" ? "By Month" : "Custom Range"}
+              </button>
+            ))}
+          </div>
+
+          {rangeType === "month" ? (
+            <div className="flex gap-2">
+              <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="flex-1">
+                {MONTHS_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </Select>
+              <Input type="number" value={year} min={2020} max={2030}
+                onChange={e => setYear(Number(e.target.value))} className="w-24" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>From</label>
+                <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>To</label>
+                <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Summary preview */}
+        <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
+          Will delete sessions for <strong>{brandLabel}</strong> from <strong>{rangeLabel()}</strong>.
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => setStep(2)}
+            style={{ background: "#ef4444", color: "#fff", borderColor: "#ef4444" }}>
+            <Trash2 size={13} /> Review & Delete
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

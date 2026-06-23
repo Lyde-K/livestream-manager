@@ -46,12 +46,13 @@ export async function DELETE(req: NextRequest) {
   const user = session.user as { role: string };
   if (user.role !== "ADMIN") return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const { start, end } = await req.json() as { start: string; end: string };
+  const { start, end, brandId } = await req.json() as { start: string; end: string; brandId?: string | null };
   if (!start || !end) return Response.json({ error: "start and end required" }, { status: 400 });
 
   const deleted = await prisma.session.deleteMany({
     where: {
       scheduledStart: { gte: new Date(start), lte: new Date(end) },
+      ...(brandId ? { brandId } : {}),
     },
   });
 
