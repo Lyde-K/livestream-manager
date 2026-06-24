@@ -33,6 +33,7 @@ import {
 } from "./HostLeaderboardTable";
 import { formatHours } from "./format";
 import { funnelLabel } from "./format";
+import { FloatingChatWidget } from "@/components/ui/FloatingChatWidget";
 
 interface SummaryResponse {
   summary: {
@@ -559,6 +560,17 @@ export function IntelligenceDashboard({
         open={!!selectedId}
         onClose={() => setSelectedId(null)}
       />}
+
+      <FloatingChatWidget
+        endpoint="/api/intelligence/chat"
+        payload={{
+          brandId: brandId || undefined,
+          from: range.from.toISOString(),
+          to: range.to.toISOString(),
+        }}
+        suggestedQuestions={LIVESTREAM_SUGGESTED_QUESTIONS}
+        title="Livestream Bot"
+      />
     </div>
   );
 }

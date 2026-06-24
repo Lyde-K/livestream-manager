@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Sparkles, Loader2, RefreshCw, TrendingUp, AlertTriangle, Zap, UserX, Target, ArrowLeft, Send, Bot, User } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
+import { FloatingChatWidget } from "@/components/ui/FloatingChatWidget";
 
 interface Brand { id: string; name: string; color: string; }
 
@@ -428,6 +429,14 @@ export default function AffiliateAIAnalysisPage() {
           )}
         </>
       )}
+
+      {/* Floating chat widget — always accessible */}
+      <FloatingChatWidget
+        endpoint="/api/affiliate/chat"
+        payload={{ brandId: brandId || undefined, period }}
+        suggestedQuestions={SUGGESTED_QUESTIONS}
+        title="Affiliate Bot"
+      />
 
       {/* ── CHAT TAB ── */}
       {tab === "chat" && (
