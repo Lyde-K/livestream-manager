@@ -128,16 +128,21 @@ export default function AffiliateOverviewPage() {
   const [customFrom, setCustomFrom] = useState(""); // "YYYY-MM"
   const [customTo, setCustomTo] = useState("");     // "YYYY-MM"
   const [data, setData] = useState<OverviewData | null>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [affiliateType, setAffiliateType] = useState<AffiliateType>("all");
 
   useEffect(() => {
     fetch("/api/affiliate/brands")
       .then((r) => r.json())
-      .then((d: { brands: Brand[] }) => {
-        setBrands(d.brands);
-        if (d.brands.length === 1) setBrandId(d.brands[0].id);
-      });
+      .then((d: { brands?: Brand[] }) => {
+        if (d.brands) {
+          setBrands(d.brands);
+          if (d.brands.length === 1) setBrandId(d.brands[0].id);
+        }
+      })
+      .catch(() => { /* brands fetch failed silently */ });
   }, []);
 
   useEffect(() => {
@@ -155,8 +160,18 @@ export default function AffiliateOverviewPage() {
     if (affiliateType !== "all") params.set("type", affiliateType);
 
     setData(null);
-    fetch(`/api/affiliate/overview?${params}`).then((r) => r.json()).then(setData);
-  }, [brandId, filterMode, period, customFrom, customTo, affiliateType]);
+    setDataError(null);
+    fetch(`/api/affiliate/overview?${params}`)
+      .then((r) => r.json())
+      .then((d: OverviewData & { error?: string; message?: string }) => {
+        if (d.error || d.message) {
+          setDataError(d.error ?? d.message ?? "Unknown error");
+        } else {
+          setData(d);
+        }
+      })
+      .catch((err) => setDataError(err?.message ?? "Failed to load data"));
+  }, [brandId, filterMode, period, customFrom, customTo, affiliateType, retryKey]);
 
   // Sync period from API response on first load
   useEffect(() => {
@@ -168,7 +183,7 @@ export default function AffiliateOverviewPage() {
   // The active display snapshot (range or single-month)
   const displaySnapshot = data?.rangeMode
     ? data.rangeSnapshot
-    : data?.snapshots.find((s) => s.period === data?.activePeriod);
+    : data?.snapshots?.find((s) => s.period === data?.activePeriod);
 
   const prevSnapshot = !data?.rangeMode && data?.prevPeriod
     ? data.snapshots.find((s) => s.period === data?.prevPeriod)
@@ -337,7 +352,7 @@ export default function AffiliateOverviewPage() {
         </div>
       )}
 
-      {!data && (
+      {!data && !dataError && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
@@ -349,6 +364,20 @@ export default function AffiliateOverviewPage() {
             <Skeleton className="h-64" />
             <Skeleton className="h-64" />
           </div>
+        </div>
+      )}
+
+      {dataError && (
+        <div className="section-card p-6 text-center">
+          <p className="text-sm font-semibold mb-1" style={{ color: "#ef4444" }}>Failed to load affiliate data</p>
+          <p className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{dataError}</p>
+          <button
+            onClick={() => setRetryKey(k => k + 1)}
+            className="mt-3 text-xs px-3 py-1.5 rounded-md font-semibold"
+            style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}
+          >
+            Retry
+          </button>
         </div>
       )}
 
