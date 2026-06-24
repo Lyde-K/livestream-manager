@@ -518,69 +518,83 @@ const FIELD_LABEL = (text: string) => (
 
 // ── RecurrencePicker ──────────────────────────────────────────────────────────
 
-const FREQ_OPTIONS = [
-  { value: "daily",   label: "Day(s)" },
-  { value: "weekly",  label: "Week(s)" },
-  { value: "monthly", label: "Month(s)" },
-  { value: "yearly",  label: "Year(s)" },
+// Preset options — covers 95% of use cases in one dropdown
+const RECUR_PRESETS = [
+  { label: "No repeat",     value: "" },
+  { label: "Daily",         value: JSON.stringify({ freq: "daily",   interval: 1 }) },
+  { label: "Weekly",        value: JSON.stringify({ freq: "weekly",  interval: 1 }) },
+  { label: "Biweekly",      value: JSON.stringify({ freq: "weekly",  interval: 2 }) },
+  { label: "Monthly",       value: JSON.stringify({ freq: "monthly", interval: 1 }) },
+  { label: "Quarterly",     value: JSON.stringify({ freq: "monthly", interval: 3 }) },
+  { label: "Yearly",        value: JSON.stringify({ freq: "yearly",  interval: 1 }) },
+  { label: "Custom…",       value: "__custom__" },
 ];
 
 function RecurrencePicker({ value, onChange }: {
-  value: string;   // JSON string or ""
+  value: string;
   onChange: (v: string) => void;
 }) {
-  const parsed = value ? (() => { try { return JSON.parse(value); } catch { return null; } })() : null;
-  const enabled  = !!parsed;
-  const freq     = parsed?.freq     ?? "weekly";
-  const interval = parsed?.interval ?? 1;
+  const isCustom  = value !== "" && !RECUR_PRESETS.some((p) => p.value === value);
+  const parsed    = value && value !== "__custom__" ? (() => { try { return JSON.parse(value); } catch { return null; } })() : null;
+  const customFreq     = parsed?.freq     ?? "weekly";
+  const customInterval = parsed?.interval ?? 1;
 
-  function update(f: string, i: number) {
-    onChange(JSON.stringify({ freq: f, interval: Math.max(1, i) }));
+  const selectValue = isCustom ? "__custom__" : value;
+
+  function handleSelect(v: string) {
+    if (v === "__custom__") {
+      onChange(JSON.stringify({ freq: "weekly", interval: 1 }));
+    } else {
+      onChange(v);
+    }
   }
+
+  const FREQ_UNITS = [
+    { value: "daily",   label: "days" },
+    { value: "weekly",  label: "weeks" },
+    { value: "monthly", label: "months" },
+    { value: "yearly",  label: "years" },
+  ];
 
   return (
     <div style={{ marginBottom: "10px" }}>
       {FIELD_LABEL("Repeat")}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-        {/* Toggle */}
-        <button
-          type="button"
-          onClick={() => enabled ? onChange("") : update("weekly", 1)}
-          style={{
-            display: "flex", alignItems: "center", gap: "5px",
-            fontSize: "11px", fontWeight: 600, padding: "5px 10px", borderRadius: "8px",
-            border: `1px solid ${enabled ? "var(--accent)" : "var(--border-strong)"}`,
-            background: enabled ? "var(--accent-light)" : "none",
-            color: enabled ? "var(--accent)" : "var(--text-secondary)",
-            cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
-          }}
-        >
-          <RotateCcw size={11} /> {enabled ? "On" : "Off"}
-        </button>
+      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+        <div style={{ position: "relative", flex: isCustom ? "0 0 auto" : 1 }}>
+          <RotateCcw size={11} style={{ position: "absolute", left: "9px", top: "50%", transform: "translateY(-50%)", color: value ? "var(--accent)" : "var(--text-muted)", pointerEvents: "none" }} />
+          <select
+            value={selectValue}
+            onChange={(e) => handleSelect(e.target.value)}
+            style={{
+              ...INPUT_STYLE,
+              paddingLeft: "26px",
+              color: value ? "var(--accent)" : "var(--text-secondary)",
+              fontWeight: value ? 600 : 400,
+              borderColor: value ? "var(--accent)" : "var(--border-strong)",
+            }}
+          >
+            {RECUR_PRESETS.map((p) => <option key={p.label} value={p.value}>{p.label}</option>)}
+          </select>
+        </div>
 
-        {enabled && (
+        {isCustom && (
           <>
-            <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Every</span>
+            <span style={{ fontSize: "11px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>every</span>
             <input
-              type="number" min={1} max={99} value={interval}
-              onChange={(e) => update(freq, parseInt(e.target.value) || 1)}
-              style={{ ...INPUT_STYLE, width: "52px", textAlign: "center", padding: "5px 6px" }}
+              type="number" min={1} max={99} value={customInterval}
+              onChange={(e) => onChange(JSON.stringify({ freq: customFreq, interval: Math.max(1, parseInt(e.target.value) || 1) }))}
+              style={{ ...INPUT_STYLE, width: "48px", textAlign: "center", padding: "6px 4px" }}
             />
             <select
-              value={freq}
-              onChange={(e) => update(e.target.value, interval)}
-              style={{ ...INPUT_STYLE, width: "auto", padding: "5px 8px" }}
+              value={customFreq}
+              onChange={(e) => onChange(JSON.stringify({ freq: e.target.value, interval: customInterval }))}
+              style={{ ...INPUT_STYLE, width: "auto" }}
             >
-              {FREQ_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {FREQ_UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
             </select>
           </>
         )}
       </div>
-      {enabled && (
-        <p style={{ margin: "4px 0 0", fontSize: "10px", color: "var(--text-muted)" }}>
-          Task will reset to "To Do" with a new due date each time it's completed.
-        </p>
-      )}
     </div>
   );
 }
