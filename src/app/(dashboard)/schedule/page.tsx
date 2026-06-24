@@ -766,17 +766,6 @@ export default function SchedulePage() {
         >
           <Calendar size={13} /> Daily List
         </button>
-        <button
-          onClick={() => setViewMode("calendar")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
-          style={{
-            borderColor: viewMode === "calendar" ? "var(--accent)" : "var(--border)",
-            color: viewMode === "calendar" ? "var(--accent)" : "var(--text-secondary)",
-            background: viewMode === "calendar" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
-          }}
-        >
-          <Calendar size={13} /> Schedule List
-        </button>
       </div>
 
       {/* Daily Grid View */}
@@ -816,52 +805,6 @@ export default function SchedulePage() {
         />
       )}
 
-      {/* Calendar */}
-      {viewMode === "calendar" && <div className="section-card p-4">
-        <FullCalendar
-          ref={calRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
-          initialView="listMonth"
-          headerToolbar={{ left: "prev,next today", center: "title", right: "listDay,listWeek,listMonth" }}
-          buttonText={{ listDay: "Daily List", listWeek: "Week List", listMonth: "Month List" }}
-          views={{ listDay: { buttonText: "Daily List" }, listWeek: { buttonText: "Week List" }, listMonth: { buttonText: "Month List" } }}
-          height="calc(100vh - 310px)"
-          events={[...calEvents, ...campaignEvents]}
-          selectable selectMirror editable dayMaxEvents={5}
-          slotMinTime="06:00:00" slotMaxTime="26:00:00" scrollTime="08:00:00"
-          allDaySlot={false} nowIndicator
-          select={handleDateSelect}
-          eventClick={handleEventClick}
-          eventDrop={handleEventDrop}
-          datesSet={handleDatesSet}
-          eventContent={(arg) => {
-            const s: Session = arg.event.extendedProps.session;
-            const isMonth = arg.view.type === "dayGridMonth";
-            const timeFmt = is24h ? "HH:mm" : "h:mm a";
-            if (isMonth) {
-              const timeLabel = formatMYT(s.scheduledStart, timeFmt);
-              const endLabel  = formatMYT(s.scheduledEnd,   timeFmt);
-              return (
-                <div className="px-1.5 py-0.5 w-full truncate leading-tight"
-                  title={`${s.brand.name} · ${s.liveHost?.displayName ?? "Unassigned"} · ${timeLabel}–${endLabel}`}>
-                  <div className="font-semibold truncate text-[11px]">{s.brand.name}</div>
-                  <div className="opacity-80 truncate text-[10px]">{timeLabel} · {s.liveHost?.displayName ?? "—"}</div>
-                </div>
-              );
-            }
-            // List view — show start–end time range
-            const timeLabel = formatMYT(s.scheduledStart, timeFmt);
-            const endLabel  = formatMYT(s.scheduledEnd,   timeFmt);
-            return (
-              <div className="px-1 py-0.5 truncate leading-tight">
-                <div className="font-semibold truncate">{s.brand.name}</div>
-                <div className="opacity-80 truncate text-[10px]">{timeLabel}–{endLabel}</div>
-                <div className="opacity-60 truncate text-[10px]">{s.liveHost?.displayName ?? "Unassigned"}</div>
-              </div>
-            );
-          }}
-        />
-      </div>}
 
       {/* Session Detail Modal */}
       {detailSession && (
@@ -1745,6 +1688,119 @@ function AssignHostsModal({ hosts, onClose, onAssigned }: { hosts: Host[]; onClo
 
 // ── Daily List View ────────────────────────────────────────────────────────────
 
+function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; setGridDate: (d: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(() => parseISO(gridDate));
+  const ref = useRef<HTMLDivElement>(null);
+
+  const d = parseISO(gridDate);
+  const label = format(d, "d/M/yyyy EEEE");
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [open]);
+
+  const monthStart = startOfMonth(pickerMonth);
+  const monthEnd   = endOfMonth(pickerMonth);
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const weeks: (Date | null)[][] = [];
+  let week: (Date | null)[] = [];
+  const firstDow = (getDay(monthStart) + 6) % 7;
+  for (let i = 0; i < firstDow; i++) week.push(null);
+  for (const day of days) { week.push(day); if (week.length === 7) { weeks.push(week); week = []; } }
+  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
+
+  const dowLabels = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => { setOpen(v => !v); setPickerMonth(parseISO(gridDate)); }}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
+        style={{
+          borderColor: open ? "var(--accent)" : "var(--border)",
+          background: "var(--panel-header-bg)",
+          color: "var(--text-primary)",
+        }}
+      >
+        {label}
+        <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
+      </button>
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1.5 z-50 p-4"
+          style={{
+            background: "var(--panel-bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 16,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+            width: 280,
+          }}
+        >
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              className="p-1.5 rounded-lg cursor-pointer transition-all"
+              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
+              {format(pickerMonth, "MMMM yyyy")}
+            </span>
+            <button
+              onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              className="p-1.5 rounded-lg cursor-pointer transition-all"
+              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          {/* Day-of-week header */}
+          <div className="grid grid-cols-7 mb-1">
+            {dowLabels.map(l => (
+              <div key={l} className="text-center text-[10px] font-semibold py-1" style={{ color: "var(--text-muted)" }}>{l}</div>
+            ))}
+          </div>
+          {/* Day grid */}
+          <div className="space-y-0.5">
+            {weeks.map((wk, wi) => (
+              <div key={wi} className="grid grid-cols-7 gap-0.5">
+                {wk.map((day, di) => {
+                  if (!day) return <div key={di} />;
+                  const dateStr = format(day, "yyyy-MM-dd");
+                  const isActive = dateStr === gridDate;
+                  const isToday  = dateStr === todayStr;
+                  return (
+                    <button
+                      key={di}
+                      onClick={() => { setGridDate(dateStr); setOpen(false); }}
+                      className="flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all"
+                      style={{
+                        height: 32,
+                        fontWeight: isActive || isToday ? 700 : 500,
+                        background: isActive ? "var(--accent)" : isToday ? "var(--accent-light)" : "transparent",
+                        color: isActive ? "#fff" : isToday ? "var(--accent)" : "var(--text-secondary)",
+                      }}
+                    >
+                      {format(day, "d")}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MonthDatePicker({
   gridDate, setGridDate,
 }: { gridDate: string; setGridDate: (d: string) => void }) {
@@ -2453,9 +2509,6 @@ function DailyGridView({
   onAddSlot: (roomId: string, start: string, end: string) => void;
 }) {
 
-  const dateObj = parseISO(gridDate);
-  const dayLabel = format(dateObj, "d/M/yyyy EEEE");
-
   // Build a `YYYY-MM-DDTHH:mm` (MYT) string for a slot on the grid date.
   // Slots past midnight (h >= 24) advance to the next calendar day.
   function slotDatetime(h: number): string {
@@ -2543,13 +2596,13 @@ function DailyGridView({
           Today
         </button>
         <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
-        {/* Day arrows flank the day label */}
+        {/* Day arrows flank the day picker */}
         <div className="flex items-center gap-1">
           <button onClick={prevDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
             style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
             <ChevronLeft size={15} />
           </button>
-          <span className="px-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{dayLabel}</span>
+          <DayDatePicker gridDate={gridDate} setGridDate={setGridDate} />
           <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
             style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
             <ChevronRight size={15} />
