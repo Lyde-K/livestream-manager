@@ -1750,6 +1750,7 @@ function MonthDatePicker({
 }: { gridDate: string; setGridDate: (d: string) => void }) {
   const [open, setOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date(gridDate).getFullYear());
+  const ref = useRef<HTMLDivElement>(null);
 
   const d = parseISO(gridDate);
   const label = format(d, "MMMM yyyy");
@@ -1757,27 +1758,50 @@ function MonthDatePicker({
   const activeMonth = d.getMonth();
   const activeYear  = d.getFullYear();
 
+  useEffect(() => {
+    if (!open) return;
+    function onOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button
         onClick={() => { setOpen(v => !v); setPickerYear(activeYear); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-        style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
+        style={{
+          borderColor: open ? "var(--accent)" : "var(--border)",
+          background: "var(--panel-header-bg)",
+          color: "var(--text-primary)",
+        }}
       >
-        {label} <ChevronDown size={13} />
+        {label}
+        <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 rounded-xl shadow-lg p-4 w-72"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+        <div
+          className="absolute top-full left-0 mt-1.5 z-50 p-4 w-64"
+          style={{
+            background: "var(--panel-bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 16,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          }}
+        >
           {/* Year nav */}
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => setPickerYear(y => y - 1)}
-              className="p-1 rounded cursor-pointer" style={{ color: "var(--text-secondary)" }}>
+              className="p-1.5 rounded-lg cursor-pointer transition-all"
+              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
               <ChevronLeft size={14} />
             </button>
             <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{pickerYear}</span>
             <button onClick={() => setPickerYear(y => y + 1)}
-              className="p-1 rounded cursor-pointer" style={{ color: "var(--text-secondary)" }}>
+              className="p-1.5 rounded-lg cursor-pointer transition-all"
+              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
               <ChevronRight size={14} />
             </button>
           </div>
@@ -1788,15 +1812,15 @@ function MonthDatePicker({
               return (
                 <button key={m}
                   onClick={() => {
-                    // Set to 1st of selected month
                     const newDate = format(new Date(pickerYear, i, 1), "yyyy-MM-dd");
                     setGridDate(newDate);
                     setOpen(false);
                   }}
-                  className="py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                  className="py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer"
                   style={{
-                    background: isActive ? "var(--accent)" : "var(--bg-subtle)",
+                    background: isActive ? "var(--accent)" : "var(--panel-card-bg)",
                     color: isActive ? "#fff" : "var(--text-secondary)",
+                    border: isActive ? "none" : "1px solid var(--border)",
                   }}>
                   {m}
                 </button>
@@ -1866,15 +1890,18 @@ function DailyListView({ gridDate, setGridDate, sessions, filterHost, filterBran
           style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
           Today
         </button>
-        <button onClick={prevMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-          <ChevronLeft size={15} />
-        </button>
-        <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
-        <button onClick={nextMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-          <ChevronRight size={15} />
-        </button>
+        {/* Month arrows flank the month picker */}
+        <div className="flex items-center gap-1">
+          <button onClick={prevMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+            <ChevronLeft size={15} />
+          </button>
+          <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
+          <button onClick={nextMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+            <ChevronRight size={15} />
+          </button>
+        </div>
         <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{[...byDay.values()].reduce((n, arr) => n + arr.length, 0)} session(s)</span>
       </div>
 
@@ -2515,24 +2542,19 @@ function DailyGridView({
           style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
           Today
         </button>
-        <button onClick={prevDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-          <ChevronLeft size={15} />
-        </button>
         <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
-        <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-          <ChevronRight size={15} />
-        </button>
-        {/* Direct date picker still available as secondary */}
-        <input
-          type="date"
-          value={gridDate}
-          onChange={(e) => setGridDate(e.target.value)}
-          className="px-3 py-1.5 rounded-lg border text-sm font-medium"
-          style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-primary)" }}
-        />
-        <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{dayLabel}</span>
+        {/* Day arrows flank the day label */}
+        <div className="flex items-center gap-1">
+          <button onClick={prevDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+            <ChevronLeft size={15} />
+          </button>
+          <span className="px-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{dayLabel}</span>
+          <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
+            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
+            <ChevronRight size={15} />
+          </button>
+        </div>
       </div>
 
       {/* Grid table or no-session message */}
