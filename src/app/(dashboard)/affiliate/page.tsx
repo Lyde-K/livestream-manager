@@ -161,16 +161,32 @@ export default function AffiliateOverviewPage() {
 
     setData(null);
     setDataError(null);
-    fetch(`/api/affiliate/overview?${params}`)
-      .then((r) => r.json())
-      .then((d: OverviewData & { error?: string; message?: string }) => {
-        if (d.error || d.message) {
-          setDataError(d.error ?? d.message ?? "Unknown error");
-        } else {
-          setData(d);
+
+    let cancelled = false;
+
+    async function fetchWithRetry(url: string, attempts = 3): Promise<void> {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          if (i > 0) await new Promise(res => setTimeout(res, 1000 * 2 ** (i - 1))); // 1s, 2s backoff
+          const r = await fetch(url);
+          const d = await r.json() as OverviewData & { error?: string; message?: string };
+          if (cancelled) return;
+          if (d.error || d.message) {
+            if (i < attempts - 1) continue; // retry on error response
+            setDataError(d.error ?? d.message ?? "Unknown error");
+          } else {
+            setData(d);
+          }
+          return;
+        } catch {
+          if (cancelled) return;
+          if (i === attempts - 1) setDataError("Failed to load data — check your connection");
         }
-      })
-      .catch((err) => setDataError(err?.message ?? "Failed to load data"));
+      }
+    }
+
+    fetchWithRetry(`/api/affiliate/overview?${params}`);
+    return () => { cancelled = true; };
   }, [brandId, filterMode, period, customFrom, customTo, affiliateType, retryKey]);
 
   // Sync period from API response on first load
