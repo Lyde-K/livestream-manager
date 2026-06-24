@@ -581,15 +581,15 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
       {/* Priority + Due date + Team */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
         <div>
+          {FIELD_LABEL("Due date")}
+          <DatePicker value={dueDate} onChange={setDueDate} />
+        </div>
+        <div>
           {FIELD_LABEL("Priority")}
           <select value={priority} onChange={(e) => setPriority(e.target.value)}
             style={{ ...INPUT_STYLE, fontSize: "12px", padding: "7px 10px" }}>
             {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
-        </div>
-        <div>
-          {FIELD_LABEL("Due date")}
-          <DatePicker value={dueDate} onChange={setDueDate} />
         </div>
       </div>
 
