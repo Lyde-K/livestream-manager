@@ -174,8 +174,25 @@ function AddTaskForm({
   const [dueDate, setDueDate]       = useState("");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([currentUserId]);
   const [teamId, setTeamId]         = useState("");
+  const [userSearch, setUserSearch] = useState("");
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState("");
+
+  // When team changes, reset assignees to only current user (who must be in team or no-team)
+  function handleTeamChange(id: string) {
+    setTeamId(id);
+    setAssigneeIds([currentUserId]);
+    setUserSearch("");
+  }
+
+  // Users scoped to selected team; always include self
+  const selectedTeam = teams.find((t) => t.id === teamId);
+  const scopedUsers = selectedTeam
+    ? users.filter((u) => selectedTeam.members.some((m) => m.userId === u.id))
+    : users;
+  const visibleUsers = scopedUsers.filter((u) =>
+    !userSearch || u.name.toLowerCase().includes(userSearch.toLowerCase())
+  );
 
   function toggleAssignee(id: string) {
     setAssigneeIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
@@ -231,7 +248,7 @@ function AddTaskForm({
         <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
           style={{ fontSize: "11px", padding: "4px 7px", borderRadius: "7px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }} />
         {teams.length > 0 && (
-          <select value={teamId} onChange={(e) => setTeamId(e.target.value)}
+          <select value={teamId} onChange={(e) => handleTeamChange(e.target.value)}
             style={{ fontSize: "11px", padding: "4px 7px", borderRadius: "7px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
             <option value="">No team</option>
             {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -241,9 +258,26 @@ function AddTaskForm({
 
       {/* Assignees */}
       <div style={{ marginBottom: "10px" }}>
-        <p style={{ margin: "0 0 5px", fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Assign to</p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-          {users.map((u) => {
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
+          <p style={{ margin: 0, fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Assign to {selectedTeam ? `(${selectedTeam.name} members)` : ""}
+          </p>
+          {assigneeIds.length > 0 && (
+            <span style={{ fontSize: "10px", color: "var(--accent)" }}>{assigneeIds.length} selected</span>
+          )}
+        </div>
+        {/* Search */}
+        <input
+          value={userSearch}
+          onChange={(e) => setUserSearch(e.target.value)}
+          placeholder="Search people…"
+          style={{ ...INPUT_STYLE, marginBottom: "6px", fontSize: "11px", padding: "4px 8px" }}
+        />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", maxHeight: "100px", overflowY: "auto" }}>
+          {visibleUsers.length === 0 && (
+            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>No users found.</span>
+          )}
+          {visibleUsers.map((u) => {
             const isSelf = u.id === currentUserId;
             const active = assigneeIds.includes(u.id);
             return (
