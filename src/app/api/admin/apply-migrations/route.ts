@@ -52,6 +52,49 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       CREATE INDEX IF NOT EXISTS "TaskComment_taskId_idx" ON "TaskComment"("taskId")
     `,
   },
+  {
+    name: "004_add_teams_and_notifications",
+    sql: `
+      ALTER TABLE "Task"
+        ADD COLUMN IF NOT EXISTS "link"   TEXT,
+        ADD COLUMN IF NOT EXISTS "teamId" TEXT;
+
+      CREATE TABLE IF NOT EXISTS "Team" (
+        "id"          TEXT PRIMARY KEY,
+        "name"        TEXT NOT NULL,
+        "description" TEXT,
+        "createdById" TEXT REFERENCES "User"(id) ON DELETE SET NULL,
+        "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS "TeamMember" (
+        "teamId" TEXT NOT NULL REFERENCES "Team"(id) ON DELETE CASCADE,
+        "userId" TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+        "role"   TEXT NOT NULL DEFAULT 'member',
+        PRIMARY KEY ("teamId", "userId")
+      );
+
+      ALTER TABLE "Task"
+        ADD CONSTRAINT IF NOT EXISTS "Task_teamId_fkey"
+        FOREIGN KEY ("teamId") REFERENCES "Team"(id) ON DELETE SET NULL;
+
+      CREATE TABLE IF NOT EXISTS "Notification" (
+        "id"        TEXT PRIMARY KEY,
+        "userId"    TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+        "type"      TEXT NOT NULL,
+        "title"     TEXT NOT NULL,
+        "message"   TEXT NOT NULL,
+        "taskId"    TEXT REFERENCES "Task"(id) ON DELETE SET NULL,
+        "read"      BOOLEAN NOT NULL DEFAULT false,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS "Task_teamId_idx"           ON "Task"("teamId");
+      CREATE INDEX IF NOT EXISTS "TeamMember_userId_idx"     ON "TeamMember"("userId");
+      CREATE INDEX IF NOT EXISTS "Notification_userId_read"  ON "Notification"("userId","read");
+      CREATE INDEX IF NOT EXISTS "Notification_userId_at"    ON "Notification"("userId","createdAt")
+    `,
+  },
 ];
 
 export async function POST(req: NextRequest) {

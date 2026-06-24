@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendTaskAssignmentEmail } from "@/lib/tasks/notify";
 import { updateCalendarEvent, deleteCalendarEvent } from "@/lib/tasks/calendar";
+import { createNotification } from "@/lib/tasks/notifications";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,9 +16,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const body = await req.json() as {
     title?: string;
     description?: string;
+    link?: string | null;
     status?: string;
     priority?: string;
     dueDate?: string | null;
+    teamId?: string | null;
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
   };
@@ -40,9 +43,11 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     data: {
       ...(body.title       !== undefined ? { title: body.title.trim() }         : {}),
       ...(body.description !== undefined ? { description: body.description }    : {}),
+      ...(body.link        !== undefined ? { link: body.link || null }          : {}),
       ...(body.status      !== undefined ? { status: body.status }              : {}),
       ...(body.priority    !== undefined ? { priority: body.priority }          : {}),
       ...(newDueDate       !== undefined ? { dueDate: newDueDate }              : {}),
+      ...(body.teamId      !== undefined ? { teamId: body.teamId || null }      : {}),
       ...(body.addAssigneeIds?.length
         ? { assignees: { create: body.addAssigneeIds.map((uid) => ({ userId: uid })) } }
         : {}),
@@ -53,6 +58,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     include: {
       createdBy: { select: { id: true, name: true } },
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+      team: { select: { id: true, name: true } },
       _count: { select: { comments: true } },
     },
   });
@@ -63,6 +69,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (newAssigneeIds.length > 0) {
       const newAssignees = task.assignees.filter((a) => newAssigneeIds.includes(a.userId));
       for (const a of newAssignees) {
+        if (a.user.id !== user.id) {
+          await createNotification({
+            userId: a.user.id,
+            type: "task_assigned",
+            title: "New task assigned",
+            message: `${user.name ?? "Someone"} assigned you: "${task.title}"`,
+            taskId: task.id,
+          });
+        }
         await sendTaskAssignmentEmail({
           assigneeName: a.user.name,
           assigneeEmail: a.user.email,

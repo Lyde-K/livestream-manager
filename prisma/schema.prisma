@@ -27,6 +27,9 @@ model User {
   createdTasks    Task[]         @relation("CreatedTasks")
   taskAssignments TaskAssignee[]
   taskComments    TaskComment[]
+  createdTeams    Team[]         @relation("TeamCreator")
+  teamMemberships TeamMember[]
+  notifications   Notification[] @relation("UserNotifications")
 }
 
 model LiveHost {
@@ -478,25 +481,52 @@ model AppSettings {
 
 // ── Task Management ───────────────────────────────────────────────────────────
 
+model Team {
+  id          String       @id
+  name        String
+  description String?
+  createdById String?
+  createdBy   User?        @relation("TeamCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+  members     TeamMember[]
+  tasks       Task[]
+}
+
+model TeamMember {
+  teamId String
+  userId String
+  role   String     @default("member") // owner | member
+  team   Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+}
+
 model Task {
   id            String    @id @default(cuid())
   title         String
   description   String?
+  link          String?
   status        String    @default("todo") // todo | in_progress | in_review | done
   priority      String    @default("medium") // low | medium | high | urgent
   dueDate       DateTime?
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
   createdById   String?
   createdBy     User?     @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: SetNull)
   googleEventId String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  assignees TaskAssignee[]
-  comments  TaskComment[]
+  assignees     TaskAssignee[]
+  comments      TaskComment[]
+  notifications Notification[]
 
   @@index([status])
   @@index([createdById])
   @@index([dueDate])
+  @@index([teamId])
 }
 
 model TaskAssignee {
@@ -519,4 +549,20 @@ model TaskComment {
   createdAt DateTime @default(now())
 
   @@index([taskId])
+}
+
+model Notification {
+  id        String   @id
+  userId    String
+  type      String   // task_assigned | task_comment | task_updated
+  title     String
+  message   String
+  taskId    String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }

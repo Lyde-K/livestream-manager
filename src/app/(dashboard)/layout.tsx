@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TaskPanel } from "@/components/tasks/TaskPanel";
+import { NotificationPanel } from "@/components/tasks/NotificationPanel";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -17,6 +18,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
       </main>
       <TaskPanel userId={user.id} userRole={user.role} />
+      <NotificationPanel />
     </div>
   );
 }

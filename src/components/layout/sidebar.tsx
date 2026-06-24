@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
   UserCheck, Sun, Moon, ChevronDown, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench, UsersRound, Sparkles,
-  Handshake, Package, Upload, Ban, Settings, Flag,
+  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell,
 } from "lucide-react";
 
 type NavGroup = "LIVESTREAM" | "AFFILIATE" | "MANAGEMENT";
@@ -209,6 +209,30 @@ export function Sidebar({ role, userName }: SidebarProps) {
 
       {/* Footer */}
       <div className="px-2 py-2 border-t space-y-0.5" style={{ borderColor: "rgba(255,255,255,.07)" }}>
+        {/* Tasks + Notifications row */}
+        <div className="flex gap-1 mb-1">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("toggle-task-panel"))}
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[12px] font-medium transition-all cursor-pointer"
+            style={{ color: "var(--sidebar-text)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--sidebar-hover)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          >
+            <ClipboardList size={14} className="opacity-70" />
+            Tasks
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("toggle-notification-panel"))}
+            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[12px] font-medium transition-all cursor-pointer"
+            style={{ color: "var(--sidebar-text)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--sidebar-hover)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+          >
+            <Bell size={14} className="opacity-70" />
+            Alerts
+          </button>
+        </div>
+
         <button
           onClick={toggle}
           className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-[13px] font-medium transition-all cursor-pointer"
@@ -289,7 +313,23 @@ export function Sidebar({ role, userName }: SidebarProps) {
           <Menu size={20} />
         </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/13media-logo.png" alt="13 Media" className="h-8 w-auto object-contain" />
+        <img src="/13media-logo.png" alt="13 Media" className="h-8 w-auto object-contain flex-1" />
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("toggle-notification-panel"))}
+          className="p-1.5 rounded-md cursor-pointer relative"
+          style={{ color: "var(--sidebar-text)" }}
+          aria-label="Notifications"
+        >
+          <Bell size={18} />
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("toggle-task-panel"))}
+          className="p-1.5 rounded-md cursor-pointer"
+          style={{ color: "var(--sidebar-text)" }}
+          aria-label="Tasks"
+        >
+          <ClipboardList size={18} />
+        </button>
       </div>
     </>
   );

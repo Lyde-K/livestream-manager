@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendTaskAssignmentEmail } from "@/lib/tasks/notify";
 import { createCalendarEvent } from "@/lib/tasks/calendar";
 import { createId } from "@/lib/tasks/id";
+import { createNotification } from "@/lib/tasks/notifications";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -13,20 +14,33 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const status    = searchParams.get("status") ?? undefined;
   const priority  = searchParams.get("priority") ?? undefined;
-  const assignee  = searchParams.get("assignee") ?? undefined;
+  const teamId    = searchParams.get("teamId") ?? undefined;
   const mine      = searchParams.get("mine") === "true";
+
+  // Find teams the current user belongs to (for scoping)
+  const userTeamIds = (await prisma.teamMember.findMany({
+    where: { userId: user.id },
+    select: { teamId: true },
+  })).map((m) => m.teamId);
 
   const tasks = await prisma.task.findMany({
     where: {
       ...(status   ? { status }   : {}),
       ...(priority ? { priority } : {}),
-      ...(mine || assignee
-        ? { assignees: { some: { userId: assignee ?? user.id } } }
-        : {}),
+      ...(mine ? { assignees: { some: { userId: user.id } } } : {}),
+      ...(teamId ? { teamId } : {}),
+      // If not filtering by mine/team, exclude tasks from teams the user isn't in
+      ...(!mine && !teamId ? {
+        OR: [
+          { teamId: null },
+          { teamId: { in: userTeamIds } },
+        ],
+      } : {}),
     },
     include: {
       createdBy: { select: { id: true, name: true } },
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+      team: { select: { id: true, name: true } },
       _count: { select: { comments: true } },
     },
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
@@ -43,10 +57,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as {
     title: string;
     description?: string;
+    link?: string;
     status?: string;
     priority?: string;
     dueDate?: string;
     assigneeIds?: string[];
+    teamId?: string;
   };
 
   if (!body.title?.trim()) return Response.json({ error: "Title required" }, { status: 400 });
@@ -58,9 +74,11 @@ export async function POST(req: NextRequest) {
       id: createId(),
       title: body.title.trim(),
       description: body.description?.trim() || null,
+      link: body.link?.trim() || null,
       status: body.status ?? "todo",
       priority: body.priority ?? "medium",
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      teamId: body.teamId || null,
       createdById: user.id,
       assignees: assigneeIds.length > 0
         ? { create: assigneeIds.map((uid) => ({ userId: uid })) }
@@ -69,15 +87,27 @@ export async function POST(req: NextRequest) {
     include: {
       createdBy: { select: { id: true, name: true } },
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+      team: { select: { id: true, name: true } },
       _count: { select: { comments: true } },
     },
   });
 
-  // Send assignment emails + Google Calendar event (non-blocking)
+  // Side-effects (non-blocking)
   void (async () => {
     const assignees = task.assignees.map((a) => a.user);
+    const assignerName = user.name ?? "Someone";
 
     for (const assignee of assignees) {
+      // Skip notification to self
+      if (assignee.id !== user.id) {
+        await createNotification({
+          userId: assignee.id,
+          type: "task_assigned",
+          title: "New task assigned",
+          message: `${assignerName} assigned you: "${task.title}"`,
+          taskId: task.id,
+        });
+      }
       await sendTaskAssignmentEmail({
         assigneeName: assignee.name,
         assigneeEmail: assignee.email,
@@ -85,7 +115,7 @@ export async function POST(req: NextRequest) {
         taskId: task.id,
         dueDate: task.dueDate,
         priority: task.priority,
-        assignerName: user.name ?? "Someone",
+        assignerName,
       });
     }
 
