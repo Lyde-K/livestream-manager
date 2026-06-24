@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
-import { Sparkles, Loader2, RefreshCw, TrendingUp, AlertTriangle, Zap, UserX, Target, ArrowLeft, Send, Bot, User } from "lucide-react";
+import { Sparkles, Loader2, RefreshCw, TrendingUp, AlertTriangle, Zap, UserX, Target, ArrowLeft } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import { FloatingChatWidget } from "@/components/ui/FloatingChatWidget";
@@ -36,8 +36,6 @@ interface Meta {
 
 interface ApiResponse { analysis: Analysis; meta: Meta; }
 
-interface ChatMessage { role: "user" | "assistant"; content: string; }
-
 const HEALTH_STYLES = {
   STRONG: { color: "#10b981", label: "Strong", bg: "color-mix(in oklab, #10b981 15%, transparent)" },
   MODERATE: { color: "#f59e0b", label: "Moderate", bg: "color-mix(in oklab, #f59e0b 15%, transparent)" },
@@ -61,14 +59,6 @@ export default function AffiliateAIAnalysisPage() {
   const [result, setResult] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"insights" | "chat">("insights");
-
-  // Chat state
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     fetch("/api/affiliate/brands")
@@ -83,10 +73,6 @@ export default function AffiliateAIAnalysisPage() {
     const url = brandId ? `/api/affiliate/periods?brandId=${brandId}` : "/api/affiliate/periods";
     fetch(url).then((r) => r.json()).then((d: { periods: string[] }) => setPeriods(d.periods));
   }, [brandId]);
-
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, chatLoading]);
 
   const ytdYear = periods.length > 0 ? periods[0].substring(0, 4) : String(new Date().getFullYear());
 
@@ -108,60 +94,6 @@ export default function AffiliateAIAnalysisPage() {
       setError((e as Error).message);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function sendChat(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || chatLoading) return;
-    setChatInput("");
-
-    const userMsg: ChatMessage = { role: "user", content: trimmed };
-    const newHistory = [...messages, userMsg];
-    setMessages(newHistory);
-    setChatLoading(true);
-
-    try {
-      const res = await fetch("/api/affiliate/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: trimmed,
-          brandId: brandId || undefined,
-          period,
-          history: messages,
-        }),
-      });
-
-      if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({ error: "Request failed" }));
-        setMessages([...newHistory, { role: "assistant", content: `Error: ${err.error ?? "Failed to get response"}` }]);
-        return;
-      }
-
-      // Stream the response
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantText = "";
-      setMessages([...newHistory, { role: "assistant", content: "" }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        assistantText += decoder.decode(value, { stream: true });
-        setMessages([...newHistory, { role: "assistant", content: assistantText }]);
-      }
-    } catch {
-      setMessages([...newHistory, { role: "assistant", content: "Connection error — please try again." }]);
-    } finally {
-      setChatLoading(false);
-    }
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendChat(chatInput);
     }
   }
 
@@ -204,8 +136,7 @@ export default function AffiliateAIAnalysisPage() {
             {[...periods].reverse().map((p) => <option key={p} value={p}>{p}</option>)}
           </Select>
         </div>
-        {tab === "insights" && (
-          <button
+        <button
             onClick={generate}
             disabled={loading}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
@@ -218,35 +149,16 @@ export default function AffiliateAIAnalysisPage() {
             {loading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             {loading ? "Analysing…" : result ? "Re-analyse" : "Generate Insights"}
           </button>
-        )}
-        {loading && tab === "insights" && (
+        {loading && (
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             Computing insights from your affiliate data…
           </p>
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b" style={{ borderColor: "var(--border)" }}>
-        {(["insights", "chat"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
-            style={{
-              borderColor: tab === t ? "var(--accent)" : "transparent",
-              color: tab === t ? "var(--accent)" : "var(--text-secondary)",
-            }}
-          >
-            {t === "insights" ? <span className="flex items-center gap-1.5"><Sparkles size={13} /> Insights Report</span>
-              : <span className="flex items-center gap-1.5"><Bot size={13} /> Chat Assistant</span>}
-          </button>
-        ))}
-      </div>
+      {/* ── INSIGHTS ── */}
+      <>
 
-      {/* ── INSIGHTS TAB ── */}
-      {tab === "insights" && (
-        <>
           {loading && (
             <div className="space-y-3">
               <Skeleton className="h-32" />
@@ -428,131 +340,14 @@ export default function AffiliateAIAnalysisPage() {
             </div>
           )}
         </>
-      )}
 
-      {/* Floating chat widget — always accessible */}
+
       <FloatingChatWidget
         endpoint="/api/affiliate/chat"
         payload={{ brandId: brandId || undefined, period }}
         suggestedQuestions={SUGGESTED_QUESTIONS}
         title="Affiliate Bot"
       />
-
-      {/* ── CHAT TAB ── */}
-      {tab === "chat" && (
-        <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }}>
-          {/* Message list */}
-          <div className="section-card flex-1 overflow-y-auto p-4 space-y-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-                <Bot size={40} className="opacity-20" style={{ color: "var(--accent)" }} />
-                <div>
-                  <p className="text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Ask anything about your affiliate data</p>
-                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>Uses the brand and period selected above</p>
-                </div>
-                <div className="flex flex-wrap gap-2 justify-center max-w-md">
-                  {SUGGESTED_QUESTIONS.map((q) => (
-                    <button
-                      key={q}
-                      onClick={() => sendChat(q)}
-                      className="text-xs px-3 py-1.5 rounded-full border transition-colors text-left"
-                      style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-subtle)" }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)"; (e.currentTarget as HTMLElement).style.color = "var(--accent)"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)"; }}
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                {msg.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ background: "color-mix(in oklab, var(--accent) 15%, var(--bg-subtle))" }}>
-                    <Bot size={14} style={{ color: "var(--accent)" }} />
-                  </div>
-                )}
-                <div
-                  className="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap"
-                  style={msg.role === "user"
-                    ? { background: "var(--accent)", color: "#fff", borderBottomRightRadius: "4px" }
-                    : { background: "var(--bg-subtle)", color: "var(--text-secondary)", borderBottomLeftRadius: "4px" }
-                  }
-                >
-                  {msg.content || (msg.role === "assistant" && <span className="opacity-50">▋</span>)}
-                </div>
-                {msg.role === "user" && (
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ background: "var(--bg-subtle)" }}>
-                    <User size={14} style={{ color: "var(--text-secondary)" }} />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {chatLoading && messages[messages.length - 1]?.role !== "assistant" && (
-              <div className="flex gap-2.5 justify-start">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ background: "color-mix(in oklab, var(--accent) 15%, var(--bg-subtle))" }}>
-                  <Bot size={14} style={{ color: "var(--accent)" }} />
-                </div>
-                <div className="rounded-2xl px-4 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", borderBottomLeftRadius: "4px" }}>
-                  <Loader2 size={14} className="animate-spin" style={{ color: "var(--text-muted)" }} />
-                </div>
-              </div>
-            )}
-            <div ref={chatBottomRef} />
-          </div>
-
-          {/* Input */}
-          <div className="section-card p-3 flex gap-2 items-end">
-            <textarea
-              ref={chatInputRef}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about your affiliate data… (Enter to send, Shift+Enter for new line)"
-              rows={1}
-              className="flex-1 resize-none bg-transparent text-sm outline-none"
-              style={{
-                color: "var(--text-primary)",
-                maxHeight: "120px",
-                lineHeight: "1.5",
-              }}
-              onInput={(e) => {
-                const t = e.currentTarget;
-                t.style.height = "auto";
-                t.style.height = `${Math.min(t.scrollHeight, 120)}px`;
-              }}
-            />
-            <button
-              onClick={() => sendChat(chatInput)}
-              disabled={chatLoading || !chatInput.trim()}
-              className="p-2 rounded-lg transition-all flex-shrink-0"
-              style={{
-                background: chatLoading || !chatInput.trim() ? "var(--bg-subtle)" : "var(--accent)",
-                color: chatLoading || !chatInput.trim() ? "var(--text-muted)" : "#fff",
-                cursor: chatLoading || !chatInput.trim() ? "default" : "pointer",
-              }}
-            >
-              <Send size={15} />
-            </button>
-          </div>
-
-          {messages.length > 0 && (
-            <button
-              onClick={() => setMessages([])}
-              className="text-xs self-end"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Clear chat
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
