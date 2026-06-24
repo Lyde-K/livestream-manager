@@ -90,7 +90,11 @@ function computePunctuality(
   return "LATE";
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(_req: NextRequest) {
+  return Response.json({ error: "Livestream data sync is disabled." }, { status: 423 });
+}
+
+export async function _POST(req: NextRequest) {
   try {
   const apiKey = req.headers.get("x-api-key");
   if (!apiKey || apiKey !== process.env.SHEETS_SYNC_KEY)
@@ -340,6 +344,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  return Response.json({ error: "Livestream data sync is disabled." }, { status: 423 });
   const apiKey = req.headers.get("x-api-key");
   if (!apiKey || apiKey !== process.env.SHEETS_SYNC_KEY)
     return Response.json({ error: "Unauthorized" }, { status: 401 });
