@@ -52,12 +52,9 @@ export function NotificationPanel() {
   }, []);
 
   const fetchActiveAlerts = useCallback(async () => {
-    const [mineRes, reviewRes] = await Promise.all([
-      fetch("/api/tasks?mine=true"),
-      fetch("/api/tasks?status=in_review"),
-    ]);
-    const mine: AlertTask[]   = mineRes.ok   ? ((await mineRes.json()).tasks   ?? []) : [];
-    const review: AlertTask[] = reviewRes.ok ? ((await reviewRes.json()).tasks ?? []) : [];
+    const res = await fetch("/api/tasks/alerts");
+    if (!res.ok) return;
+    const tasks: AlertTask[] = (await res.json()).tasks ?? [];
 
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
@@ -65,14 +62,16 @@ export function NotificationPanel() {
     const alerts: { task: AlertTask; reason: "review" | "overdue" | "due_today" }[] = [];
     const seen = new Set<string>();
 
-    for (const t of review) {
-      if (!seen.has(t.id)) { seen.add(t.id); alerts.push({ task: t, reason: "review" }); }
-    }
-    for (const t of mine) {
-      if (t.status === "done" || !t.dueDate || seen.has(t.id)) continue;
-      const due = new Date(t.dueDate);
-      if (due < todayStart) { seen.add(t.id); alerts.push({ task: t, reason: "overdue" }); }
-      else if (due <= todayEnd) { seen.add(t.id); alerts.push({ task: t, reason: "due_today" }); }
+    for (const t of tasks) {
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      if (t.status === "in_review") {
+        alerts.push({ task: t, reason: "review" });
+      } else if (t.dueDate) {
+        const due = new Date(t.dueDate);
+        if (due < todayStart)       alerts.push({ task: t, reason: "overdue" });
+        else if (due <= todayEnd)   alerts.push({ task: t, reason: "due_today" });
+      }
     }
 
     setActiveAlerts(alerts);
@@ -92,7 +91,7 @@ export function NotificationPanel() {
         })
         .catch(() => {});
       fetchActiveAlerts();
-    }, 30_000);
+    }, 60_000);
     return () => clearInterval(interval);
   }, [open, fetchNotifications, fetchActiveAlerts]);
 

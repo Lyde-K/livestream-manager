@@ -19,11 +19,10 @@ export async function GET(req: NextRequest) {
   const mine      = searchParams.get("mine") === "true";
   const parentId  = searchParams.get("parentId") ?? undefined;
 
-  // Find teams the current user belongs to (for scoping)
-  const userTeamIds = (await prisma.teamMember.findMany({
-    where: { userId: user.id },
-    select: { teamId: true },
-  })).map((m) => m.teamId);
+  // Only needed when not filtering by mine/team — skip the query otherwise
+  const userTeamIds = (!mine && !teamId)
+    ? (await prisma.teamMember.findMany({ where: { userId: user.id }, select: { teamId: true } })).map((m) => m.teamId)
+    : [];
 
   const tasks = await prisma.task.findMany({
     where: {

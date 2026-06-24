@@ -7,14 +7,15 @@ export async function GET() {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const user = session.user as { id: string };
 
-  const notifications = await prisma.notification.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    include: { task: { select: { id: true, title: true } } },
-  });
-
-  const unreadCount = await prisma.notification.count({ where: { userId: user.id, read: false } });
+  const [notifications, unreadCount] = await Promise.all([
+    prisma.notification.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { task: { select: { id: true, title: true } } },
+    }),
+    prisma.notification.count({ where: { userId: user.id, read: false } }),
+  ]);
 
   return Response.json({ notifications, unreadCount });
 }
