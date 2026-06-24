@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendTaskAssignmentEmail } from "@/lib/tasks/notify";
 import { updateCalendarEvent, deleteCalendarEvent } from "@/lib/tasks/calendar";
 import { createNotification } from "@/lib/tasks/notifications";
-import { calcNextDue } from "@/app/api/tasks/route";
+import { calcNextDue } from "@/lib/tasks/recurrence";
 
 type Params = { params: Promise<{ id: string }> };
 
