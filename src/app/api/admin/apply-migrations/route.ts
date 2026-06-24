@@ -9,6 +9,49 @@ const MIGRATIONS: { name: string; sql: string }[] = [
     name: "001_add_hasLivestream",
     sql: `ALTER TABLE "Brand" ADD COLUMN IF NOT EXISTS "hasLivestream" BOOLEAN NOT NULL DEFAULT true`,
   },
+  {
+    name: "002_add_google_oauth_to_user",
+    sql: `
+      ALTER TABLE "User"
+        ADD COLUMN IF NOT EXISTS "googleAccessToken"  TEXT,
+        ADD COLUMN IF NOT EXISTS "googleRefreshToken" TEXT,
+        ADD COLUMN IF NOT EXISTS "googleTokenExpiry"  TIMESTAMPTZ
+    `,
+  },
+  {
+    name: "003_create_task_tables",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "Task" (
+        "id"            TEXT PRIMARY KEY,
+        "title"         TEXT NOT NULL,
+        "description"   TEXT,
+        "status"        TEXT NOT NULL DEFAULT 'todo',
+        "priority"      TEXT NOT NULL DEFAULT 'medium',
+        "dueDate"       TIMESTAMPTZ,
+        "createdById"   TEXT REFERENCES "User"(id) ON DELETE SET NULL,
+        "googleEventId" TEXT,
+        "createdAt"     TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE TABLE IF NOT EXISTS "TaskAssignee" (
+        "taskId" TEXT NOT NULL REFERENCES "Task"(id) ON DELETE CASCADE,
+        "userId" TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+        PRIMARY KEY ("taskId", "userId")
+      );
+      CREATE TABLE IF NOT EXISTS "TaskComment" (
+        "id"        TEXT PRIMARY KEY,
+        "taskId"    TEXT NOT NULL REFERENCES "Task"(id) ON DELETE CASCADE,
+        "userId"    TEXT REFERENCES "User"(id) ON DELETE SET NULL,
+        "content"   TEXT NOT NULL,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS "Task_status_idx"      ON "Task"("status");
+      CREATE INDEX IF NOT EXISTS "Task_createdById_idx" ON "Task"("createdById");
+      CREATE INDEX IF NOT EXISTS "Task_dueDate_idx"     ON "Task"("dueDate");
+      CREATE INDEX IF NOT EXISTS "TaskAssignee_userId_idx" ON "TaskAssignee"("userId");
+      CREATE INDEX IF NOT EXISTS "TaskComment_taskId_idx" ON "TaskComment"("taskId")
+    `,
+  },
 ];
 
 export async function POST(req: NextRequest) {

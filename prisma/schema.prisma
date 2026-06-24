@@ -16,8 +16,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Google OAuth tokens (stored when user connects Google account)
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiry  DateTime?
+
   liveHost LiveHost?
   client   Client?
+
+  createdTasks    Task[]         @relation("CreatedTasks")
+  taskAssignments TaskAssignee[]
+  taskComments    TaskComment[]
 }
 
 model LiveHost {
@@ -465,4 +474,49 @@ model AppSettings {
   id         String    @id @default("singleton")
   lastSyncAt DateTime?
   updatedAt  DateTime  @updatedAt
+}
+
+// ── Task Management ───────────────────────────────────────────────────────────
+
+model Task {
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  status        String    @default("todo") // todo | in_progress | in_review | done
+  priority      String    @default("medium") // low | medium | high | urgent
+  dueDate       DateTime?
+  createdById   String?
+  createdBy     User?     @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: SetNull)
+  googleEventId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  assignees TaskAssignee[]
+  comments  TaskComment[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([dueDate])
+}
+
+model TaskAssignee {
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
 }

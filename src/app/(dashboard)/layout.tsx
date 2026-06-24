@@ -1,11 +1,12 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
+import { TaskPanel } from "@/components/tasks/TaskPanel";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session) redirect("/login");
-  const user = session.user as { name?: string; role: string };
+  const user = session.user as { id: string; name?: string; role: string };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -15,6 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </div>
       </main>
+      <TaskPanel userId={user.id} userRole={user.role} />
     </div>
   );
 }
