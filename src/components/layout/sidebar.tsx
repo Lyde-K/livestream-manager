@@ -142,6 +142,19 @@ export function Sidebar({ role, userName }: SidebarProps) {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const [open, setOpen] = useState(false);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [taskOpenCount, setTaskOpenCount] = useState(0);
+
+  useEffect(() => {
+    const onNotif = (e: Event) => setNotifUnread((e as CustomEvent<{ count: number }>).detail.count);
+    const onTasks = (e: Event) => setTaskOpenCount((e as CustomEvent<{ count: number }>).detail.count);
+    window.addEventListener("notification-unread-count", onNotif);
+    window.addEventListener("task-open-count", onTasks);
+    return () => {
+      window.removeEventListener("notification-unread-count", onNotif);
+      window.removeEventListener("task-open-count", onTasks);
+    };
+  }, []);
 
   useEffect(() => { setOpen(false); }, [pathname]);
 
@@ -214,21 +227,35 @@ export function Sidebar({ role, userName }: SidebarProps) {
           <button
             onClick={() => window.dispatchEvent(new CustomEvent("toggle-task-panel"))}
             className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[12px] font-medium transition-all cursor-pointer"
-            style={{ color: "var(--sidebar-text)" }}
+            style={{ color: "var(--sidebar-text)", position: "relative" }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--sidebar-hover)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
           >
-            <ClipboardList size={14} className="opacity-70" />
+            <span style={{ position: "relative" }}>
+              <ClipboardList size={14} className="opacity-70" />
+              {taskOpenCount > 0 && (
+                <span style={{ position: "absolute", top: "-5px", right: "-7px", fontSize: "8px", fontWeight: 700, background: "#F97316", color: "#fff", borderRadius: "50%", width: "13px", height: "13px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {taskOpenCount > 9 ? "9+" : taskOpenCount}
+                </span>
+              )}
+            </span>
             Tasks
           </button>
           <button
             onClick={() => window.dispatchEvent(new CustomEvent("toggle-notification-panel"))}
             className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[12px] font-medium transition-all cursor-pointer"
-            style={{ color: "var(--sidebar-text)" }}
+            style={{ color: "var(--sidebar-text)", position: "relative" }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--sidebar-hover)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
           >
-            <Bell size={14} className="opacity-70" />
+            <span style={{ position: "relative" }}>
+              <Bell size={14} className="opacity-70" />
+              {notifUnread > 0 && (
+                <span style={{ position: "absolute", top: "-5px", right: "-7px", fontSize: "8px", fontWeight: 700, background: "#ef4444", color: "#fff", borderRadius: "50%", width: "13px", height: "13px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {notifUnread > 9 ? "9+" : notifUnread}
+                </span>
+              )}
+            </span>
             Alerts
           </button>
         </div>
@@ -321,6 +348,11 @@ export function Sidebar({ role, userName }: SidebarProps) {
           aria-label="Notifications"
         >
           <Bell size={18} />
+          {notifUnread > 0 && (
+            <span style={{ position: "absolute", top: "4px", right: "2px", fontSize: "8px", fontWeight: 700, background: "#ef4444", color: "#fff", borderRadius: "50%", width: "13px", height: "13px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {notifUnread > 9 ? "9+" : notifUnread}
+            </span>
+          )}
         </button>
         <button
           onClick={() => window.dispatchEvent(new CustomEvent("toggle-task-panel"))}

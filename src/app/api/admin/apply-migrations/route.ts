@@ -91,6 +91,14 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "Notification_userId_at"   ON "Notification"("userId","createdAt")`,
     ],
   },
+  {
+    name: "005_add_labels_and_subtasks",
+    statements: [
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "labels" TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "parentId" TEXT REFERENCES "Task"(id) ON DELETE SET NULL`,
+      `CREATE INDEX IF NOT EXISTS "Task_parentId_idx" ON "Task"("parentId")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {

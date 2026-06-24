@@ -37,6 +37,7 @@ export function NotificationPanel() {
       const d = await res.json();
       setNotifications(d.notifications ?? []);
       setUnreadCount(d.unreadCount ?? 0);
+      window.dispatchEvent(new CustomEvent("notification-unread-count", { detail: { count: d.unreadCount ?? 0 } }));
     }
     setLoading(false);
   }, []);
@@ -49,6 +50,7 @@ export function NotificationPanel() {
         .then((r) => r.json())
         .then((d) => {
           setUnreadCount(d.unreadCount ?? 0);
+          window.dispatchEvent(new CustomEvent("notification-unread-count", { detail: { count: d.unreadCount ?? 0 } }));
           if (open) { setNotifications(d.notifications ?? []); }
         })
         .catch(() => {});

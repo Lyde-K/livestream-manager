@@ -20,6 +20,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     status?: string;
     priority?: string;
     dueDate?: string | null;
+    labels?: string;
     teamId?: string | null;
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
@@ -47,6 +48,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       ...(body.status      !== undefined ? { status: body.status }              : {}),
       ...(body.priority    !== undefined ? { priority: body.priority }          : {}),
       ...(newDueDate       !== undefined ? { dueDate: newDueDate }              : {}),
+      ...(body.labels      !== undefined ? { labels: body.labels }              : {}),
       ...(body.teamId      !== undefined ? { teamId: body.teamId || null }      : {}),
       ...(body.addAssigneeIds?.length
         ? { assignees: { create: body.addAssigneeIds.map((uid) => ({ userId: uid })) } }
@@ -59,7 +61,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       createdBy: { select: { id: true, name: true } },
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
       team: { select: { id: true, name: true } },
-      _count: { select: { comments: true } },
+      _count: { select: { comments: true, children: true } },
     },
   });
 

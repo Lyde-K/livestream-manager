@@ -511,6 +511,10 @@ model Task {
   status        String    @default("todo") // todo | in_progress | in_review | done
   priority      String    @default("medium") // low | medium | high | urgent
   dueDate       DateTime?
+  labels        String    @default("[]") // JSON array of tag strings
+  parentId      String?
+  parent        Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
+  children      Task[]    @relation("TaskSubtasks")
   teamId        String?
   team          Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
   createdById   String?
@@ -527,6 +531,7 @@ model Task {
   @@index([createdById])
   @@index([dueDate])
   @@index([teamId])
+  @@index([parentId])
 }
 
 model TaskAssignee {

@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
   const priority  = searchParams.get("priority") ?? undefined;
   const teamId    = searchParams.get("teamId") ?? undefined;
   const mine      = searchParams.get("mine") === "true";
+  const parentId  = searchParams.get("parentId") ?? undefined;
 
   // Find teams the current user belongs to (for scoping)
   const userTeamIds = (await prisma.teamMember.findMany({
@@ -25,10 +26,11 @@ export async function GET(req: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     where: {
-      ...(status   ? { status }   : {}),
-      ...(priority ? { priority } : {}),
-      ...(mine ? { assignees: { some: { userId: user.id } } } : {}),
-      ...(teamId ? { teamId } : {}),
+      ...(status    ? { status }    : {}),
+      ...(priority  ? { priority }  : {}),
+      ...(mine      ? { assignees: { some: { userId: user.id } } } : {}),
+      ...(teamId    ? { teamId }    : {}),
+      ...(parentId !== undefined ? { parentId: parentId || null } : { parentId: null }),
       // If not filtering by mine/team, exclude tasks from teams the user isn't in
       ...(!mine && !teamId ? {
         OR: [
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
       createdBy: { select: { id: true, name: true } },
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
       team: { select: { id: true, name: true } },
-      _count: { select: { comments: true } },
+      _count: { select: { comments: true, children: true } },
     },
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
   });
@@ -61,8 +63,10 @@ export async function POST(req: NextRequest) {
     status?: string;
     priority?: string;
     dueDate?: string;
+    labels?: string;
     assigneeIds?: string[];
     teamId?: string;
+    parentId?: string;
   };
 
   if (!body.title?.trim()) return Response.json({ error: "Title required" }, { status: 400 });
@@ -78,7 +82,9 @@ export async function POST(req: NextRequest) {
       status: body.status ?? "todo",
       priority: body.priority ?? "medium",
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
+      labels: body.labels ?? "[]",
       teamId: body.teamId || null,
+      parentId: body.parentId || null,
       createdById: user.id,
       assignees: assigneeIds.length > 0
         ? { create: assigneeIds.map((uid) => ({ userId: uid })) }
@@ -88,7 +94,7 @@ export async function POST(req: NextRequest) {
       createdBy: { select: { id: true, name: true } },
       assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
       team: { select: { id: true, name: true } },
-      _count: { select: { comments: true } },
+      _count: { select: { comments: true, children: true } },
     },
   });
 
