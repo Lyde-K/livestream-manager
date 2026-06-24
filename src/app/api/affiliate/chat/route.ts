@@ -58,7 +58,10 @@ export async function POST(req: NextRequest) {
   const brandMap = new Map(brands.map((b) => [b.id, b.name]));
   const brandLabel = brandId ? (brandMap.get(brandId) ?? "Selected Brand") : "All Brands";
 
-  const [creatorGrouped, productGrouped, latestCreators] = await Promise.all([
+  // Periods before the active window — used to detect truly new affiliates
+  const priorPeriods = periodList.filter((p) => !activePeriods.includes(p));
+
+  const [creatorGrouped, productGrouped, latestCreators, priorCreatorNames] = await Promise.all([
     prisma.affiliateCreatorStat.groupBy({
       by: ["creatorName", "brandId"],
       where: { brandId: brandFilter, period: { in: activePeriods } },
@@ -75,13 +78,23 @@ export async function POST(req: NextRequest) {
       where: { brandId: brandFilter, period: latestPeriod },
       select: { creatorName: true, brandId: true, label: true },
     }),
+    // All creator names that appeared in ANY period before the active window
+    priorPeriods.length > 0
+      ? prisma.affiliateCreatorStat.findMany({
+          where: { brandId: brandFilter, period: { in: priorPeriods } },
+          select: { creatorName: true, brandId: true },
+          distinct: ["creatorName", "brandId"],
+        })
+      : Promise.resolve([]),
   ]);
 
   const labelMap = new Map(latestCreators.map((r) => [`${r.brandId}|${r.creatorName}`, r.label]));
+  const priorCreatorSet = new Set(priorCreatorNames.map((r) => `${r.brandId}|${r.creatorName}`));
 
   const creators = creatorGrouped.map((c) => {
     const gmv = Number(c._sum.gmv ?? 0);
     const comm = Number(c._sum.estCommission ?? 0);
+    const key = `${c.brandId}|${c.creatorName}`;
     return {
       name: c.creatorName,
       brand: brandMap.get(c.brandId) ?? "",
@@ -91,7 +104,8 @@ export async function POST(req: NextRequest) {
       videos: c._sum.videos ?? 0,
       liveStreams: c._sum.liveStreams ?? 0,
       samplesShipped: c._sum.samplesShipped ?? 0,
-      label: labelMap.get(`${c.brandId}|${c.creatorName}`) ?? null,
+      label: labelMap.get(key) ?? null,
+      isNew: priorPeriods.length > 0 && !priorCreatorSet.has(key),
     };
   }).sort((a, b) => b.gmv - a.gmv);
 
@@ -101,23 +115,36 @@ export async function POST(req: NextRequest) {
     if (c.label && c.label in labelCounts) labelCounts[c.label as keyof typeof labelCounts]++;
   }
 
+  const newAffiliates = creators.filter((c) => c.isNew);
+
   const top20Creators = creators.slice(0, 20).map((c) =>
-    `- ${c.name} (${c.brand}): GMV ${fmt(c.gmv)}, ROI ${c.roi ?? "N/A"}x, ${c.liveStreams} lives, ${c.videos} videos, ${c.samplesShipped} samples, label: ${c.label ?? "none"}`
+    `- ${c.name} (${c.brand})${c.isNew ? " [NEW]" : ""}: GMV ${fmt(c.gmv)}, ROI ${c.roi ?? "N/A"}x, ${c.liveStreams} lives, ${c.videos} videos, ${c.samplesShipped} samples, label: ${c.label ?? "none"}`
   ).join("\n");
 
   const top20Products = productGrouped.map((p) =>
     `- ${p.productName} (${brandMap.get(p.brandId) ?? ""}): GMV ${fmt(Number(p._sum.gmv ?? 0))}, ${p._sum.itemsSold ?? 0} sold`
   ).join("\n");
 
+  const newAffiliatesBlock = newAffiliates.length > 0
+    ? `\nNEW AFFILIATES (first time appearing — not in any prior period):\n` +
+      newAffiliates.map((c) =>
+        `- ${c.name} (${c.brand}): GMV ${fmt(c.gmv)}, ROI ${c.roi ?? "N/A"}x, ${c.liveStreams} lives, ${c.videos} videos, label: ${c.label ?? "none"}`
+      ).join("\n")
+    : priorPeriods.length === 0
+      ? "\nNEW AFFILIATES: Cannot determine — no prior period data to compare against."
+      : "\nNEW AFFILIATES: None detected in this period.";
+
   const contextBlock = `
 AFFILIATE DATA CONTEXT
 Brand: ${brandLabel}
 Period: ${activePeriods.join(", ")} (${activePeriods.length} month${activePeriods.length !== 1 ? "s" : ""})
+Prior periods checked for new-affiliate detection: ${priorPeriods.length > 0 ? priorPeriods.join(", ") : "none (this is the first period)"}
 Total GMV: ${fmt(totalGmv)}
-Total creators: ${creators.length}
+Total creators: ${creators.length} (${newAffiliates.length} new this period)
 Labels — STAR: ${labelCounts.STAR}, A: ${labelCounts.A}, B: ${labelCounts.B}, F (blacklist): ${labelCounts.F}
+${newAffiliatesBlock}
 
-TOP 20 CREATORS BY GMV:
+TOP 20 CREATORS BY GMV (★ = new affiliate):
 ${top20Creators || "No creator data"}
 
 TOP 20 PRODUCTS BY GMV:

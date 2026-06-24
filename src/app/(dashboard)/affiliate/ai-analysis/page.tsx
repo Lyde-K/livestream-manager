@@ -44,11 +44,11 @@ const HEALTH_STYLES = {
 };
 
 const SUGGESTED_QUESTIONS = [
+  "Which affiliates are new this period?",
   "Who are my top 5 creators by ROI?",
   "Which creators should I invest more in?",
   "What's my best performing product?",
   "Which creators are underperforming?",
-  "How is my GMV concentrated across creators?",
 ];
 
 export default function AffiliateAIAnalysisPage() {
