@@ -6,6 +6,16 @@ import { createCalendarEvent } from "@/lib/tasks/calendar";
 import { createId } from "@/lib/tasks/id";
 import { createNotification } from "@/lib/tasks/notifications";
 
+export function calcNextDue(from: Date, rec: { freq: string; interval?: number }): Date {
+  const d = new Date(from);
+  const n = Math.max(1, rec.interval ?? 1);
+  if (rec.freq === "daily")   d.setDate(d.getDate() + n);
+  else if (rec.freq === "weekly")  d.setDate(d.getDate() + n * 7);
+  else if (rec.freq === "monthly") d.setMonth(d.getMonth() + n);
+  else if (rec.freq === "yearly")  d.setFullYear(d.getFullYear() + n);
+  return d;
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,6 +77,7 @@ export async function POST(req: NextRequest) {
     assigneeIds?: string[];
     teamId?: string;
     parentId?: string;
+    recurrence?: string | null;
   };
 
   if (!body.title?.trim()) return Response.json({ error: "Title required" }, { status: 400 });
@@ -85,6 +96,8 @@ export async function POST(req: NextRequest) {
       labels: body.labels ?? "[]",
       teamId: body.teamId || null,
       parentId: body.parentId || null,
+      recurrence: body.recurrence || null,
+      nextRecurAt: body.recurrence && body.dueDate ? calcNextDue(new Date(body.dueDate), JSON.parse(body.recurrence)) : null,
       createdById: user.id,
       assignees: assigneeIds.length > 0
         ? { create: assigneeIds.map((uid) => ({ userId: uid })) }

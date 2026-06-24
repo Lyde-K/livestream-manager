@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { sendTaskAssignmentEmail } from "@/lib/tasks/notify";
 import { updateCalendarEvent, deleteCalendarEvent } from "@/lib/tasks/calendar";
 import { createNotification } from "@/lib/tasks/notifications";
+import { calcNextDue } from "@/app/api/tasks/route";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -24,6 +25,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     teamId?: string | null;
     addAssigneeIds?: string[];
     removeAssigneeIds?: string[];
+    recurrence?: string | null;
   };
 
   const existing = await prisma.task.findUnique({
@@ -50,6 +52,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       ...(newDueDate       !== undefined ? { dueDate: newDueDate }              : {}),
       ...(body.labels      !== undefined ? { labels: body.labels }              : {}),
       ...(body.teamId      !== undefined ? { teamId: body.teamId || null }      : {}),
+      ...(body.recurrence  !== undefined ? { recurrence: body.recurrence || null } : {}),
       ...(body.addAssigneeIds?.length
         ? { assignees: { create: body.addAssigneeIds.map((uid) => ({ userId: uid })) } }
         : {}),
@@ -64,6 +67,38 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       _count: { select: { comments: true, children: true } },
     },
   });
+
+  // Recurring task reset: when marked done, immediately reschedule
+  if (body.status === "done" && existing.recurrence) {
+    try {
+      const rec = JSON.parse(existing.recurrence) as { freq: string; interval?: number };
+      const base = existing.dueDate ?? new Date();
+      const nextDue = calcNextDue(base, rec);
+      const reset = await prisma.task.update({
+        where: { id },
+        data: { status: "todo", dueDate: nextDue, nextRecurAt: nextDue },
+        include: {
+          createdBy: { select: { id: true, name: true } },
+          assignees: { include: { user: { select: { id: true, name: true, email: true } } } },
+          team: { select: { id: true, name: true } },
+          _count: { select: { comments: true, children: true } },
+        },
+      });
+      // Notify assignees of the reset
+      for (const a of reset.assignees) {
+        await createNotification({
+          userId: a.user.id,
+          type: "task_updated",
+          title: "🔁 Recurring task reset",
+          message: `"${reset.title}" has been reset for its next occurrence`,
+          taskId: reset.id,
+        });
+      }
+      return Response.json({ task: reset, recurred: true });
+    } catch {
+      // fall through to normal response
+    }
+  }
 
   // Side-effects (non-blocking)
   void (async () => {

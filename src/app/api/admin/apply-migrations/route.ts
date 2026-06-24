@@ -99,6 +99,14 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "Task_parentId_idx" ON "Task"("parentId")`,
     ],
   },
+  {
+    name: "006_add_recurrence",
+    statements: [
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "recurrence" TEXT`,
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "nextRecurAt" TIMESTAMPTZ`,
+      `CREATE INDEX IF NOT EXISTS "Task_nextRecurAt_idx" ON "Task"("nextRecurAt")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {

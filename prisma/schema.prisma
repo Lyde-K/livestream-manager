@@ -520,6 +520,8 @@ model Task {
   createdById   String?
   createdBy     User?     @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: SetNull)
   googleEventId String?
+  recurrence    String?   // JSON: { freq: "daily"|"weekly"|"monthly"|"yearly", interval: number }
+  nextRecurAt   DateTime? // pre-computed next trigger date
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

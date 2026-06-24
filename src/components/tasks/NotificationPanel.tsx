@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bell, CheckCheck, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Bell, CheckCheck, Clock, RefreshCw, X } from "lucide-react";
 
 interface TaskRef { id: string; title: string; }
 interface Notification {
@@ -14,16 +14,25 @@ interface Notification {
   task?: TaskRef | null;
 }
 
+interface AlertTask {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate?: string | null;
+  team?: { id: string; name: string } | null;
+}
+
 export function NotificationPanel() {
-  const [mounted, setMounted]           = useState(false);
-  const [open, setOpen]                 = useState(false);
+  const [mounted, setMounted]             = useState(false);
+  const [open, setOpen]                   = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount]   = useState(0);
-  const [loading, setLoading]           = useState(false);
+  const [unreadCount, setUnreadCount]     = useState(0);
+  const [loading, setLoading]             = useState(false);
+  const [activeAlerts, setActiveAlerts]   = useState<{ task: AlertTask; reason: "review" | "overdue" | "due_today" }[]>([]);
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Listen for sidebar toggle event
   useEffect(() => {
     const handler = () => setOpen((v) => !v);
     window.addEventListener("toggle-notification-panel", handler);
@@ -42,25 +51,54 @@ export function NotificationPanel() {
     setLoading(false);
   }, []);
 
-  // Poll unread count every 30s
+  const fetchActiveAlerts = useCallback(async () => {
+    const [mineRes, reviewRes] = await Promise.all([
+      fetch("/api/tasks?mine=true"),
+      fetch("/api/tasks?status=in_review"),
+    ]);
+    const mine: AlertTask[]   = mineRes.ok   ? ((await mineRes.json()).tasks   ?? []) : [];
+    const review: AlertTask[] = reviewRes.ok ? ((await reviewRes.json()).tasks ?? []) : [];
+
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
+
+    const alerts: { task: AlertTask; reason: "review" | "overdue" | "due_today" }[] = [];
+    const seen = new Set<string>();
+
+    for (const t of review) {
+      if (!seen.has(t.id)) { seen.add(t.id); alerts.push({ task: t, reason: "review" }); }
+    }
+    for (const t of mine) {
+      if (t.status === "done" || !t.dueDate || seen.has(t.id)) continue;
+      const due = new Date(t.dueDate);
+      if (due < todayStart) { seen.add(t.id); alerts.push({ task: t, reason: "overdue" }); }
+      else if (due <= todayEnd) { seen.add(t.id); alerts.push({ task: t, reason: "due_today" }); }
+    }
+
+    setActiveAlerts(alerts);
+  }, []);
+
+  // Initial load + 30s poll
   useEffect(() => {
     fetchNotifications();
+    fetchActiveAlerts();
     const interval = setInterval(() => {
       fetch("/api/notifications")
         .then((r) => r.json())
         .then((d) => {
           setUnreadCount(d.unreadCount ?? 0);
           window.dispatchEvent(new CustomEvent("notification-unread-count", { detail: { count: d.unreadCount ?? 0 } }));
-          if (open) { setNotifications(d.notifications ?? []); }
+          if (open) setNotifications(d.notifications ?? []);
         })
         .catch(() => {});
+      fetchActiveAlerts();
     }, 30_000);
     return () => clearInterval(interval);
-  }, [open, fetchNotifications]);
+  }, [open, fetchNotifications, fetchActiveAlerts]);
 
   useEffect(() => {
-    if (open) fetchNotifications();
-  }, [open, fetchNotifications]);
+    if (open) { fetchNotifications(); fetchActiveAlerts(); }
+  }, [open, fetchNotifications, fetchActiveAlerts]);
 
   async function markAllRead() {
     await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ markAllRead: true }) });
@@ -72,6 +110,11 @@ export function NotificationPanel() {
     await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
     setUnreadCount((c) => Math.max(0, c - 1));
+  }
+
+  function goToTask(taskId: string) {
+    window.dispatchEvent(new CustomEvent("open-task", { detail: { taskId } }));
+    setOpen(false);
   }
 
   function timeAgo(iso: string) {
@@ -95,17 +138,21 @@ export function NotificationPanel() {
     return icons[type] ?? "🔔";
   }
 
+  function alertMeta(reason: "review" | "overdue" | "due_today") {
+    if (reason === "review")    return { icon: "👁️", label: "In Review",  color: "#8B5CF6", bg: "rgba(139,92,246,.08)" };
+    if (reason === "overdue")   return { icon: "🔴", label: "Overdue",    color: "#ef4444", bg: "rgba(239,68,68,.08)" };
+    return                             { icon: "⏰", label: "Due Today",  color: "#F97316", bg: "rgba(249,115,22,.08)" };
+  }
+
   if (!mounted) return null;
 
   const panel = (
     <>
-      {/* Overlay */}
       {open && (
         <div onClick={() => setOpen(false)}
           style={{ position: "fixed", inset: 0, zIndex: 9990, background: "rgba(0,0,0,0.2)" }} />
       )}
 
-      {/* Drawer */}
       <div style={{
         position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 9991,
         width: "360px", maxWidth: "95vw",
@@ -142,12 +189,64 @@ export function NotificationPanel() {
 
         {/* Body */}
         <div style={{ flex: 1, overflowY: "auto" }}>
+
+          {/* Active Alerts */}
+          {activeAlerts.length > 0 && (
+            <div style={{ borderBottom: "2px solid var(--border)" }}>
+              <div style={{ padding: "8px 16px 5px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <AlertTriangle size={11} style={{ color: "#ef4444" }} />
+                <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#ef4444" }}>
+                  Active Alerts ({activeAlerts.length})
+                </span>
+              </div>
+              {activeAlerts.map(({ task, reason }) => {
+                const m = alertMeta(reason);
+                return (
+                  <div key={`${task.id}-${reason}`}
+                    style={{ padding: "10px 16px", borderTop: "1px solid var(--border)", background: m.bg }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                      <span style={{ fontSize: "16px", flexShrink: 0 }}>{m.icon}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+                          <span style={{ fontSize: "10px", fontWeight: 700, color: m.color, textTransform: "uppercase", letterSpacing: "0.05em" }}>{m.label}</span>
+                          {task.team && <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>· {task.team.name}</span>}
+                        </div>
+                        <p style={{ margin: "0 0 5px", fontSize: "12px", fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {task.title}
+                        </p>
+                        {task.dueDate && reason !== "review" && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "6px" }}>
+                            <Clock size={10} style={{ color: m.color }} />
+                            <span style={{ fontSize: "10px", color: m.color, fontWeight: 600 }}>
+                              {new Date(task.dueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => goToTask(task.id)}
+                          style={{
+                            fontSize: "11px", fontWeight: 600, padding: "4px 10px", borderRadius: "7px",
+                            border: `1px solid ${m.color}`, background: "none",
+                            color: m.color, cursor: "pointer", fontFamily: "inherit",
+                          }}
+                        >
+                          Go to task →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Regular notifications */}
           {loading ? (
             <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-muted)" }}>
               <RefreshCw size={18} className="animate-spin" style={{ margin: "0 auto 6px", display: "block" }} />
               <span style={{ fontSize: "12px" }}>Loading…</span>
             </div>
-          ) : notifications.length === 0 ? (
+          ) : notifications.length === 0 && activeAlerts.length === 0 ? (
             <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-muted)" }}>
               <Bell size={32} style={{ margin: "0 auto 10px", display: "block", opacity: 0.3 }} />
               <p style={{ margin: 0, fontSize: "13px" }}>You're all caught up!</p>
@@ -177,7 +276,22 @@ export function NotificationPanel() {
                     )}
                   </div>
                   <p style={{ margin: "0 0 4px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.4 }}>{n.message}</p>
-                  <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{timeAgo(n.createdAt)}</span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{timeAgo(n.createdAt)}</span>
+                    {n.task?.id && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); goToTask(n.task!.id); }}
+                        style={{
+                          fontSize: "10px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px",
+                          border: "1px solid var(--border)", background: "none",
+                          color: "var(--accent)", cursor: "pointer", fontFamily: "inherit",
+                          flexShrink: 0,
+                        }}
+                      >
+                        Go to task →
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))

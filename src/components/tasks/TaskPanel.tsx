@@ -5,7 +5,7 @@ import {
   AlertTriangle, Calendar, CheckCircle2, Circle, Clock,
   ExternalLink, Link2, MessageSquare, Plus, RefreshCw,
   Send, Trash2, X, ClipboardList, Eye, UserCheck,
-  Maximize2, Minimize2, Search, Tag, LayoutGrid, List, Pencil, Check,
+  Maximize2, Minimize2, Search, Tag, LayoutGrid, List, Pencil, Check, RotateCcw,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -24,6 +24,8 @@ interface Task {
   dueDate?: string | null;
   labels?: string;
   parentId?: string | null;
+  recurrence?: string | null;
+  nextRecurAt?: string | null;
   createdBy?: TaskUser | null;
   assignees: TaskAssignee[];
   team?: { id: string; name: string } | null;
@@ -49,7 +51,7 @@ const PRIORITY_META: Record<string, { label: string; color: string }> = {
 
 const INPUT_STYLE: React.CSSProperties = {
   width: "100%", fontSize: "12px", padding: "6px 10px", borderRadius: "8px",
-  border: "1px solid var(--border)", background: "var(--bg-subtle)",
+  border: "1px solid var(--border-strong)", background: "var(--bg-subtle)",
   color: "var(--text-primary)", outline: "none", fontFamily: "inherit",
   boxSizing: "border-box",
 };
@@ -115,7 +117,7 @@ function TaskCard({
       onDragStart={(e) => { e.dataTransfer.setData("taskId", task.id); e.dataTransfer.effectAllowed = "move"; }}
       onClick={() => onSelect(task.id)}
       style={{
-        background: selected ? "var(--bg-elevated)" : "var(--bg-card)",
+        background: selected ? "var(--accent-light)" : "var(--panel-card-bg)",
         border: `1px solid ${selected ? "var(--accent)" : "var(--border)"}`,
         borderRadius: "10px", padding: compact ? "8px 10px" : "10px 12px",
         cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
@@ -165,6 +167,7 @@ function TaskCard({
                 <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>✓ {subtaskTotal}</span>
               )}
               {task.link && <Link2 size={9} style={{ color: "var(--accent)" }} />}
+              {task.recurrence && <RotateCcw size={9} style={{ color: "var(--accent)" }} />}
             </div>
           )}
 
@@ -513,11 +516,80 @@ const FIELD_LABEL = (text: string) => (
   <p style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{text}</p>
 );
 
+// ── RecurrencePicker ──────────────────────────────────────────────────────────
+
+const FREQ_OPTIONS = [
+  { value: "daily",   label: "Day(s)" },
+  { value: "weekly",  label: "Week(s)" },
+  { value: "monthly", label: "Month(s)" },
+  { value: "yearly",  label: "Year(s)" },
+];
+
+function RecurrencePicker({ value, onChange }: {
+  value: string;   // JSON string or ""
+  onChange: (v: string) => void;
+}) {
+  const parsed = value ? (() => { try { return JSON.parse(value); } catch { return null; } })() : null;
+  const enabled  = !!parsed;
+  const freq     = parsed?.freq     ?? "weekly";
+  const interval = parsed?.interval ?? 1;
+
+  function update(f: string, i: number) {
+    onChange(JSON.stringify({ freq: f, interval: Math.max(1, i) }));
+  }
+
+  return (
+    <div style={{ marginBottom: "10px" }}>
+      {FIELD_LABEL("Repeat")}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+        {/* Toggle */}
+        <button
+          type="button"
+          onClick={() => enabled ? onChange("") : update("weekly", 1)}
+          style={{
+            display: "flex", alignItems: "center", gap: "5px",
+            fontSize: "11px", fontWeight: 600, padding: "5px 10px", borderRadius: "8px",
+            border: `1px solid ${enabled ? "var(--accent)" : "var(--border-strong)"}`,
+            background: enabled ? "var(--accent-light)" : "none",
+            color: enabled ? "var(--accent)" : "var(--text-secondary)",
+            cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+          }}
+        >
+          <RotateCcw size={11} /> {enabled ? "On" : "Off"}
+        </button>
+
+        {enabled && (
+          <>
+            <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Every</span>
+            <input
+              type="number" min={1} max={99} value={interval}
+              onChange={(e) => update(freq, parseInt(e.target.value) || 1)}
+              style={{ ...INPUT_STYLE, width: "52px", textAlign: "center", padding: "5px 6px" }}
+            />
+            <select
+              value={freq}
+              onChange={(e) => update(e.target.value, interval)}
+              style={{ ...INPUT_STYLE, width: "auto", padding: "5px 8px" }}
+            >
+              {FREQ_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </>
+        )}
+      </div>
+      {enabled && (
+        <p style={{ margin: "4px 0 0", fontSize: "10px", color: "var(--text-muted)" }}>
+          Task will reset to "To Do" with a new due date each time it's completed.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── AddTaskForm ───────────────────────────────────────────────────────────────
 
 function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   users: TaskUser[]; currentUserId: string; teams: Team[];
-  onAdd: (data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[] }) => Promise<{ ok: boolean; error?: string }>;
+  onAdd: (data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[]; recurrence: string }) => Promise<{ ok: boolean; error?: string }>;
   onCancel: () => void;
 }) {
   const [title, setTitle]               = useState("");
@@ -528,6 +600,7 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   const [assigneeIds, setAssigneeIds]   = useState<string[]>([currentUserId]);
   const [teamId, setTeamId]             = useState("");
   const [labels, setLabels]             = useState<string[]>([]);
+  const [recurrence, setRecurrence]     = useState("");
   const [userSearch, setUserSearch]     = useState("");
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState("");
@@ -545,13 +618,13 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   async function submit() {
     if (!title.trim() || loading) return;
     setLoading(true); setError("");
-    const result = await onAdd({ title, description, link, priority, dueDate, assigneeIds, teamId, labels });
+    const result = await onAdd({ title, description, link, priority, dueDate, assigneeIds, teamId, labels, recurrence });
     setLoading(false);
     if (!result.ok) setError(result.error ?? "Failed to add task.");
   }
 
   return (
-    <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "10px", padding: "14px", marginBottom: "8px" }}>
+    <div style={{ background: "var(--panel-card-bg)", border: "1px solid var(--border)", borderRadius: "12px", padding: "16px", marginBottom: "10px", boxShadow: "var(--shadow-sm)" }}>
       {/* Title */}
       {FIELD_LABEL("Title")}
       <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done?"
@@ -592,6 +665,9 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
           </select>
         </div>
       </div>
+
+      {/* Recurrence */}
+      <RecurrencePicker value={recurrence} onChange={setRecurrence} />
 
       {teams.length > 0 && (
         <div style={{ marginBottom: "10px" }}>
@@ -791,7 +867,7 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
   }
 
   return (
-    <div style={{ borderTop: "1px solid var(--border)", paddingTop: "12px", marginTop: "6px" }}>
+    <div style={{ borderTop: "2px solid var(--border)", paddingTop: "12px", marginTop: "8px", background: "var(--panel-card-bg)", borderRadius: "12px", padding: "14px", border: "1px solid var(--border)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
         <h3 style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", flex: 1, lineHeight: 1.4 }}>{task.title}</h3>
         <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "2px" }}><X size={14} /></button>
@@ -827,6 +903,26 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
           </button>
         ))}
       </div>
+
+      {task.recurrence && (() => {
+        const rec = (() => { try { return JSON.parse(task.recurrence!); } catch { return null; } })();
+        if (!rec) return null;
+        const freqLabel: Record<string, string> = { daily: "day(s)", weekly: "week(s)", monthly: "month(s)", yearly: "year(s)" };
+        const nextDate = task.nextRecurAt ? new Date(task.nextRecurAt).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" }) : null;
+        return (
+          <div style={{ marginBottom: "10px", padding: "8px 10px", borderRadius: "8px", border: "1px solid rgba(22,119,255,.25)", background: "var(--accent-light)", display: "flex", alignItems: "center", gap: "7px" }}>
+            <RotateCcw size={12} style={{ color: "var(--accent)", flexShrink: 0 }} />
+            <div>
+              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent)" }}>
+                Repeats every {rec.interval ?? 1} {freqLabel[rec.freq] ?? rec.freq}
+              </span>
+              {nextDate && (
+                <span style={{ fontSize: "10px", color: "var(--text-muted)", marginLeft: "6px" }}>· Next: {nextDate}</span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {task.assignees.length > 0 && (
         <div style={{ marginBottom: "10px" }}>
@@ -1035,7 +1131,7 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
         const isOwner = team.members.some((m) => m.userId === currentUserId && m.role === "owner");
         const otherUsers = allUsers.filter((u) => !team.members.some((m) => m.userId === u.id));
         return (
-          <div key={team.id} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
+          <div key={team.id} style={{ background: "var(--panel-card-bg)", border: "1px solid var(--border)", borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 {editingTeamId === team.id ? (
@@ -1166,6 +1262,7 @@ export function TaskPanel({ userId, userRole }: Props) {
   const [teams, setTeams]                   = useState<Team[]>([]);
   const [reviewCount, setReviewCount]       = useState(0);
   const [searchOpen, setSearchOpen]         = useState(false);
+  const pendingSelectRef                    = useRef<string | null>(null);
 
   // Load persisted state from localStorage
   useEffect(() => {
@@ -1194,6 +1291,21 @@ export function TaskPanel({ userId, userRole }: Props) {
     return () => window.removeEventListener("toggle-task-panel", handler);
   }, []);
 
+  // Open and navigate to a specific task from notifications
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ taskId: string }>;
+      pendingSelectRef.current = ce.detail.taskId;
+      setOpen(true);
+      setTab("all");
+      setStatusFilter("all");
+      setPriorityFilter("all");
+      setTeamFilter("all");
+    };
+    window.addEventListener("open-task", handler);
+    return () => window.removeEventListener("open-task", handler);
+  }, []);
+
   // Cmd+K / Ctrl+K global shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1216,7 +1328,14 @@ export function TaskPanel({ userId, userRole }: Props) {
     if (priorityFilter !== "all") params.set("priority", priorityFilter);
     if (teamFilter !== "all") params.set("teamId", teamFilter);
     const res = await fetch(`/api/tasks?${params}`);
-    if (res.ok) { const d = await res.json(); setTasks(d.tasks ?? []); }
+    if (res.ok) {
+      const d = await res.json();
+      setTasks(d.tasks ?? []);
+      if (pendingSelectRef.current) {
+        setSelectedId(pendingSelectRef.current);
+        pendingSelectRef.current = null;
+      }
+    }
     setLoading(false);
   }, [tab, statusFilter, priorityFilter, teamFilter]);
 
@@ -1238,7 +1357,7 @@ export function TaskPanel({ userId, userRole }: Props) {
     fetch("/api/tasks?status=in_review").then((r) => r.json()).then((d) => setReviewCount((d.tasks ?? []).length));
   }, [open]);
 
-  async function handleAddTask(data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[] }) {
+  async function handleAddTask(data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[]; recurrence: string }) {
     const res = await fetch("/api/tasks", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1246,6 +1365,7 @@ export function TaskPanel({ userId, userRole }: Props) {
         priority: data.priority, dueDate: data.dueDate || null,
         assigneeIds: data.assigneeIds, teamId: data.teamId || null,
         labels: JSON.stringify(data.labels),
+        recurrence: data.recurrence || null,
       }),
     });
     if (res.ok) { setShowAdd(false); fetchTasks(); return { ok: true }; }
@@ -1299,14 +1419,14 @@ export function TaskPanel({ userId, userRole }: Props) {
       <div style={{
         position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 9991,
         width: panelWidth, maxWidth: "95vw",
-        background: "var(--sidebar-bg)", borderLeft: "1px solid var(--border)",
+        background: "var(--panel-bg)", borderLeft: "1px solid var(--border)",
         display: "flex", flexDirection: "column",
         transform: open ? "translateX(0)" : "translateX(100%)",
         transition: "transform 0.28s cubic-bezier(0.34,1.06,0.64,1), width 0.2s ease",
-        boxShadow: open ? "-8px 0 32px rgba(0,0,0,0.18)" : "none",
+        boxShadow: open ? "-8px 0 40px rgba(0,0,0,0.14)" : "none",
       }}>
         {/* Header */}
-        <div style={{ padding: "14px 16px 0", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <div style={{ padding: "14px 16px 0", borderBottom: "1px solid var(--border)", flexShrink: 0, background: "var(--panel-header-bg)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <ClipboardList size={16} style={{ color: "var(--accent)" }} />
@@ -1378,18 +1498,18 @@ export function TaskPanel({ userId, userRole }: Props) {
               {tab !== "review" && tab !== "board" && (
                 <div style={{ display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap", alignItems: "center" }}>
                   <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border-strong)", background: "var(--panel-card-bg)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
                     <option value="all">All status</option>
                     {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                   <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}
-                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border-strong)", background: "var(--panel-card-bg)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
                     <option value="all">All priority</option>
                     {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                   {teams.length > 0 && (
                     <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}
-                      style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+                      style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border-strong)", background: "var(--panel-card-bg)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
                       <option value="all">All teams</option>
                       {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
@@ -1404,13 +1524,13 @@ export function TaskPanel({ userId, userRole }: Props) {
               {tab === "board" && (
                 <div style={{ display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap", alignItems: "center" }}>
                   <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}
-                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border-strong)", background: "var(--panel-card-bg)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
                     <option value="all">All priority</option>
                     {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                   {teams.length > 0 && (
                     <select value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)}
-                      style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+                      style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border-strong)", background: "var(--panel-card-bg)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
                       <option value="all">All teams</option>
                       {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
