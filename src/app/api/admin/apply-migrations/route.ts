@@ -3,25 +3,28 @@ import { NextRequest } from "next/server";
 
 // Intentionally avoids importing prisma/auth — those are broken until this migration runs.
 // Protected by ADMIN_MIGRATE_SECRET env var set in Vercel.
+// Each migration is an array of individual SQL statements — Neon does not support
+// multiple commands in a single prepared-statement call.
 
-const MIGRATIONS: { name: string; sql: string }[] = [
+const MIGRATIONS: { name: string; statements: string[] }[] = [
   {
     name: "001_add_hasLivestream",
-    sql: `ALTER TABLE "Brand" ADD COLUMN IF NOT EXISTS "hasLivestream" BOOLEAN NOT NULL DEFAULT true`,
+    statements: [
+      `ALTER TABLE "Brand" ADD COLUMN IF NOT EXISTS "hasLivestream" BOOLEAN NOT NULL DEFAULT true`,
+    ],
   },
   {
     name: "002_add_google_oauth_to_user",
-    sql: `
-      ALTER TABLE "User"
-        ADD COLUMN IF NOT EXISTS "googleAccessToken"  TEXT,
-        ADD COLUMN IF NOT EXISTS "googleRefreshToken" TEXT,
-        ADD COLUMN IF NOT EXISTS "googleTokenExpiry"  TIMESTAMPTZ
-    `,
+    statements: [
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleAccessToken"  TEXT`,
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleRefreshToken" TEXT`,
+      `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleTokenExpiry"  TIMESTAMPTZ`,
+    ],
   },
   {
     name: "003_create_task_tables",
-    sql: `
-      CREATE TABLE IF NOT EXISTS "Task" (
+    statements: [
+      `CREATE TABLE IF NOT EXISTS "Task" (
         "id"            TEXT PRIMARY KEY,
         "title"         TEXT NOT NULL,
         "description"   TEXT,
@@ -32,53 +35,47 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         "googleEventId" TEXT,
         "createdAt"     TIMESTAMPTZ NOT NULL DEFAULT now(),
         "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-      CREATE TABLE IF NOT EXISTS "TaskAssignee" (
+      )`,
+      `CREATE TABLE IF NOT EXISTS "TaskAssignee" (
         "taskId" TEXT NOT NULL REFERENCES "Task"(id) ON DELETE CASCADE,
         "userId" TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
         PRIMARY KEY ("taskId", "userId")
-      );
-      CREATE TABLE IF NOT EXISTS "TaskComment" (
+      )`,
+      `CREATE TABLE IF NOT EXISTS "TaskComment" (
         "id"        TEXT PRIMARY KEY,
         "taskId"    TEXT NOT NULL REFERENCES "Task"(id) ON DELETE CASCADE,
         "userId"    TEXT REFERENCES "User"(id) ON DELETE SET NULL,
         "content"   TEXT NOT NULL,
         "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-      CREATE INDEX IF NOT EXISTS "Task_status_idx"      ON "Task"("status");
-      CREATE INDEX IF NOT EXISTS "Task_createdById_idx" ON "Task"("createdById");
-      CREATE INDEX IF NOT EXISTS "Task_dueDate_idx"     ON "Task"("dueDate");
-      CREATE INDEX IF NOT EXISTS "TaskAssignee_userId_idx" ON "TaskAssignee"("userId");
-      CREATE INDEX IF NOT EXISTS "TaskComment_taskId_idx" ON "TaskComment"("taskId")
-    `,
+      )`,
+      `CREATE INDEX IF NOT EXISTS "Task_status_idx"         ON "Task"("status")`,
+      `CREATE INDEX IF NOT EXISTS "Task_createdById_idx"    ON "Task"("createdById")`,
+      `CREATE INDEX IF NOT EXISTS "Task_dueDate_idx"        ON "Task"("dueDate")`,
+      `CREATE INDEX IF NOT EXISTS "TaskAssignee_userId_idx" ON "TaskAssignee"("userId")`,
+      `CREATE INDEX IF NOT EXISTS "TaskComment_taskId_idx"  ON "TaskComment"("taskId")`,
+    ],
   },
   {
     name: "004_add_teams_and_notifications",
-    sql: `
-      ALTER TABLE "Task"
-        ADD COLUMN IF NOT EXISTS "link"   TEXT,
-        ADD COLUMN IF NOT EXISTS "teamId" TEXT;
-
-      CREATE TABLE IF NOT EXISTS "Team" (
+    statements: [
+      // Team table first so Task FK can reference it
+      `CREATE TABLE IF NOT EXISTS "Team" (
         "id"          TEXT PRIMARY KEY,
         "name"        TEXT NOT NULL,
         "description" TEXT,
         "createdById" TEXT REFERENCES "User"(id) ON DELETE SET NULL,
         "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-
-      CREATE TABLE IF NOT EXISTS "TeamMember" (
+      )`,
+      `CREATE TABLE IF NOT EXISTS "TeamMember" (
         "teamId" TEXT NOT NULL REFERENCES "Team"(id) ON DELETE CASCADE,
         "userId" TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
         "role"   TEXT NOT NULL DEFAULT 'member',
         PRIMARY KEY ("teamId", "userId")
-      );
-
-      ALTER TABLE "Task"
-        ADD CONSTRAINT IF NOT EXISTS "Task_teamId_fkey"
-        FOREIGN KEY ("teamId") REFERENCES "Team"(id) ON DELETE SET NULL;
-
-      CREATE TABLE IF NOT EXISTS "Notification" (
+      )`,
+      // Add columns to Task — link first, then teamId with FK inline
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "link" TEXT`,
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "teamId" TEXT REFERENCES "Team"(id) ON DELETE SET NULL`,
+      `CREATE TABLE IF NOT EXISTS "Notification" (
         "id"        TEXT PRIMARY KEY,
         "userId"    TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
         "type"      TEXT NOT NULL,
@@ -87,13 +84,12 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         "taskId"    TEXT REFERENCES "Task"(id) ON DELETE SET NULL,
         "read"      BOOLEAN NOT NULL DEFAULT false,
         "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-
-      CREATE INDEX IF NOT EXISTS "Task_teamId_idx"           ON "Task"("teamId");
-      CREATE INDEX IF NOT EXISTS "TeamMember_userId_idx"     ON "TeamMember"("userId");
-      CREATE INDEX IF NOT EXISTS "Notification_userId_read"  ON "Notification"("userId","read");
-      CREATE INDEX IF NOT EXISTS "Notification_userId_at"    ON "Notification"("userId","createdAt")
-    `,
+      )`,
+      `CREATE INDEX IF NOT EXISTS "Task_teamId_idx"          ON "Task"("teamId")`,
+      `CREATE INDEX IF NOT EXISTS "TeamMember_userId_idx"    ON "TeamMember"("userId")`,
+      `CREATE INDEX IF NOT EXISTS "Notification_userId_read" ON "Notification"("userId","read")`,
+      `CREATE INDEX IF NOT EXISTS "Notification_userId_at"   ON "Notification"("userId","createdAt")`,
+    ],
   },
 ];
 
@@ -127,7 +123,12 @@ export async function POST(req: NextRequest) {
     try {
       const existing = await sql`SELECT 1 FROM "_sql_migrations" WHERE name = ${m.name}`;
       if (existing.length > 0) { skipped.push(m.name); continue; }
-      await sql.query(m.sql);
+
+      // Run each statement individually — Neon doesn't allow multiple commands per call
+      for (const stmt of m.statements) {
+        await sql.query(stmt);
+      }
+
       await sql`INSERT INTO "_sql_migrations" (name) VALUES (${m.name}) ON CONFLICT DO NOTHING`;
       applied.push(m.name);
     } catch (e) {
