@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LabelChip } from "@/components/affiliate/label-chip";
 import { formatCurrency } from "@/lib/utils";
 import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, Sparkles } from "lucide-react";
@@ -132,6 +132,7 @@ export default function AffiliateOverviewPage() {
   const [retryKey, setRetryKey] = useState(0);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [affiliateType, setAffiliateType] = useState<AffiliateType>("all");
+  const cache = useRef<Map<string, OverviewData>>(new Map());
 
   useEffect(() => {
     fetch("/api/affiliate/brands")
@@ -159,6 +160,16 @@ export default function AffiliateOverviewPage() {
     }
     if (affiliateType !== "all") params.set("type", affiliateType);
 
+    const cacheKey = params.toString();
+
+    // Serve from cache instantly — no Neon hit
+    const cached = cache.current.get(cacheKey);
+    if (cached) {
+      setData(cached);
+      setDataError(null);
+      return;
+    }
+
     setData(null);
     setDataError(null);
 
@@ -167,14 +178,15 @@ export default function AffiliateOverviewPage() {
     async function fetchWithRetry(url: string, attempts = 3): Promise<void> {
       for (let i = 0; i < attempts; i++) {
         try {
-          if (i > 0) await new Promise(res => setTimeout(res, 1000 * 2 ** (i - 1))); // 1s, 2s backoff
+          if (i > 0) await new Promise(res => setTimeout(res, 1000 * 2 ** (i - 1)));
           const r = await fetch(url);
           const d = await r.json() as OverviewData & { error?: string; message?: string };
           if (cancelled) return;
           if (d.error || d.message) {
-            if (i < attempts - 1) continue; // retry on error response
+            if (i < attempts - 1) continue;
             setDataError(d.error ?? d.message ?? "Unknown error");
           } else {
+            cache.current.set(cacheKey, d);
             setData(d);
           }
           return;
@@ -388,7 +400,7 @@ export default function AffiliateOverviewPage() {
           <p className="text-sm font-semibold mb-1" style={{ color: "#ef4444" }}>Failed to load affiliate data</p>
           <p className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{dataError}</p>
           <button
-            onClick={() => setRetryKey(k => k + 1)}
+            onClick={() => { cache.current.clear(); setRetryKey(k => k + 1); }}
             className="mt-3 text-xs px-3 py-1.5 rounded-md font-semibold"
             style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}
           >
