@@ -5,7 +5,7 @@ import {
   AlertTriangle, Calendar, CheckCircle2, Circle, Clock,
   ExternalLink, Link2, MessageSquare, Plus, RefreshCw,
   Send, Trash2, X, ClipboardList, Eye, UserCheck,
-  Maximize2, Minimize2, Search, Tag, LayoutGrid, List,
+  Maximize2, Minimize2, Search, Tag, LayoutGrid, List, Pencil, Check,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -386,6 +386,133 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
   );
 }
 
+// ── DatePicker ────────────────────────────────────────────────────────────────
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAY_LABELS = ["M","T","W","T","F","S","S"];
+
+function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
+  const [open, setOpen]         = useState(false);
+  const [viewDate, setViewDate] = useState(() => value ? new Date(value + "T00:00:00") : new Date());
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const year  = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const selected = value ? new Date(value + "T00:00:00") : null;
+  const today    = new Date();
+
+  const firstDayOfMonth = new Date(year, month, 1).getDay();
+  const startOffset     = (firstDayOfMonth + 6) % 7; // Mon = 0
+  const daysInMonth     = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+  const cells: { day: number; current: boolean }[] = [];
+  for (let i = startOffset - 1; i >= 0; i--) cells.push({ day: daysInPrevMonth - i, current: false });
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, current: true });
+  while (cells.length % 7 !== 0) cells.push({ day: cells.length - daysInMonth - startOffset + 1, current: false });
+
+  function selectDate(day: number) {
+    const d   = new Date(year, month, day);
+    const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    onChange(str);
+    setOpen(false);
+  }
+
+  const isToday    = (d: number) => today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+  const isSelected = (d: number) => selected?.getFullYear() === year && selected?.getMonth() === month && selected?.getDate() === d;
+
+  const displayLabel = value
+    ? new Date(value + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
+    : "Set due date";
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: "7px", width: "100%",
+          fontSize: "12px", padding: "7px 10px", borderRadius: "8px",
+          border: "1px solid var(--border)", background: "var(--bg-subtle)",
+          color: value ? "var(--text-primary)" : "var(--text-muted)",
+          cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+        }}>
+        <Calendar size={13} style={{ color: value ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }} />
+        {displayLabel}
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
+          background: "var(--sidebar-bg)", border: "1px solid var(--border)",
+          borderRadius: "14px", padding: "14px 14px 12px", minWidth: "248px",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.3)",
+        }}>
+          {/* Month / year nav */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+            <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))}
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "8px", cursor: "pointer", padding: "3px 10px", color: "var(--text-secondary)", fontSize: "15px", lineHeight: 1 }}>‹</button>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{MONTHS[month]} {year}</span>
+            <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))}
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "8px", cursor: "pointer", padding: "3px 10px", color: "var(--text-secondary)", fontSize: "15px", lineHeight: 1 }}>›</button>
+          </div>
+
+          {/* Weekday headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: "6px" }}>
+            {DAY_LABELS.map((d, i) => (
+              <div key={i} style={{ textAlign: "center", fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", padding: "2px 0", letterSpacing: "0.03em" }}>{d}</div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px" }}>
+            {cells.map((cell, i) => (
+              <button key={i} type="button" onClick={() => cell.current && selectDate(cell.day)}
+                style={{
+                  textAlign: "center", fontSize: "12px", padding: "7px 0", borderRadius: "8px", border: "none",
+                  background: cell.current && isSelected(cell.day) ? "var(--accent)"
+                    : cell.current && isToday(cell.day) ? "var(--accent-light)" : "transparent",
+                  color: !cell.current ? "var(--text-muted)"
+                    : isSelected(cell.day) ? "#fff"
+                    : isToday(cell.day) ? "var(--accent)" : "var(--text-primary)",
+                  cursor: cell.current ? "pointer" : "default",
+                  opacity: cell.current ? 1 : 0.3,
+                  fontFamily: "inherit", fontWeight: isSelected(cell.day) || isToday(cell.day) ? 600 : 400,
+                  transition: "background 0.1s",
+                }}
+                onMouseEnter={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
+                onMouseLeave={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = isToday(cell.day) ? "var(--accent-light)" : "transparent"; }}
+              >
+                {cell.day}
+              </button>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
+            <button type="button" onClick={() => { onChange(""); setOpen(false); }}
+              style={{ fontSize: "12px", color: "var(--accent)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "2px 4px", borderRadius: "6px" }}>
+              Clear
+            </button>
+            <button type="button" onClick={() => { setViewDate(new Date()); selectDate(today.getDate()); }}
+              style={{ fontSize: "12px", color: "var(--accent)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "2px 4px", borderRadius: "6px" }}>
+              Today
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const FIELD_LABEL = (text: string) => (
+  <p style={{ margin: "0 0 4px", fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{text}</p>
+);
+
 // ── AddTaskForm ───────────────────────────────────────────────────────────────
 
 function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
@@ -424,41 +551,61 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   }
 
   return (
-    <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
-      <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title…"
+    <div style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "10px", padding: "14px", marginBottom: "8px" }}>
+      {/* Title */}
+      {FIELD_LABEL("Title")}
+      <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done?"
         onKeyDown={(e) => { if (e.key === "Enter" && title.trim()) submit(); if (e.key === "Escape") onCancel(); }}
-        style={{ ...INPUT_STYLE, border: "none", background: "none", fontSize: "13px", fontWeight: 500, padding: "0 0 8px 0", marginBottom: "8px", borderBottom: "1px solid var(--border)", borderRadius: 0 }}
+        style={{ ...INPUT_STYLE, fontSize: "13px", fontWeight: 500, marginBottom: "10px" }}
       />
-      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description… (optional)" rows={2}
-        style={{ ...INPUT_STYLE, resize: "none", marginBottom: "8px" }} />
-      <div style={{ position: "relative", marginBottom: "8px" }}>
+
+      {/* Description */}
+      {FIELD_LABEL("Description")}
+      <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add more detail… (optional)" rows={2}
+        style={{ ...INPUT_STYLE, resize: "none", marginBottom: "10px" }} />
+
+      {/* Link */}
+      {FIELD_LABEL("Relevant link")}
+      <div style={{ position: "relative", marginBottom: "10px" }}>
         <Link2 size={12} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Relevant link… (optional)"
+        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://… (optional)"
           style={{ ...INPUT_STYLE, paddingLeft: "28px" }} />
       </div>
 
-      <LabelInput labels={labels} onChange={setLabels} />
+      {/* Labels */}
+      {FIELD_LABEL("Labels")}
+      <div style={{ marginBottom: "10px" }}>
+        <LabelInput labels={labels} onChange={setLabels} />
+      </div>
 
-      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)}
-          style={{ fontSize: "11px", padding: "4px 7px", borderRadius: "7px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
-          {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-          style={{ fontSize: "11px", padding: "4px 7px", borderRadius: "7px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }} />
-        {teams.length > 0 && (
+      {/* Priority + Due date + Team */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+        <div>
+          {FIELD_LABEL("Priority")}
+          <select value={priority} onChange={(e) => setPriority(e.target.value)}
+            style={{ ...INPUT_STYLE, fontSize: "12px", padding: "7px 10px" }}>
+            {Object.entries(PRIORITY_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+        <div>
+          {FIELD_LABEL("Due date")}
+          <DatePicker value={dueDate} onChange={setDueDate} />
+        </div>
+      </div>
+
+      {teams.length > 0 && (
+        <div style={{ marginBottom: "10px" }}>
+          {FIELD_LABEL("Team")}
           <select value={teamId} onChange={(e) => handleTeamChange(e.target.value)}
-            style={{ fontSize: "11px", padding: "4px 7px", borderRadius: "7px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+            style={{ ...INPUT_STYLE, fontSize: "12px", padding: "7px 10px" }}>
             <option value="">No team</option>
             {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
-        )}
-      </div>
+        </div>
+      )}
 
       <div style={{ marginBottom: "10px" }}>
-        <p style={{ margin: "0 0 5px", fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          Assign to {selectedTeam ? `· ${selectedTeam.name}` : ""}
-        </p>
+        {FIELD_LABEL(`Assign to${selectedTeam ? ` · ${selectedTeam.name}` : ""}`)}
         {assigneeIds.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
             {assigneeIds.map((id) => {
@@ -777,6 +924,20 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
   const [memberSearch, setMemberSearch]   = useState("");
   const [addMemberSearch, setAddMemberSearch] = useState<Record<string, string>>({});
   const [loading, setLoading]     = useState(false);
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [editTeamName, setEditTeamName]   = useState("");
+
+  async function saveTeamName(teamId: string) {
+    if (!editTeamName.trim()) return;
+    const res = await fetch(`/api/teams/${teamId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editTeamName.trim() }),
+    });
+    if (res.ok) {
+      onTeamsChange(teams.map((t) => t.id === teamId ? { ...t, name: editTeamName.trim() } : t));
+      setEditingTeamId(null);
+    }
+  }
 
   async function createTeam() {
     if (!teamName.trim() || loading) return;
@@ -876,12 +1037,41 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
         return (
           <div key={team.id} style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: "10px", padding: "12px", marginBottom: "8px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
-              <div>
-                <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{team.name}</span>
-                {team.description && <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>{team.description}</p>}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {editingTeamId === team.id ? (
+                  <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                    <input
+                      autoFocus
+                      value={editTeamName}
+                      onChange={(e) => setEditTeamName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveTeamName(team.id); if (e.key === "Escape") setEditingTeamId(null); }}
+                      style={{ ...INPUT_STYLE, fontSize: "13px", fontWeight: 600, flex: 1 }}
+                    />
+                    <button onClick={() => saveTeamName(team.id)}
+                      style={{ background: "var(--accent)", border: "none", borderRadius: "7px", cursor: "pointer", padding: "5px 8px", color: "#fff", display: "flex", alignItems: "center" }}>
+                      <Check size={12} />
+                    </button>
+                    <button onClick={() => setEditingTeamId(null)}
+                      style={{ background: "none", border: "1px solid var(--border)", borderRadius: "7px", cursor: "pointer", padding: "5px 8px", color: "var(--text-muted)", display: "flex", alignItems: "center" }}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{team.name}</span>
+                    {isOwner && (
+                      <button onClick={() => { setEditingTeamId(team.id); setEditTeamName(team.name); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "2px", opacity: 0.6, display: "flex", alignItems: "center" }}
+                        title="Edit team name">
+                        <Pencil size={11} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {team.description && editingTeamId !== team.id && <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>{team.description}</p>}
               </div>
-              {isOwner && (
-                <button onClick={() => deleteTeam(team.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "2px" }}>
+              {isOwner && editingTeamId !== team.id && (
+                <button onClick={() => deleteTeam(team.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "2px", marginLeft: "8px" }}>
                   <Trash2 size={12} />
                 </button>
               )}
