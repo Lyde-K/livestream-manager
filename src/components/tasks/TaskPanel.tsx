@@ -260,39 +260,70 @@ function AddTaskForm({
       <div style={{ marginBottom: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
           <p style={{ margin: 0, fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-            Assign to {selectedTeam ? `(${selectedTeam.name} members)` : ""}
+            Assign to {selectedTeam ? `· ${selectedTeam.name}` : ""}
           </p>
-          {assigneeIds.length > 0 && (
-            <span style={{ fontSize: "10px", color: "var(--accent)" }}>{assigneeIds.length} selected</span>
-          )}
         </div>
-        {/* Search */}
-        <input
-          value={userSearch}
-          onChange={(e) => setUserSearch(e.target.value)}
-          placeholder="Search people…"
-          style={{ ...INPUT_STYLE, marginBottom: "6px", fontSize: "11px", padding: "4px 8px" }}
-        />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", maxHeight: "100px", overflowY: "auto" }}>
-          {visibleUsers.length === 0 && (
-            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>No users found.</span>
+
+        {/* Selected assignee chips */}
+        {assigneeIds.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+            {assigneeIds.map((id) => {
+              const u = scopedUsers.find((u) => u.id === id);
+              const label = id === currentUserId ? "Me" : (u?.name ?? id);
+              return (
+                <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", padding: "2px 8px", borderRadius: "20px", background: "var(--accent-light)", color: "var(--accent)", border: "1px solid var(--accent)" }}>
+                  {label}
+                  <button onClick={() => toggleAssignee(id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, display: "flex", lineHeight: 1 }}>
+                    <X size={10} />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Search → dropdown */}
+        <div style={{ position: "relative" }}>
+          <input
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+            placeholder="Search to assign…"
+            style={{ ...INPUT_STYLE, fontSize: "11px", padding: "5px 8px" }}
+          />
+          {userSearch.trim() && visibleUsers.length > 0 && (
+            <div style={{
+              position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10,
+              background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxHeight: "160px", overflowY: "auto",
+            }}>
+              {visibleUsers.map((u) => {
+                const isSelf = u.id === currentUserId;
+                const active = assigneeIds.includes(u.id);
+                return (
+                  <button key={u.id}
+                    onClick={() => { toggleAssignee(u.id); setUserSearch(""); }}
+                    style={{
+                      width: "100%", textAlign: "left", padding: "7px 10px", border: "none",
+                      background: active ? "var(--accent-light)" : "none",
+                      color: active ? "var(--accent)" : "var(--text-primary)",
+                      cursor: "pointer", fontFamily: "inherit", fontSize: "12px",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}
+                    onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
+                    onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "none"; }}
+                  >
+                    <span>{isSelf ? "Me" : u.name}</span>
+                    {active && <CheckCircle2 size={13} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+                  </button>
+                );
+              })}
+            </div>
           )}
-          {visibleUsers.map((u) => {
-            const isSelf = u.id === currentUserId;
-            const active = assigneeIds.includes(u.id);
-            return (
-              <button key={u.id} onClick={() => toggleAssignee(u.id)}
-                style={{
-                  fontSize: "11px", padding: "3px 8px", borderRadius: "20px",
-                  border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                  background: active ? "var(--accent-light)" : "none",
-                  color: active ? "var(--accent)" : "var(--text-secondary)",
-                  cursor: "pointer", fontFamily: "inherit",
-                }}>
-                {isSelf ? "Me" : u.name}
-              </button>
-            );
-          })}
+          {userSearch.trim() && visibleUsers.length === 0 && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px", fontSize: "12px", color: "var(--text-muted)" }}>
+              No users found.
+            </div>
+          )}
         </div>
       </div>
 
@@ -456,6 +487,8 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
   const [teamName, setTeamName] = useState("");
   const [teamDesc, setTeamDesc] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [addMemberSearch, setAddMemberSearch] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
   async function createTeam() {
@@ -525,17 +558,48 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
           <input value={teamDesc} onChange={(e) => setTeamDesc(e.target.value)} placeholder="Description… (optional)"
             style={{ ...INPUT_STYLE, marginBottom: "8px" }} />
           <p style={{ margin: "0 0 5px", fontSize: "10px", fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Add Members</p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "10px" }}>
-            {allUsers.filter((u) => u.id !== currentUserId).map((u) => (
-              <button key={u.id} onClick={() => setMemberIds((p) => p.includes(u.id) ? p.filter((x) => x !== u.id) : [...p, u.id])}
-                style={{
-                  fontSize: "11px", padding: "3px 8px", borderRadius: "20px",
-                  border: `1px solid ${memberIds.includes(u.id) ? "var(--accent)" : "var(--border)"}`,
-                  background: memberIds.includes(u.id) ? "var(--accent-light)" : "none",
-                  color: memberIds.includes(u.id) ? "var(--accent)" : "var(--text-secondary)",
-                  cursor: "pointer", fontFamily: "inherit",
-                }}>{u.name}</button>
-            ))}
+          {/* Selected member chips */}
+          {memberIds.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+              {memberIds.map((id) => {
+                const u = allUsers.find((u) => u.id === id);
+                return (
+                  <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", padding: "2px 8px", borderRadius: "20px", background: "var(--accent-light)", color: "var(--accent)", border: "1px solid var(--accent)" }}>
+                    {u?.name ?? id}
+                    <button onClick={() => setMemberIds((p) => p.filter((x) => x !== id))} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: 0, display: "flex" }}>
+                      <X size={10} />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {/* Search dropdown */}
+          <div style={{ position: "relative", marginBottom: "10px" }}>
+            <input value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
+              placeholder="Search members to add…"
+              style={{ ...INPUT_STYLE, fontSize: "11px", padding: "5px 8px" }} />
+            {memberSearch.trim() && (
+              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxHeight: "140px", overflowY: "auto" }}>
+                {allUsers.filter((u) => u.id !== currentUserId && u.name.toLowerCase().includes(memberSearch.toLowerCase())).length === 0
+                  ? <div style={{ padding: "10px", fontSize: "12px", color: "var(--text-muted)" }}>No users found.</div>
+                  : allUsers.filter((u) => u.id !== currentUserId && u.name.toLowerCase().includes(memberSearch.toLowerCase())).map((u) => {
+                      const active = memberIds.includes(u.id);
+                      return (
+                        <button key={u.id}
+                          onClick={() => { setMemberIds((p) => active ? p.filter((x) => x !== u.id) : [...p, u.id]); setMemberSearch(""); }}
+                          style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: active ? "var(--accent-light)" : "none", color: active ? "var(--accent)" : "var(--text-primary)", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+                          onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
+                          onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.background = "none"; }}
+                        >
+                          <span>{u.name}</span>
+                          {active && <CheckCircle2 size={13} style={{ color: "var(--accent)", flexShrink: 0 }} />}
+                        </button>
+                      );
+                    })
+                }
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
             <button onClick={createTeam} disabled={!teamName.trim() || loading}
@@ -587,14 +651,30 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
               ))}
             </div>
             {isOwner && otherUsers.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>Add:</span>
-                {otherUsers.slice(0, 6).map((u) => (
-                  <button key={u.id} onClick={() => addMember(team.id, u.id)}
-                    style={{ fontSize: "10px", padding: "2px 6px", borderRadius: "20px", border: "1px dashed var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit" }}>
-                    + {u.name}
-                  </button>
-                ))}
+              <div style={{ position: "relative", marginTop: "6px" }}>
+                <input
+                  value={addMemberSearch[team.id] ?? ""}
+                  onChange={(e) => setAddMemberSearch((p) => ({ ...p, [team.id]: e.target.value }))}
+                  placeholder="Search to add member…"
+                  style={{ ...INPUT_STYLE, fontSize: "11px", padding: "4px 8px" }}
+                />
+                {(addMemberSearch[team.id] ?? "").trim() && (
+                  <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxHeight: "130px", overflowY: "auto" }}>
+                    {otherUsers.filter((u) => u.name.toLowerCase().includes((addMemberSearch[team.id] ?? "").toLowerCase())).length === 0
+                      ? <div style={{ padding: "10px", fontSize: "12px", color: "var(--text-muted)" }}>No users found.</div>
+                      : otherUsers.filter((u) => u.name.toLowerCase().includes((addMemberSearch[team.id] ?? "").toLowerCase())).map((u) => (
+                          <button key={u.id}
+                            onClick={() => { addMember(team.id, u.id); setAddMemberSearch((p) => ({ ...p, [team.id]: "" })); }}
+                            style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: "none", color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit", fontSize: "12px" }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "none"; }}
+                          >
+                            + {u.name}
+                          </button>
+                        ))
+                    }
+                  </div>
+                )}
               </div>
             )}
           </div>
