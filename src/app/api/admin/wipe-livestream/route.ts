@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
       "Session",
     ];
     for (const table of tables) {
-      const result = await sql(`DELETE FROM "${table}"`) as { rowCount?: number } | undefined;
-      counts[table] = (result as { rowCount?: number })?.rowCount ?? 0;
+      const result = await sql.query(`DELETE FROM "${table}"`) as unknown as { rowCount?: number };
+      counts[table] = result?.rowCount ?? 0;
     }
     return Response.json({ ok: true, deleted: counts });
   } catch (e) {
