@@ -1,11 +1,6 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import FullCalendar from "@fullcalendar/react";
-import dayGridPlugin from "@fullcalendar/daygrid";
-import timeGridPlugin from "@fullcalendar/timegrid";
-import interactionPlugin from "@fullcalendar/interaction";
-import listPlugin from "@fullcalendar/list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -14,7 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, X, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
-import type { EventClickArg, DateSelectArg, EventDropArg } from "@fullcalendar/core";
+import {
+  Session, Room, Host, MONTHS_SHORT, formatMYT, sessionOverlapsSlot, TIME_SLOTS,
+  DayDatePicker, MonthDatePicker, DailyListView, DailyGridView, ScheduleViewToggle,
+} from "@/components/schedule/schedule-views";
 
 interface Suggestion {
   date: string; dayOfWeek: string; hostId: string; hostName: string;
@@ -27,19 +25,10 @@ interface SuggestResult {
   month: number; year: number;
 }
 
-interface Room { id: string; name: string; }
-interface Host { id: string; displayName: string; type: string; user: { name: string }; }
 interface Brand { id: string; name: string; color: string; platform: string; }
 
 interface HoursRow { id: string; name: string; displayName?: string; color?: string; scheduled: number; target: number; }
 interface HoursData { month: number; year: number; hosts: HoursRow[]; brands: HoursRow[]; }
-interface Session {
-  id: string; roomId: string | null; liveHostId: string | null; brandId: string; platform: string;
-  scheduledStart: string; scheduledEnd: string; isCampaignDay: boolean; notes: string | null;
-  slotColor: string | null;
-  status: string; punctuality: string | null; gmv: number | null; actualStart: string | null;
-  room: Room | null; brand: Brand; liveHost: { user: { name: string }; displayName: string } | null;
-}
 
 // Helpers to keep all times in MYT (UTC+8) — the server runs in UTC so we
 // must append the offset before sending and convert back when pre-filling edits.
@@ -51,10 +40,6 @@ function toInputMYT(iso: string) {
   const myt = new Date(d.getTime() + 8 * 3600_000);
   return myt.toISOString().slice(0, 16);
 }
-// Format a UTC ISO string in Malaysia time (UTC+8), regardless of browser timezone
-function formatMYT(iso: string, fmt: string): string {
-  return format(parseISO(toInputMYT(iso)), fmt);
-}
 
 const PUNCTUALITY_COLORS: Record<string, string> = {
   EARLY: "#6366f1", ON_TIME: "#22c55e", LATE: "#f59e0b", default: "#94a3b8",
@@ -63,7 +48,6 @@ const PUNCTUALITY_COLORS: Record<string, string> = {
 export default function SchedulePage() {
   const { data: authSession } = useSession();
   const isAdmin = (authSession?.user as { role?: string })?.role === "ADMIN";
-  const calRef = useRef<FullCalendar>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -79,8 +63,6 @@ export default function SchedulePage() {
   const [pendingBrand, setPendingBrand] = useState("");
   const [pendingRoom, setPendingRoom] = useState("");
   const [pendingType, setPendingType] = useState("");
-  const [viewRange, setViewRange] = useState({ start: "", end: "" });
-
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Session | null>(null);
   const [detailSession, setDetailSession] = useState<Session | null>(null);
@@ -145,19 +127,12 @@ export default function SchedulePage() {
     setSessions(await res.json());
   }
 
-  // Load sessions for the month shown in grid view (MYT-aware boundaries)
-  function gridMonthRange(dateStr: string) {
-    const d = parseISO(dateStr);
-    const first = format(startOfMonth(d), "yyyy-MM-dd");
-    const last  = format(endOfMonth(d),   "yyyy-MM-dd");
-    // +08:00 so the API's new Date() lands at midnight MYT, not midnight UTC
-    return { start: `${first}T00:00:00+08:00`, end: `${last}T23:59:59+08:00` };
-  }
+
 
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => {
     if (viewMode === "grid" || viewMode === "dailyList") {
-      const { start, end } = gridMonthRange(gridDate);
+      const { start, end } = getGridRange();
       loadSessions(start, end);
       loadCampaigns(start, end);
     }
@@ -175,14 +150,6 @@ export default function SchedulePage() {
     setIs24h(next);
     localStorage.setItem("scheduleTimeFormat24h", String(next));
   }
-
-  useEffect(() => {
-    if (viewRange.start) {
-      loadSessions(viewRange.start, viewRange.end);
-      loadCampaigns(viewRange.start, viewRange.end);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewRange, filterHost, filterBrand]);
 
   // Re-evaluate isCampaignDay whenever campaigns load or form date/brand/platform change
   useEffect(() => {
@@ -206,40 +173,6 @@ export default function SchedulePage() {
     return hostType === filterType;
   }
 
-  const calEvents = useMemo(() => sessions
-    .filter((s) => (!filterRoom || s.roomId === filterRoom) && matchesTypeFilter(s))
-    .map((s) => {
-      const bgColor = s.status === "COMPLETED"
-        ? (s.punctuality ? PUNCTUALITY_COLORS[s.punctuality] : PUNCTUALITY_COLORS.default)
-        : s.status === "MISSED" ? "#ef4444"
-        : s.liveHostId ? s.brand.color
-        : (s.slotColor ?? s.brand.color);
-      const durationMs = new Date(s.scheduledEnd).getTime() - new Date(s.scheduledStart).getTime();
-      const durationHours = Math.round((durationMs / 3600000) * 10) / 10;
-      const durationLabel = `${durationHours}h`;
-      return {
-        id: s.id,
-        title: `${s.liveHost?.user.name ?? "Unassigned"} · ${durationLabel}`,
-        start: s.scheduledStart,
-        end: s.scheduledEnd,
-        backgroundColor: bgColor,
-        borderColor: bgColor,
-        extendedProps: { session: s },
-      };
-    }), [sessions, filterRoom, filterType]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Add campaign periods as background events
-  const campaignEvents = useMemo(() => campaigns.map(c => ({
-    id: `campaign-${c.id}`,
-    title: `📢 ${c.name} (${c.platform === "BOTH" ? "TikTok + Shopee" : c.platform === "TIKTOK" ? "TikTok" : "Shopee"})`,
-    start: c.startDate.slice(0, 10),
-    end: (() => { const d = new Date(c.endDate); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })(),
-    display: "background" as const,
-    backgroundColor: c.platform === "TIKTOK" ? "#010101" : c.platform === "SHOPEE" ? "#EE4D2D" : "#6366f1",
-    classNames: ["campaign-bg-event"],
-    extendedProps: { isCampaign: true },
-  })), [campaigns]);
-
   // Check if a given date + brand falls within any campaign
   function isDateInCampaign(dateStr: string, brandId: string, sessionPlatform?: string): boolean {
     const d = dateStr.slice(0, 10);
@@ -253,20 +186,6 @@ export default function SchedulePage() {
       if (c.platform !== "BOTH" && c.platform !== platform) return false;
       return true;
     });
-  }
-
-  function handleDateSelect(arg: DateSelectArg) {
-    const startStr = arg.startStr.includes("T") ? arg.startStr : `${arg.startStr}T10:00`;
-    const endStr = arg.endStr.includes("T") ? arg.endStr : `${arg.startStr}T14:00`;
-    setEditing(null);
-    setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: startStr.slice(0, 16), scheduledEnd: endStr.slice(0, 16), isCampaignDay: false, notes: "" });
-    setDetailSession(null);
-    setOpen(true);
-  }
-
-  function handleEventClick(arg: EventClickArg) {
-    const s: Session = arg.event.extendedProps.session;
-    setDetailSession(s);
   }
 
   function openEdit(s: Session) {
@@ -320,20 +239,15 @@ export default function SchedulePage() {
   }
 
   async function reloadCurrentRange() {
-    if (viewMode === "grid") {
-      const { start, end } = gridMonthRange(gridDate);
-      await loadSessions(start, end);
-    } else if (viewRange.start) {
-      await loadSessions(viewRange.start, viewRange.end);
-    }
+    const { start, end } = getGridRange();
+    await loadSessions(start, end);
   }
 
   async function loadSuggestions() {
     setSuggestLoading(true);
-    const cal = calRef.current;
-    const now = cal ? cal.getApi().getDate() : new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    const d = parseISO(gridDate);
+    const month = d.getMonth() + 1;
+    const year = d.getFullYear();
     const params = new URLSearchParams({ month: String(month), year: String(year) });
     if (suggestFilter) params.set("brandId", suggestFilter);
     const res = await fetch(`/api/schedule/suggest?${params}`);
@@ -343,10 +257,9 @@ export default function SchedulePage() {
 
   async function loadHours(month?: number, year?: number) {
     setHoursLoading(true);
-    const cal = calRef.current;
-    const now = cal ? cal.getApi().getDate() : new Date();
-    const m = month ?? (now.getMonth() + 1);
-    const y = year ?? now.getFullYear();
+    const d = parseISO(gridDate);
+    const m = month ?? (d.getMonth() + 1);
+    const y = year ?? d.getFullYear();
     const res = await fetch(`/api/hours-targets?month=${m}&year=${y}`);
     setHoursData(await res.json());
     setHoursLoading(false);
@@ -398,13 +311,17 @@ export default function SchedulePage() {
     setOpen(true);
   }
 
+  function getGridRange() {
+    const d = parseISO(gridDate);
+    return {
+      start: format(new Date(d.getFullYear(), d.getMonth(), 1), "yyyy-MM-dd") + "T00:00:00+08:00",
+      end: format(new Date(d.getFullYear(), d.getMonth() + 1, 0), "yyyy-MM-dd") + "T23:59:59+08:00",
+    };
+  }
+
   async function exportMonthEmail() {
     setEmailLoading(true);
-    const cal = calRef.current;
-    if (!cal) return;
-    const view = cal.getApi().view;
-    const start = view.activeStart.toISOString();
-    const end = view.activeEnd.toISOString();
+    const { start, end } = getGridRange();
     const res = await fetch("/api/email/schedule-export", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ start, end }),
@@ -416,17 +333,15 @@ export default function SchedulePage() {
   }
 
   async function exportSessionsExcel() {
-    const cal = calRef.current;
-    if (!cal) return;
-    const view = cal.getApi().view;
-    const params = new URLSearchParams({ start: view.activeStart.toISOString(), end: view.activeEnd.toISOString() });
+    const { start, end } = getGridRange();
+    const params = new URLSearchParams({ start, end });
     const res = await fetch(`/api/export/sessions?${params}`);
     if (!res.ok) { alert("Export failed"); return; }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `sessions-${format(view.activeStart, "yyyy-MM-dd")}.xlsx`;
+    a.download = `sessions-${gridDate.slice(0, 7)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -446,28 +361,6 @@ export default function SchedulePage() {
     } else {
       alert(`Import failed: ${data.error}`);
     }
-  }
-
-  const handleDatesSet = useCallback((arg: { startStr: string; endStr: string }) => {
-    setViewRange({ start: arg.startStr, end: arg.endStr });
-  }, []);
-
-  async function handleEventDrop(arg: EventDropArg) {
-    const s: Session = arg.event.extendedProps.session;
-    const newStart = arg.event.start!.toISOString();
-    const durationMs = new Date(s.scheduledEnd).getTime() - new Date(s.scheduledStart).getTime();
-    const newEnd = new Date(arg.event.start!.getTime() + durationMs).toISOString();
-    const res = await fetch(`/api/sessions/${s.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roomId: s.roomId, liveHostId: s.liveHostId, brandId: s.brandId,
-        platform: s.platform, scheduledStart: newStart, scheduledEnd: newEnd,
-        isCampaignDay: s.isCampaignDay, notes: s.notes,
-      }),
-    });
-    if (!res.ok) { arg.revert(); alert("Failed to update session time."); }
-    else await reloadCurrentRange();
   }
 
   return (
@@ -743,30 +636,7 @@ export default function SchedulePage() {
       </div>
 
       {/* View mode toggle */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setViewMode("grid")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
-          style={{
-            borderColor: viewMode === "grid" ? "var(--accent)" : "var(--border)",
-            color: viewMode === "grid" ? "var(--accent)" : "var(--text-secondary)",
-            background: viewMode === "grid" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
-          }}
-        >
-          <LayoutGrid size={13} /> Daily Schedule
-        </button>
-        <button
-          onClick={() => setViewMode("dailyList")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
-          style={{
-            borderColor: viewMode === "dailyList" ? "var(--accent)" : "var(--border)",
-            color: viewMode === "dailyList" ? "var(--accent)" : "var(--text-secondary)",
-            background: viewMode === "dailyList" ? "color-mix(in oklab, var(--accent) 10%, var(--bg-card))" : "var(--bg-card)",
-          }}
-        >
-          <Calendar size={13} /> Daily List
-        </button>
-      </div>
+      <ScheduleViewToggle viewMode={viewMode as "grid" | "dailyList"} setViewMode={setViewMode as (v: "grid" | "dailyList") => void} />
 
       {/* Daily Grid View */}
       {viewMode === "grid" && (
@@ -1064,8 +934,6 @@ interface PreviewSession {
   scheduledEnd: string;
   isCampaignDay?: boolean;
 }
-
-const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function BulkScheduleModal({ brands, rooms, onClose, onCreated }: BulkScheduleModalProps) {
   const now = new Date();
@@ -1686,360 +1554,6 @@ function AssignHostsModal({ hosts, onClose, onAssigned }: { hosts: Host[]; onClo
   );
 }
 
-// ── Daily List View ────────────────────────────────────────────────────────────
-
-function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; setGridDate: (d: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [pickerMonth, setPickerMonth] = useState(() => parseISO(gridDate));
-  const ref = useRef<HTMLDivElement>(null);
-
-  const d = parseISO(gridDate);
-  const label = format(d, "d/M/yyyy EEEE");
-  const todayStr = format(new Date(), "yyyy-MM-dd");
-
-  useEffect(() => {
-    if (!open) return;
-    function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
-  }, [open]);
-
-  const monthStart = startOfMonth(pickerMonth);
-  const monthEnd   = endOfMonth(pickerMonth);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const weeks: (Date | null)[][] = [];
-  let week: (Date | null)[] = [];
-  const firstDow = (getDay(monthStart) + 6) % 7;
-  for (let i = 0; i < firstDow; i++) week.push(null);
-  for (const day of days) { week.push(day); if (week.length === 7) { weeks.push(week); week = []; } }
-  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
-
-  const dowLabels = ["Mo","Tu","We","Th","Fr","Sa","Su"];
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => { setOpen(v => !v); setPickerMonth(parseISO(gridDate)); }}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-        style={{
-          borderColor: open ? "var(--accent)" : "var(--border)",
-          background: "var(--panel-header-bg)",
-          color: "var(--text-primary)",
-        }}
-      >
-        {label}
-        <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
-      </button>
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1.5 z-50 p-4"
-          style={{
-            background: "var(--panel-bg)",
-            border: "1px solid var(--border)",
-            borderRadius: 16,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-            width: 280,
-          }}
-        >
-          {/* Month nav */}
-          <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
-              <ChevronLeft size={14} />
-            </button>
-            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>
-              {format(pickerMonth, "MMMM yyyy")}
-            </span>
-            <button
-              onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-          {/* Day-of-week header */}
-          <div className="grid grid-cols-7 mb-1">
-            {dowLabels.map(l => (
-              <div key={l} className="text-center text-[10px] font-semibold py-1" style={{ color: "var(--text-muted)" }}>{l}</div>
-            ))}
-          </div>
-          {/* Day grid */}
-          <div className="space-y-0.5">
-            {weeks.map((wk, wi) => (
-              <div key={wi} className="grid grid-cols-7 gap-0.5">
-                {wk.map((day, di) => {
-                  if (!day) return <div key={di} />;
-                  const dateStr = format(day, "yyyy-MM-dd");
-                  const isActive = dateStr === gridDate;
-                  const isToday  = dateStr === todayStr;
-                  return (
-                    <button
-                      key={di}
-                      onClick={() => { setGridDate(dateStr); setOpen(false); }}
-                      className="flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all"
-                      style={{
-                        height: 32,
-                        fontWeight: isActive || isToday ? 700 : 500,
-                        background: isActive ? "var(--accent)" : isToday ? "var(--accent-light)" : "transparent",
-                        color: isActive ? "#fff" : isToday ? "var(--accent)" : "var(--text-secondary)",
-                      }}
-                    >
-                      {format(day, "d")}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MonthDatePicker({
-  gridDate, setGridDate,
-}: { gridDate: string; setGridDate: (d: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [pickerYear, setPickerYear] = useState(() => new Date(gridDate).getFullYear());
-  const ref = useRef<HTMLDivElement>(null);
-
-  const d = parseISO(gridDate);
-  const label = format(d, "MMMM yyyy");
-
-  const activeMonth = d.getMonth();
-  const activeYear  = d.getFullYear();
-
-  useEffect(() => {
-    if (!open) return;
-    function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
-  }, [open]);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => { setOpen(v => !v); setPickerYear(activeYear); }}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-        style={{
-          borderColor: open ? "var(--accent)" : "var(--border)",
-          background: "var(--panel-header-bg)",
-          color: "var(--text-primary)",
-        }}
-      >
-        {label}
-        <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
-      </button>
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1.5 z-50 p-4 w-64"
-          style={{
-            background: "var(--panel-bg)",
-            border: "1px solid var(--border)",
-            borderRadius: 16,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-          }}
-        >
-          {/* Year nav */}
-          <div className="flex items-center justify-between mb-3">
-            <button onClick={() => setPickerYear(y => y - 1)}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
-              <ChevronLeft size={14} />
-            </button>
-            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{pickerYear}</span>
-            <button onClick={() => setPickerYear(y => y + 1)}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
-              <ChevronRight size={14} />
-            </button>
-          </div>
-          {/* Month grid */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {MONTHS_SHORT.map((m, i) => {
-              const isActive = activeMonth === i && activeYear === pickerYear;
-              return (
-                <button key={m}
-                  onClick={() => {
-                    const newDate = format(new Date(pickerYear, i, 1), "yyyy-MM-dd");
-                    setGridDate(newDate);
-                    setOpen(false);
-                  }}
-                  className="py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-                  style={{
-                    background: isActive ? "var(--accent)" : "var(--panel-card-bg)",
-                    color: isActive ? "#fff" : "var(--text-secondary)",
-                    border: isActive ? "none" : "1px solid var(--border)",
-                  }}>
-                  {m}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface DailyListViewProps {
-  gridDate: string;
-  setGridDate: (d: string) => void;
-  sessions: Session[];
-  filterHost: string;
-  filterBrand: string;
-  filterRoom: string;
-  filterType: string;
-  is24h: boolean;
-  onSessionClick: (s: Session) => void;
-}
-
-function DailyListView({ gridDate, setGridDate, sessions, filterHost, filterBrand, filterRoom, filterType, is24h, onSessionClick }: DailyListViewProps) {
-  // Show all sessions for the selected month, grouped by day
-  const monthStr = gridDate.slice(0, 7); // "YYYY-MM"
-
-  // Single pass: filter + group by MYT date
-  const byDay = useMemo(() => {
-    const map = new Map<string, Session[]>();
-    for (const s of sessions) {
-      if (!s.scheduledStart.slice(0, 7).startsWith(monthStr)) continue;
-      if (filterHost && s.liveHostId !== filterHost) continue;
-      if (filterBrand && s.brandId !== filterBrand) continue;
-      if (filterRoom && s.roomId !== filterRoom) continue;
-      if (filterType && s.platform !== filterType) continue;
-      const dateStr = format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000), "yyyy-MM-dd");
-      const arr = map.get(dateStr) ?? [];
-      arr.push(s);
-      map.set(dateStr, arr);
-    }
-    for (const [, arr] of map) arr.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart));
-    return map;
-  }, [sessions, monthStr, filterHost, filterBrand, filterRoom, filterType]);
-
-  const sortedDays = useMemo(() => [...byDay.keys()].sort(), [byDay]);
-  const timeFmt = is24h ? "HH:mm" : "h:mm a";
-  const todayStr = format(new Date(), "yyyy-MM-dd");
-
-  function goToday() { setGridDate(todayStr); }
-  function prevMonth() {
-    const d = parseISO(gridDate);
-    setGridDate(format(new Date(d.getFullYear(), d.getMonth() - 1, 1), "yyyy-MM-dd"));
-  }
-  function nextMonth() {
-    const d = parseISO(gridDate);
-    setGridDate(format(new Date(d.getFullYear(), d.getMonth() + 1, 1), "yyyy-MM-dd"));
-  }
-
-  return (
-    <div className="section-card p-4 space-y-4">
-      {/* Nav */}
-      <div className="flex items-center gap-2">
-        <button onClick={goToday}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
-          Today
-        </button>
-        {/* Month arrows flank the month picker */}
-        <div className="flex items-center gap-1">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-            <ChevronLeft size={15} />
-          </button>
-          <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
-          <button onClick={nextMonth} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-            <ChevronRight size={15} />
-          </button>
-        </div>
-        <span className="text-xs ml-1" style={{ color: "var(--text-muted)" }}>{[...byDay.values()].reduce((n, arr) => n + arr.length, 0)} session(s)</span>
-      </div>
-
-      {/* Day groups */}
-      {sortedDays.length === 0 ? (
-        <p className="text-center text-sm py-10" style={{ color: "var(--text-muted)" }}>No sessions for this month.</p>
-      ) : (
-        <div className="space-y-4">
-          {sortedDays.map(dateStr => {
-            const daySessions = byDay.get(dateStr)!;
-            const dayObj = parseISO(dateStr);
-            const dayLabel = format(dayObj, "EEEE, d MMMM yyyy");
-            const isToday = dateStr === todayStr;
-            return (
-              <div key={dateStr}>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold flex-shrink-0"
-                    style={isToday
-                      ? { background: "var(--accent)", color: "#fff" }
-                      : { background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
-                    {format(dayObj, "d")}
-                  </div>
-                  <span className="text-sm font-semibold" style={{ color: isToday ? "var(--accent)" : "var(--text-primary)" }}>
-                    {dayLabel}
-                  </span>
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>{daySessions.length} session(s)</span>
-                </div>
-                <div className="ml-9 space-y-1.5">
-                  {daySessions.map(s => {
-                    const startLabel = formatMYT(s.scheduledStart, timeFmt);
-                    const endLabel   = formatMYT(s.scheduledEnd,   timeFmt);
-                    const hostName = s.liveHost?.displayName ?? s.liveHost?.user?.name ?? "Unassigned";
-                    return (
-                      <button key={s.id} onClick={() => onSessionClick(s)}
-                        className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer"
-                        style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}
-                        onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--accent)")}
-                        onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}>
-                        {/* Brand colour bar */}
-                        <div className="w-1 self-stretch rounded-full flex-shrink-0"
-                          style={{ background: s.brand?.color ?? "var(--accent)" }} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-                              {s.brand?.name ?? "—"}
-                            </span>
-                            {s.isCampaignDay && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Campaign</span>
-                            )}
-                            <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: "var(--bg-card)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                              {s.platform}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
-                            <span>{startLabel} – {endLabel}</span>
-                            <span>·</span>
-                            <span>{hostName}</span>
-                            {s.room && <><span>·</span><span>{s.room.name}</span></>}
-                          </div>
-                        </div>
-                        <div className="flex-shrink-0">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-medium capitalize"
-                            style={{
-                              background: s.status === "COMPLETED" ? "#22c55e20" : s.status === "MISSED" ? "#ef444420" : "var(--bg-card)",
-                              color: s.status === "COMPLETED" ? "#22c55e" : s.status === "MISSED" ? "#ef4444" : "var(--text-muted)",
-                              border: "1px solid currentColor",
-                            }}>
-                            {s.status.toLowerCase()}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Manual Slot Modal ─────────────────────────────────────────────────────────
 
@@ -2089,7 +1603,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
 
   function addTimeSlot() {
     const last = timeSlots[timeSlots.length - 1];
-    // Default next slot to start right after the last one ends
     const nextStart = calcEndTime(last.startTime, last.durationH);
     setTimeSlots(prev => [...prev, newTimeSlot(nextStart, last.durationH)]);
   }
@@ -2168,8 +1681,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
   return (
     <Modal open onClose={onClose} title="Manual Slot" size="xl">
       <div className="space-y-4">
-
-        {/* ── Shared config ─────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand *</label>
@@ -2187,7 +1698,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
           </div>
         </div>
 
-        {/* ── Time slots ────────────────────────────────────────────────── */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
@@ -2197,66 +1707,47 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
               {timeSlots.length} slot{timeSlots.length !== 1 ? "s" : ""}
             </span>
           </div>
-
-          {timeSlots.map((ts, idx) => {
+          {timeSlots.map((ts) => {
             const endTime = calcEndTime(ts.startTime, ts.durationH);
             return (
               <div key={ts.id} className="flex items-center gap-2 rounded-lg px-3 py-2"
                 style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-                <button
-                  onClick={() => cycleSlotColor(ts.id, ts.color)}
-                  title="Click to change color"
+                <button onClick={() => cycleSlotColor(ts.id, ts.color)} title="Click to change color"
                   className="w-4 h-4 rounded-full flex-shrink-0 cursor-pointer transition-transform hover:scale-110"
-                  style={{ background: ts.color, border: "2px solid rgba(255,255,255,0.3)" }}
-                />
+                  style={{ background: ts.color, border: "2px solid rgba(255,255,255,0.3)" }} />
                 <div className="flex items-center gap-2 flex-1">
                   <div className="flex-1 min-w-0">
                     <label className="block text-[10px] mb-0.5" style={{ color: "var(--text-muted)" }}>Start</label>
-                    <Input type="time" value={ts.startTime}
-                      onChange={e => updateTimeSlot(ts.id, "startTime", e.target.value)} />
+                    <Input type="time" value={ts.startTime} onChange={e => updateTimeSlot(ts.id, "startTime", e.target.value)} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-[10px] mb-0.5" style={{ color: "var(--text-muted)" }}>Duration</label>
-                    <Select value={ts.durationH}
-                      onChange={e => updateTimeSlot(ts.id, "durationH", e.target.value)}>
+                    <Select value={ts.durationH} onChange={e => updateTimeSlot(ts.id, "durationH", e.target.value)}>
                       {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8].map(n => (
                         <option key={n} value={n}>{n}h</option>
                       ))}
                     </Select>
                   </div>
-                  <span className="text-[11px] flex-shrink-0 pt-4" style={{ color: "var(--text-muted)" }}>
-                    → {endTime}
-                  </span>
+                  <span className="text-[11px] flex-shrink-0 pt-4" style={{ color: "var(--text-muted)" }}>→ {endTime}</span>
                 </div>
-                <button
-                  onClick={() => removeTimeSlot(ts.id)}
-                  disabled={timeSlots.length === 1}
+                <button onClick={() => removeTimeSlot(ts.id)} disabled={timeSlots.length === 1}
                   className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-opacity text-base leading-none"
-                  style={{ opacity: timeSlots.length === 1 ? 0.2 : 0.5, color: "var(--text-muted)" }}
-                  title="Remove time slot"
-                >×</button>
+                  style={{ opacity: timeSlots.length === 1 ? 0.2 : 0.5, color: "var(--text-muted)" }}>×</button>
               </div>
             );
           })}
-
-          <button
-            onClick={addTimeSlot}
+          <button onClick={addTimeSlot}
             className="w-full py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors"
-            style={{ border: "1px dashed var(--border)", color: "var(--text-muted)", background: "transparent" }}
-          >
+            style={{ border: "1px dashed var(--border)", color: "var(--text-muted)", background: "transparent" }}>
             + Add time slot
           </button>
         </div>
 
-        {/* ── Calendar date picker ──────────────────────────────────────── */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
-              Select Days
-            </label>
+            <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Select Days</label>
             <div className="flex items-center gap-2">
-              <Select value={month} onChange={e => { setMonth(Number(e.target.value)); setSelectedDates(new Set()); }}
-                className="text-xs">
+              <Select value={month} onChange={e => { setMonth(Number(e.target.value)); setSelectedDates(new Set()); }} className="text-xs">
                 {MONTHS_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
               </Select>
               <Input type="number" value={year} min={2024} max={2030} className="w-16 text-xs"
@@ -2267,7 +1758,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
               )}
             </div>
           </div>
-
           <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
             <div className="grid grid-cols-7 text-center text-[11px] font-semibold py-2"
               style={{ background: "var(--bg-subtle)", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
@@ -2309,7 +1799,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
           </div>
         </div>
 
-        {/* ── Footer ────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between pt-1">
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
             {selectedDates.size > 0 && timeSlots.length > 0
@@ -2323,7 +1812,6 @@ function ManualSlotModal({ hosts: _hosts, brands, rooms: _rooms, onClose, onCrea
             </Button>
           </div>
         </div>
-
       </div>
     </Modal>
   );
@@ -2374,9 +1862,7 @@ function HoursTrackerPanel({
             {type === "BRAND" && row.color && (
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: row.color }} />
             )}
-            <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>
-              {row.name}
-            </span>
+            <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{row.name}</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)", minWidth: 60 }}>
@@ -2393,24 +1879,18 @@ function HoursTrackerPanel({
         </div>
         {isEditing ? (
           <div className="flex items-center gap-1 flex-shrink-0">
-            <Input
-              type="number" value={editVal} min="0" step="1"
+            <Input type="number" value={editVal} min={0} max={744} step={0.5} className="w-16 text-xs"
               onChange={e => setEditVal(e.target.value)}
-              className="w-16 text-xs py-1"
               onKeyDown={e => { if (e.key === "Enter") saveTarget(type, row.id); if (e.key === "Escape") setEditingId(null); }}
-              autoFocus
-            />
+              autoFocus />
             <Button size="sm" onClick={() => saveTarget(type, row.id)} loading={saving}>✓</Button>
-            <button className="text-xs cursor-pointer px-1" style={{ color: "var(--text-muted)" }} onClick={() => setEditingId(null)}>✕</button>
+            <button onClick={() => setEditingId(null)} className="text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>✕</button>
           </div>
         ) : (
-          <button
-            className="text-[11px] px-2 py-0.5 rounded cursor-pointer flex-shrink-0 transition-colors"
-            style={{ color: "var(--text-muted)", background: "var(--bg-subtle)" }}
-            onClick={() => { setEditingId(row.id); setEditType(type); setEditVal(String(row.target || "")); }}
-            title="Set target"
-          >
-            {row.target > 0 ? "Edit" : "Set target"}
+          <button onClick={() => { setEditingId(row.id); setEditType(type); setEditVal(String(row.target || "")); }}
+            className="flex-shrink-0 text-xs cursor-pointer px-2 py-1 rounded"
+            style={{ color: "var(--text-muted)", background: "var(--bg-subtle)" }}>
+            Set target
           </button>
         )}
       </div>
@@ -2418,351 +1898,43 @@ function HoursTrackerPanel({
   }
 
   return (
-    <div className="section-card p-4 space-y-3 animate-in">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="section-card p-4 space-y-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BarChart2 size={14} style={{ color: "var(--accent)" }} />
-          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
-            Monthly Hours Tracker
-          </span>
-          {data && (
-            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {MONTHS_SHORT[(data.month ?? 1) - 1]} {data.year}
-            </span>
-          )}
+          <BarChart2 size={16} style={{ color: "var(--accent)" }} />
+          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>Hours Tracker</span>
         </div>
         <div className="flex items-center gap-2">
-          {data && (
-            <>
-              <Select value={month ?? data.month} onChange={e => setMonth(Number(e.target.value))} className="text-xs">
-                {MONTHS_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-              </Select>
-              <Input type="number" value={year ?? data.year} min={2024} max={2030}
-                onChange={e => setYear(Number(e.target.value))} className="w-20 text-xs" />
-            </>
-          )}
-          <Button size="sm" variant="secondary" onClick={() => onRefresh(month, year)} loading={loading}>
-            Refresh
-          </Button>
+          <Select value={month} onChange={e => { setMonth(Number(e.target.value)); onRefresh(Number(e.target.value), year); }} className="text-xs">
+            {MONTHS_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </Select>
+          <Input type="number" value={year} min={2024} max={2030} className="w-16 text-xs"
+            onChange={e => { setYear(Number(e.target.value)); onRefresh(month, Number(e.target.value)); }} />
         </div>
       </div>
 
-      {loading && <div className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>Loading…</div>}
-
-      {data && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {loading ? (
+        <div className="text-center py-6 text-sm" style={{ color: "var(--text-muted)" }}>Loading…</div>
+      ) : !data ? null : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Live Hosts</div>
-            {data.hosts.length === 0 && <div className="text-xs" style={{ color: "var(--text-muted)" }}>No active hosts</div>}
-            {data.hosts.map(row => <HoursRow key={row.id} row={row} type="HOST" />)}
+            <div className="text-xs font-semibold mb-2 flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+              <Users size={12} /> Hosts
+            </div>
+            {data.hosts.length === 0
+              ? <p className="text-xs" style={{ color: "var(--text-muted)" }}>No host data.</p>
+              : data.hosts.map(row => <HoursRow key={row.id} row={row} type="HOST" />)}
           </div>
           <div>
-            <div className="text-xs font-semibold mb-2 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Brands</div>
-            {data.brands.length === 0 && <div className="text-xs" style={{ color: "var(--text-muted)" }}>No brands</div>}
-            {data.brands.map(row => <HoursRow key={row.id} row={row} type="BRAND" />)}
+            <div className="text-xs font-semibold mb-2 flex items-center gap-1" style={{ color: "var(--text-secondary)" }}>
+              <BarChart2 size={12} /> Brands
+            </div>
+            {data.brands.length === 0
+              ? <p className="text-xs" style={{ color: "var(--text-muted)" }}>No brand data.</p>
+              : data.brands.map(row => <HoursRow key={row.id} row={row} type="BRAND" />)}
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Daily Grid View ──────────────────────────────────────────────────────────
-
-const TIME_SLOTS = [
-  { label: "8am–10am",  start:  8, end: 10 },
-  { label: "10am–12pm", start: 10, end: 12 },
-  { label: "12pm–2pm",  start: 12, end: 14 },
-  { label: "3pm–5pm",   start: 15, end: 17 },
-  { label: "5pm–7pm",   start: 17, end: 19 },
-  { label: "8pm–10pm",  start: 20, end: 22 },
-  { label: "10pm–12am", start: 22, end: 24 },
-  { label: "12am–2am",  start: 24, end: 26 },
-];
-
-function sessionOverlapsSlot(session: Session, slot: { start: number; end: number }): boolean {
-  const d = new Date(session.scheduledStart);
-  const myt = new Date(d.getTime() + 8 * 3600_000);
-  let h = myt.getUTCHours() + myt.getUTCMinutes() / 60;
-  // after midnight counts as 24+
-  if (h < 4) h += 24;
-  const endD = new Date(session.scheduledEnd);
-  const endMyt = new Date(endD.getTime() + 8 * 3600_000);
-  let eh = endMyt.getUTCHours() + endMyt.getUTCMinutes() / 60;
-  if (eh < 4) eh += 24;
-  return h < slot.end && eh > slot.start;
-}
-
-function DailyGridView({
-  gridDate, setGridDate, sessions, rooms, hosts, filterBrand, filterRoom, filterType, filterHost, onSessionClick, onAddSlot,
-}: {
-  gridDate: string;
-  setGridDate: (d: string) => void;
-  sessions: Session[];
-  rooms: Room[];
-  hosts: Host[];
-  filterBrand: string;
-  filterRoom: string;
-  filterType: string;
-  filterHost: string;
-  onSessionClick: (s: Session) => void;
-  onAddSlot: (roomId: string, start: string, end: string) => void;
-}) {
-
-  // Build a `YYYY-MM-DDTHH:mm` (MYT) string for a slot on the grid date.
-  // Slots past midnight (h >= 24) advance to the next calendar day.
-  function slotDatetime(h: number): string {
-    const extra = h >= 24 ? 1 : 0;
-    const hh = h >= 24 ? h - 24 : h;
-    const base = parseISO(gridDate);
-    base.setDate(base.getDate() + extra);
-    return `${format(base, "yyyy-MM-dd")}T${String(hh).padStart(2, "0")}:00`;
-  }
-
-  function prevDay() {
-    const d = parseISO(gridDate);
-    d.setDate(d.getDate() - 1);
-    setGridDate(format(d, "yyyy-MM-dd"));
-  }
-  function nextDay() {
-    const d = parseISO(gridDate);
-    d.setDate(d.getDate() + 1);
-    setGridDate(format(d, "yyyy-MM-dd"));
-  }
-
-  // Sessions for this day
-  const daySessions = useMemo(() => sessions.filter((s) => {
-    const d = new Date(s.scheduledStart);
-    const myt = new Date(d.getTime() + 8 * 3600_000);
-    const sessionDate = myt.toISOString().slice(0, 10);
-    return sessionDate === gridDate &&
-      (!filterHost || s.liveHostId === filterHost) &&
-      (!filterBrand || s.brandId === filterBrand) &&
-      (!filterRoom || s.roomId === filterRoom) &&
-      (!filterType || ((s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME") === filterType);
-  }), [sessions, gridDate, filterHost, filterBrand, filterRoom, filterType]);
-
-  // Rooms to show (all rooms, optionally filtered)
-  const sortedRooms = useMemo(() => [...rooms].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
-  ), [rooms]);
-
-  const filtersActive = !!(filterHost || filterBrand || filterRoom || filterType);
-
-  const allRoomsForDay = useMemo(() =>
-    filterRoom ? sortedRooms.filter((r) => r.id === filterRoom) : sortedRooms
-  , [sortedRooms, filterRoom]);
-
-  const visibleRooms = useMemo(() => filtersActive
-    ? allRoomsForDay.filter((r) => daySessions.some((s) => s.roomId === r.id))
-    : allRoomsForDay
-  , [filtersActive, allRoomsForDay, daySessions]);
-
-  const activeSlots = useMemo(() => filtersActive
-    ? TIME_SLOTS.filter((slot) => daySessions.some((s) => sessionOverlapsSlot(s, slot)))
-    : TIME_SLOTS
-  , [filtersActive, daySessions]);
-
-  // Campaign sessions (isCampaignDay) — build per-slot set
-  const campaignSessions = useMemo(() => daySessions.filter((s) => s.isCampaignDay), [daySessions]);
-
-  // Pre-build O(1) lookup: roomId+slotIndex → Session
-  const roomSlotMap = useMemo(() => {
-    const map = new Map<string, Session>();
-    for (const s of daySessions) {
-      activeSlots.forEach((slot, i) => {
-        if (s.roomId && sessionOverlapsSlot(s, slot)) map.set(`${s.roomId}|${i}`, s);
-      });
-    }
-    return map;
-  }, [daySessions, activeSlots]);
-
-  function getSessionForRoomSlot(roomId: string, slotIndex: number): Session | null {
-    return roomSlotMap.get(`${roomId}|${slotIndex}`) ?? null;
-  }
-
-  // Pre-build O(1) lookup: slotIndex → campaign sessions
-  const colWidth = 120;
-  const labelWidth = 140;
-
-  return (
-    <div className="section-card p-4 space-y-3">
-      {/* Date nav */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setGridDate(format(new Date(), "yyyy-MM-dd"))}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer"
-          style={{ borderColor: "var(--border)", background: "var(--bg-card)", color: "var(--text-secondary)" }}>
-          Today
-        </button>
-        <MonthDatePicker gridDate={gridDate} setGridDate={setGridDate} />
-        {/* Day arrows flank the day picker */}
-        <div className="flex items-center gap-1">
-          <button onClick={prevDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-            <ChevronLeft size={15} />
-          </button>
-          <DayDatePicker gridDate={gridDate} setGridDate={setGridDate} />
-          <button onClick={nextDay} className="p-1.5 rounded-lg border transition-all cursor-pointer"
-            style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}>
-            <ChevronRight size={15} />
-          </button>
-        </div>
-      </div>
-
-      {/* Grid table or no-session message */}
-      {(filtersActive && daySessions.length === 0) ? (() => {
-        const selectedHost = filterHost ? hosts.find((h) => h.id === filterHost) : null;
-        const msg = selectedHost
-          ? `${selectedHost.user.name} has no session for the day.`
-          : "No sessions scheduled for this day.";
-        return <p className="text-center text-sm py-8" style={{ color: "var(--text-muted)" }}>{msg}</p>;
-      })() : <div className="overflow-x-auto">
-        <table style={{ borderCollapse: "collapse", minWidth: labelWidth + colWidth * activeSlots.length }}>
-          <colgroup>
-            <col style={{ width: labelWidth }} />
-            {activeSlots.map((_, i) => <col key={i} style={{ width: colWidth }} />)}
-          </colgroup>
-
-          {/* Header row: slot numbers + time ranges */}
-          <thead>
-            <tr>
-              <th style={{
-                background: "var(--bg-subtle)", border: "1px solid var(--border)",
-                padding: "6px 10px", textAlign: "left", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
-              }}>
-                Room / Date
-              </th>
-              {activeSlots.map((slot, i) => (
-                <th key={i} style={{
-                  background: "var(--bg-subtle)", border: "1px solid var(--border)",
-                  padding: "6px 8px", textAlign: "center", fontSize: 11, color: "var(--text-muted)", fontWeight: 600,
-                  whiteSpace: "nowrap",
-                }}>
-                  <div style={{ fontWeight: 700, color: "var(--text-secondary)" }}>Slot {TIME_SLOTS.indexOf(slot) + 1}</div>
-                  <div>{slot.label}</div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {visibleRooms.length === 0 && (
-              <tr>
-                <td colSpan={activeSlots.length + 1} style={{
-                  padding: "24px", textAlign: "center", fontSize: 13, color: "var(--text-muted)",
-                  border: "1px solid var(--border)",
-                }}>
-                  No rooms configured
-                </td>
-              </tr>
-            )}
-            {visibleRooms.map((room) => {
-              // Check if any session exists in this room today
-              const roomSessions = daySessions.filter((s) => s.roomId === room.id);
-              const brand = roomSessions[0]?.brand ?? null;
-              const roomLabel = brand ? `${room.name} [${brand.name}]` : room.name;
-
-              return (
-                <React.Fragment key={room.id}>
-                  {/* Room header row */}
-                  <tr>
-                    <td colSpan={activeSlots.length + 1} style={{
-                      background: brand?.color ? `${brand.color}22` : "var(--bg-subtle)",
-                      border: "1px solid var(--border)",
-                      padding: "4px 10px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: brand?.color ?? "var(--text-secondary)",
-                    }}>
-                      {roomLabel}
-                    </td>
-                  </tr>
-
-                  {/* Store sub-row (brand) */}
-                  <tr key={`store-${room.id}`}>
-                    <td style={{
-                      border: "1px solid var(--border)", padding: "4px 10px",
-                      fontSize: 11, color: "var(--text-muted)", background: "var(--bg-subtle)",
-                    }}>
-                      Store
-                    </td>
-                    {activeSlots.map((slot, si) => {
-                      const session = getSessionForRoomSlot(room.id, si);
-                      if (!session) return (
-                        <td key={si}
-                          title="Click to add session"
-                          onClick={() => onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end))}
-                          style={{
-                            border: "1px solid var(--border)", background: "var(--bg-card)",
-                            cursor: "pointer", textAlign: "center", verticalAlign: "middle",
-                          }}
-                        >
-                          <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4, lineHeight: 1 }}>+</span>
-                        </td>
-                      );
-                      const bg = session.brand.color || "#888";
-                      return (
-                        <td key={si} style={{
-                          border: "1px solid var(--border)", padding: "3px 6px",
-                          background: bg, cursor: "pointer", verticalAlign: "middle",
-                        }}
-                          onClick={() => onSessionClick(session)}
-                        >
-                          <div style={{ color: "#fff", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {session.brand.name}
-                          </div>
-                          <div style={{ color: "rgba(255,255,255,0.8)", fontSize: 9 }}>
-                            {session.platform}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-
-                  {/* Host sub-row */}
-                  <tr key={`host-${room.id}`}>
-                    <td style={{
-                      border: "1px solid var(--border)", padding: "4px 10px",
-                      fontSize: 11, color: "var(--text-muted)", background: "var(--bg-subtle)",
-                    }}>
-                      Host
-                    </td>
-                    {activeSlots.map((slot, si) => {
-                      const session = getSessionForRoomSlot(room.id, si);
-                      if (!session) return (
-                        <td key={si}
-                          title="Click to add session"
-                          onClick={() => onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end))}
-                          style={{
-                            border: "1px solid var(--border)", background: "var(--bg-card)",
-                            cursor: "pointer", textAlign: "center", verticalAlign: "middle",
-                          }}
-                        >
-                          <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4, lineHeight: 1 }}>+</span>
-                        </td>
-                      );
-                      const hostName = session.liveHost?.displayName ?? "—";
-                      return (
-                        <td key={si} style={{
-                          border: "1px solid var(--border)", padding: "3px 6px",
-                          background: "var(--bg-card)", cursor: "pointer", verticalAlign: "middle",
-                        }}
-                          onClick={() => onSessionClick(session)}
-                        >
-                          <div style={{ fontSize: 10, color: "var(--text-primary)", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {hostName}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>}
     </div>
   );
 }
