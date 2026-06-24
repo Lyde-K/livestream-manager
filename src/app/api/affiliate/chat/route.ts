@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAffiliateScope, assertBrandAccess } from "@/lib/affiliate/scope";
+import { AFFILIATE_KNOWLEDGE } from "@/lib/affiliate/chat-knowledge";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -158,7 +159,7 @@ All available periods: ${periodList.join(", ")}
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
     stream: true,
-    system: `You are an affiliate marketing analyst assistant for 13 Media. You answer questions about affiliate creator and product performance using real data provided below. Be concise, data-driven, and actionable. Use RM currency. When listing items, use bullet points. Do not make up data not in the context.\n\n${contextBlock}`,
+    system: `You are an affiliate marketing analyst assistant for 13 Media. You answer questions about affiliate creator and product performance using the live data and industry knowledge below. Be concise, data-driven, and actionable. Use RM currency. When listing items, use bullet points. Do not make up data not in the context. When relevant, use the industry benchmarks and strategies from the knowledge base to enrich your answers.\n\n${contextBlock}\n\n${AFFILIATE_KNOWLEDGE}`,
     messages: [
       ...history.map((h) => ({ role: h.role, content: h.content })),
       { role: "user", content: message },

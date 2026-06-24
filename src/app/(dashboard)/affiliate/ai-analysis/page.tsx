@@ -45,10 +45,11 @@ const HEALTH_STYLES = {
 
 const SUGGESTED_QUESTIONS = [
   "Which affiliates are new this period?",
+  "Who should I give Spark Code boost to?",
+  "Which creators should I re-engage?",
+  "How does my ROI compare to industry benchmarks?",
   "Who are my top 5 creators by ROI?",
-  "Which creators should I invest more in?",
-  "What's my best performing product?",
-  "Which creators are underperforming?",
+  "Which creators are F-rank risk?",
 ];
 
 export default function AffiliateAIAnalysisPage() {
