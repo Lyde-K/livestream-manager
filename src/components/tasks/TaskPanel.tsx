@@ -5,7 +5,7 @@ import {
   AlertTriangle, Calendar, CheckCircle2, Circle, Clock,
   ExternalLink, Link2, MessageSquare, Plus, RefreshCw,
   Send, Trash2, X, ClipboardList, Eye, UserCheck,
-  Maximize2, Minimize2, Search, Tag, LayoutGrid, List, Pencil, Check, RotateCcw,
+  Maximize2, Minimize2, Search, Tag, Pencil, Check, RotateCcw,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -65,6 +65,8 @@ function labelColor(label: string): string {
   return colors[label.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length];
 }
 
+const STATUS_NEXT: Record<string, string> = { todo: "in_progress", in_progress: "done", in_review: "done", done: "todo" };
+
 const PILL = (text: string, color: string, bg: string) => (
   <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 7px", borderRadius: "20px", background: bg, color, letterSpacing: "0.03em", whiteSpace: "nowrap" as const }}>
     {text}
@@ -102,7 +104,6 @@ function TaskCard({
   const pm = PRIORITY_META[task.priority] ?? PRIORITY_META.medium;
   const isOverdue = task.dueDate && task.status !== "done" && task.status !== "in_review" && new Date(task.dueDate) < new Date();
   const labels = parseLabels(task.labels);
-  const NEXT: Record<string, string> = { todo: "in_progress", in_progress: "done", in_review: "done", done: "todo" };
   const isAssignee  = task.assignees.some((a) => a.userId === currentUserId);
   const isCreator   = task.createdBy?.id === currentUserId;
   const isTeamOwner = task.team
@@ -126,8 +127,8 @@ function TaskCard({
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
         <button
-          onClick={(e) => { e.stopPropagation(); if (canChange) onStatusChange(task.id, NEXT[task.status] ?? "todo"); }}
-          title={canChange ? `Mark as ${NEXT[task.status]}` : "Only assignees or owner can change status"}
+          onClick={(e) => { e.stopPropagation(); if (canChange) onStatusChange(task.id, STATUS_NEXT[task.status] ?? "todo"); }}
+          title={canChange ? `Mark as ${STATUS_NEXT[task.status]}` : "Only assignees or owner can change status"}
           style={{ background: "none", border: "none", cursor: canChange ? "pointer" : "not-allowed", padding: "2px", color: sm.color, flexShrink: 0, marginTop: "1px", opacity: canChange ? 1 : 0.4 }}
         >
           <sm.Icon size={15} />
@@ -392,7 +393,7 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
 // ── DatePicker ────────────────────────────────────────────────────────────────
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DAY_LABELS = ["M","T","W","T","F","S","S"];
+const DAY_LABELS = ["Mo","Tu","We","Th","Fr","Sa","Su"];
 
 function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
   const [open, setOpen]         = useState(false);
@@ -451,7 +452,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
-          background: "var(--sidebar-bg)", border: "1px solid var(--border)",
+          background: "var(--panel-header-bg)", border: "1px solid var(--border)",
           borderRadius: "14px", padding: "14px 14px 12px", minWidth: "248px",
           boxShadow: "0 12px 40px rgba(0,0,0,0.3)",
         }}>
@@ -849,7 +850,7 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
 
   const isCreator   = task.createdBy?.id === currentUserId;
   const isTeamOwner = task.team ? teams.some((t) => t.id === task.team?.id && t.members.some((m) => m.userId === currentUserId && m.role === "owner")) : false;
-  const canSendReview = (isCreator || isTeamOwner) && task.status === "done";
+  const canSendReview = (isCreator || isTeamOwner) && (task.status === "in_progress" || task.status === "done");
 
   useEffect(() => {
     fetch(`/api/tasks/${task.id}/comments`).then((r) => r.json()).then((d) => setComments(d.comments ?? []));
@@ -962,11 +963,13 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
           <div style={{ position: "relative" }}>
             <input value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} placeholder="Search reviewer…" disabled={sendingReview}
               style={{ ...INPUT_STYLE, fontSize: "11px", padding: "5px 8px" }} />
-            {reviewSearch.trim() && (
+            {reviewSearch.trim() && (() => {
+              const reviewerResults = allUsers.filter((u) => u.name.toLowerCase().includes(reviewSearch.toLowerCase()));
+              return (
               <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.25)", maxHeight: "130px", overflowY: "auto" }}>
-                {allUsers.filter((u) => u.name.toLowerCase().includes(reviewSearch.toLowerCase())).length === 0
+                {reviewerResults.length === 0
                   ? <div style={{ padding: "10px", fontSize: "12px", color: "var(--text-muted)" }}>No users found.</div>
-                  : allUsers.filter((u) => u.name.toLowerCase().includes(reviewSearch.toLowerCase())).map((u) => (
+                  : reviewerResults.map((u) => (
                     <button key={u.id} onClick={() => sendForReview(u.id)}
                       style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: "none", color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", display: "flex", alignItems: "center", gap: "8px" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
@@ -978,7 +981,8 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
                   ))
                 }
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1202,11 +1206,13 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
               <div style={{ position: "relative", marginTop: "6px" }}>
                 <input value={addMemberSearch[team.id] ?? ""} onChange={(e) => setAddMemberSearch((p) => ({ ...p, [team.id]: e.target.value }))}
                   placeholder="Search to add member…" style={{ ...INPUT_STYLE, fontSize: "11px", padding: "4px 8px" }} />
-                {(addMemberSearch[team.id] ?? "").trim() && (
+                {(addMemberSearch[team.id] ?? "").trim() && (() => {
+                  const memberResults = otherUsers.filter((u) => u.name.toLowerCase().includes((addMemberSearch[team.id] ?? "").toLowerCase()));
+                  return (
                   <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.2)", maxHeight: "130px", overflowY: "auto" }}>
-                    {otherUsers.filter((u) => u.name.toLowerCase().includes((addMemberSearch[team.id] ?? "").toLowerCase())).length === 0
+                    {memberResults.length === 0
                       ? <div style={{ padding: "10px", fontSize: "12px", color: "var(--text-muted)" }}>No users found.</div>
-                      : otherUsers.filter((u) => u.name.toLowerCase().includes((addMemberSearch[team.id] ?? "").toLowerCase())).map((u) => (
+                      : memberResults.map((u) => (
                           <button key={u.id} onClick={() => { addMember(team.id, u.id); setAddMemberSearch((p) => ({ ...p, [team.id]: "" })); }}
                             style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: "none", color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit", fontSize: "12px" }}
                             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
@@ -1217,7 +1223,8 @@ function TeamManager({ currentUserId, allUsers, teams, onTeamsChange }: {
                         ))
                     }
                   </div>
-                )}
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -1264,7 +1271,6 @@ export function TaskPanel({ userId, userRole }: Props) {
   const [open, setOpen]                     = useState(false);
   const [expanded, setExpanded]             = useState(false);
   const [tab, setTab]                       = useState<TabKey>("mine");
-  const [viewMode, setViewMode]             = useState<"list" | "board">("list");
   const [tasks, setTasks]                   = useState<Task[]>([]);
   const [loading, setLoading]               = useState(false);
   const [statusFilter, setStatusFilter]     = useState("all");
@@ -1287,7 +1293,6 @@ export function TaskPanel({ userId, userRole }: Props) {
       if (saved.priorityFilter) setPriorityFilter(saved.priorityFilter);
       if (saved.teamFilter) setTeamFilter(saved.teamFilter);
       if (saved.expanded) setExpanded(saved.expanded);
-      if (saved.viewMode) setViewMode(saved.viewMode);
     } catch {}
     setMounted(true);
   }, []);
@@ -1295,8 +1300,8 @@ export function TaskPanel({ userId, userRole }: Props) {
   // Persist state changes
   useEffect(() => {
     if (!mounted) return;
-    localStorage.setItem("task-panel-state", JSON.stringify({ tab, statusFilter, priorityFilter, teamFilter, expanded, viewMode }));
-  }, [tab, statusFilter, priorityFilter, teamFilter, expanded, viewMode, mounted]);
+    localStorage.setItem("task-panel-state", JSON.stringify({ tab, statusFilter, priorityFilter, teamFilter, expanded }));
+  }, [tab, statusFilter, priorityFilter, teamFilter, expanded, mounted]);
 
   // Panel toggle
   useEffect(() => {
@@ -1355,7 +1360,7 @@ export function TaskPanel({ userId, userRole }: Props) {
 
   useEffect(() => {
     if (open && tab !== "teams") fetchTasks();
-  }, [open, fetchTasks, tab]);
+  }, [open, fetchTasks]); // tab is already captured in fetchTasks via useCallback deps
 
   // Keep sidebar badge updated
   useEffect(() => {
