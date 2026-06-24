@@ -97,6 +97,11 @@ export async function POST(req: NextRequest) {
     const assignees = task.assignees.map((a) => a.user);
     const assignerName = user.name ?? "Someone";
 
+    // Check if due today
+    const isDueToday = task.dueDate
+      ? new Date(task.dueDate).toDateString() === new Date().toDateString()
+      : false;
+
     for (const assignee of assignees) {
       // Skip notification to self
       if (assignee.id !== user.id) {
@@ -105,6 +110,16 @@ export async function POST(req: NextRequest) {
           type: "task_assigned",
           title: "New task assigned",
           message: `${assignerName} assigned you: "${task.title}"`,
+          taskId: task.id,
+        });
+      }
+      // Deadline-day alert for all assignees (including self)
+      if (isDueToday) {
+        await createNotification({
+          userId: assignee.id,
+          type: "task_due_today",
+          title: "⏰ Task due today",
+          message: `"${task.title}" is due today — don't forget to complete it!`,
           taskId: task.id,
         });
       }

@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import {
   AlertTriangle, Calendar, CheckCircle2, ChevronDown, Circle,
   Clock, ExternalLink, Link2, MessageSquare, Plus, RefreshCw,
-  Send, Trash2, Users, X, ClipboardList,
+  Send, Trash2, Users, X, ClipboardList, Eye, UserCheck,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -77,9 +77,11 @@ function Avatar({ name, size = 22 }: { name: string; size?: number }) {
 // ── Task Card ─────────────────────────────────────────────────────────────────
 
 function TaskCard({
-  task, onStatusChange, onDelete, onSelect, selected,
+  task, currentUserId, teams, onStatusChange, onDelete, onSelect, selected,
 }: {
   task: Task;
+  currentUserId: string;
+  teams: Team[];
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onSelect: (id: string) => void;
@@ -87,8 +89,19 @@ function TaskCard({
 }) {
   const sm = STATUS_META[task.status] ?? STATUS_META.todo;
   const pm = PRIORITY_META[task.priority] ?? PRIORITY_META.medium;
-  const isOverdue = task.dueDate && task.status !== "done" && new Date(task.dueDate) < new Date();
-  const NEXT: Record<string, string> = { todo: "in_progress", in_progress: "in_review", in_review: "done", done: "todo" };
+  const isOverdue = task.dueDate && task.status !== "done" && task.status !== "in_review" && new Date(task.dueDate) < new Date();
+
+  // Status cycle: skip in_review (only set via "Send for Review")
+  // If currently in_review, reviewer clicks to mark done
+  const NEXT: Record<string, string> = { todo: "in_progress", in_progress: "done", in_review: "done", done: "todo" };
+
+  // Permission: only assignees, creator, or team owner can change status
+  const isAssignee  = task.assignees.some((a) => a.userId === currentUserId);
+  const isCreator   = task.createdBy?.id === currentUserId;
+  const isTeamOwner = task.team
+    ? teams.some((t) => t.id === task.team?.id && t.members.some((m) => m.userId === currentUserId && m.role === "owner"))
+    : false;
+  const canChange   = isAssignee || isCreator || isTeamOwner;
 
   return (
     <div
@@ -102,9 +115,9 @@ function TaskCard({
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
         <button
-          onClick={(e) => { e.stopPropagation(); onStatusChange(task.id, NEXT[task.status] ?? "todo"); }}
-          title={`Mark as ${NEXT[task.status]}`}
-          style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: sm.color, flexShrink: 0, marginTop: "1px" }}
+          onClick={(e) => { e.stopPropagation(); if (canChange) onStatusChange(task.id, NEXT[task.status] ?? "todo"); }}
+          title={canChange ? `Mark as ${NEXT[task.status]}` : "Only assignees or owner can change status"}
+          style={{ background: "none", border: "none", cursor: canChange ? "pointer" : "not-allowed", padding: "2px", color: sm.color, flexShrink: 0, marginTop: "1px", opacity: canChange ? 1 : 0.4 }}
         >
           <sm.Icon size={15} />
         </button>
@@ -351,16 +364,27 @@ function AddTaskForm({
 // ── Task Detail ───────────────────────────────────────────────────────────────
 
 function TaskDetail({
-  task, onClose, onUpdate,
+  task, currentUserId, allUsers, teams, onClose, onUpdate,
 }: {
   task: Task;
+  currentUserId: string;
+  allUsers: TaskUser[];
+  teams: Team[];
   onClose: () => void;
   onUpdate: (updated: Task) => void;
 }) {
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [commentText, setCommentText] = useState("");
-  const [sending, setSending] = useState(false);
+  const [comments, setComments]         = useState<Comment[]>([]);
+  const [commentText, setCommentText]   = useState("");
+  const [sending, setSending]           = useState(false);
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [sendingReview, setSendingReview] = useState(false);
   const sm = STATUS_META[task.status] ?? STATUS_META.todo;
+
+  const isCreator   = task.createdBy?.id === currentUserId;
+  const isTeamOwner = task.team
+    ? teams.some((t) => t.id === task.team?.id && t.members.some((m) => m.userId === currentUserId && m.role === "owner"))
+    : false;
+  const canSendReview = (isCreator || isTeamOwner) && task.status === "done";
 
   useEffect(() => {
     fetch(`/api/tasks/${task.id}/comments`)
@@ -371,6 +395,17 @@ function TaskDetail({
   async function changeStatus(status: string) {
     const res = await fetch(`/api/tasks/${task.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
     if (res.ok) { const d = await res.json(); onUpdate(d.task); }
+  }
+
+  async function sendForReview(reviewerId: string) {
+    setSendingReview(true);
+    const res = await fetch(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "in_review", addAssigneeIds: [reviewerId] }),
+    });
+    if (res.ok) { const d = await res.json(); onUpdate(d.task); setReviewSearch(""); }
+    setSendingReview(false);
   }
 
   async function sendComment() {
@@ -431,6 +466,50 @@ function TaskDetail({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Send for Review — only for creator/team-owner when task is done */}
+      {canSendReview && (
+        <div style={{ marginBottom: "12px", padding: "10px", borderRadius: "8px", border: "1px solid rgba(139,92,246,.35)", background: "rgba(139,92,246,.07)" }}>
+          <p style={{ margin: "0 0 6px", fontSize: "10px", fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", letterSpacing: "0.05em", display: "flex", alignItems: "center", gap: "5px" }}>
+            <Eye size={11} /> Send for Review
+          </p>
+          <div style={{ position: "relative" }}>
+            <input
+              value={reviewSearch}
+              onChange={(e) => setReviewSearch(e.target.value)}
+              placeholder="Search reviewer…"
+              disabled={sendingReview}
+              style={{ ...INPUT_STYLE, fontSize: "11px", padding: "5px 8px" }}
+            />
+            {reviewSearch.trim() && (
+              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 10, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "8px", boxShadow: "0 4px 16px rgba(0,0,0,0.25)", maxHeight: "130px", overflowY: "auto" }}>
+                {allUsers.filter((u) => u.name.toLowerCase().includes(reviewSearch.toLowerCase())).length === 0
+                  ? <div style={{ padding: "10px", fontSize: "12px", color: "var(--text-muted)" }}>No users found.</div>
+                  : allUsers.filter((u) => u.name.toLowerCase().includes(reviewSearch.toLowerCase())).map((u) => (
+                    <button key={u.id}
+                      onClick={() => sendForReview(u.id)}
+                      style={{ width: "100%", textAlign: "left", padding: "7px 10px", border: "none", background: "none", color: "var(--text-primary)", cursor: "pointer", fontFamily: "inherit", fontSize: "12px", display: "flex", alignItems: "center", gap: "8px" }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "none"; }}
+                    >
+                      <UserCheck size={13} style={{ color: "#8B5CF6", flexShrink: 0 }} />
+                      {u.id === currentUserId ? "Me" : u.name}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* In-review banner for reviewer */}
+      {task.status === "in_review" && task.assignees.some((a) => a.userId === currentUserId) && (
+        <div style={{ marginBottom: "12px", padding: "8px 10px", borderRadius: "8px", background: "rgba(139,92,246,.1)", border: "1px solid rgba(139,92,246,.3)", fontSize: "11px", color: "#8B5CF6", display: "flex", alignItems: "center", gap: "6px" }}>
+          <Eye size={13} />
+          You are reviewing this task — click the status icon to mark as Done.
         </div>
       )}
 
@@ -691,7 +770,7 @@ interface Props { userId: string; userRole: string; }
 export function TaskPanel({ userId, userRole }: Props) {
   const [mounted, setMounted]           = useState(false);
   const [open, setOpen]                 = useState(false);
-  const [tab, setTab]                   = useState<"mine" | "all" | "teams">("mine");
+  const [tab, setTab]                   = useState<"mine" | "all" | "review" | "teams">("mine");
   const [tasks, setTasks]               = useState<Task[]>([]);
   const [loading, setLoading]           = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -715,7 +794,8 @@ export function TaskPanel({ userId, userRole }: Props) {
     setLoading(true);
     const params = new URLSearchParams();
     if (tab === "mine") params.set("mine", "true");
-    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (tab === "review") params.set("status", "in_review");
+    else if (statusFilter !== "all") params.set("status", statusFilter);
     if (priorityFilter !== "all") params.set("priority", priorityFilter);
     if (teamFilter !== "all") params.set("teamId", teamFilter);
     const res = await fetch(`/api/tasks?${params}`);
@@ -726,6 +806,8 @@ export function TaskPanel({ userId, userRole }: Props) {
   useEffect(() => {
     if (open && tab !== "teams") fetchTasks();
   }, [open, fetchTasks, tab]);
+
+  const reviewCount = tab !== "teams" ? undefined : undefined; // fetched separately below
 
   useEffect(() => {
     if (!open) return;
@@ -776,10 +858,11 @@ export function TaskPanel({ userId, userRole }: Props) {
 
   if (!mounted) return null;
 
-  const TABS: { key: "mine" | "all" | "teams"; label: string }[] = [
-    { key: "mine",  label: "My Tasks" },
-    { key: "all",   label: "All Tasks" },
-    { key: "teams", label: "Teams" },
+  const TABS: { key: "mine" | "all" | "review" | "teams"; label: string }[] = [
+    { key: "mine",   label: "My Tasks" },
+    { key: "all",    label: "All Tasks" },
+    { key: "review", label: "Review" },
+    { key: "teams",  label: "Teams" },
   ];
 
   const panel = (
@@ -792,7 +875,7 @@ export function TaskPanel({ userId, userRole }: Props) {
       <div style={{
         position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 9991,
         width: "380px", maxWidth: "95vw",
-        background: "var(--bg-card)", borderLeft: "1px solid var(--border)",
+        background: "var(--sidebar-bg)", borderLeft: "1px solid var(--border)",
         display: "flex", flexDirection: "column",
         transform: open ? "translateX(0)" : "translateX(100%)",
         transition: "transform 0.28s cubic-bezier(0.34,1.06,0.64,1)",
@@ -811,7 +894,7 @@ export function TaskPanel({ userId, userRole }: Props) {
               )}
             </div>
             <div style={{ display: "flex", gap: "6px" }}>
-              {tab !== "teams" && (
+              {tab !== "teams" && tab !== "review" && (
                 <button onClick={() => setShowAdd((s) => !s)}
                   style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", padding: "4px 10px", borderRadius: "7px", border: "none", background: "var(--accent)", color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
                   <Plus size={12} /> Add
@@ -857,11 +940,13 @@ export function TaskPanel({ userId, userRole }: Props) {
             <>
               {/* Filters */}
               <div style={{ display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap" }}>
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-                  style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
-                  <option value="all">All status</option>
-                  {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
+                {tab !== "review" && (
+                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+                    style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
+                    <option value="all">All status</option>
+                    {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                )}
                 <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}
                   style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text-secondary)", fontFamily: "inherit" }}>
                   <option value="all">All priority</option>
@@ -899,13 +984,15 @@ export function TaskPanel({ userId, userRole }: Props) {
                 </div>
               ) : tasks.length === 0 ? (
                 <p style={{ fontSize: "12px", color: "var(--text-muted)", textAlign: "center", padding: "24px 0" }}>
-                  {tab === "mine" ? "No tasks assigned to you." : "No tasks found."}
+                  {tab === "mine" ? "No tasks assigned to you." : tab === "review" ? "No tasks pending review." : "No tasks found."}
                 </p>
               ) : (
                 tasks.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
+                    currentUserId={userId}
+                    teams={teams}
                     onStatusChange={handleStatusChange}
                     onDelete={handleDelete}
                     onSelect={(id) => setSelectedId((prev) => prev === id ? null : id)}
@@ -918,6 +1005,9 @@ export function TaskPanel({ userId, userRole }: Props) {
               {selectedTask && (
                 <TaskDetail
                   task={selectedTask}
+                  currentUserId={userId}
+                  allUsers={users}
+                  teams={teams}
                   onClose={() => setSelectedId(null)}
                   onUpdate={(updated) => setTasks((prev) => prev.map((t) => t.id === updated.id ? updated : t))}
                 />

@@ -70,11 +70,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       const newAssignees = task.assignees.filter((a) => newAssigneeIds.includes(a.userId));
       for (const a of newAssignees) {
         if (a.user.id !== user.id) {
+          const isReview = body.status === "in_review";
           await createNotification({
             userId: a.user.id,
-            type: "task_assigned",
-            title: "New task assigned",
-            message: `${user.name ?? "Someone"} assigned you: "${task.title}"`,
+            type: isReview ? "task_review" : "task_assigned",
+            title: isReview ? "Task sent for your review" : "New task assigned",
+            message: isReview
+              ? `${user.name ?? "Someone"} sent "${task.title}" for your review`
+              : `${user.name ?? "Someone"} assigned you: "${task.title}"`,
             taskId: task.id,
           });
         }

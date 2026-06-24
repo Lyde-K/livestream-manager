@@ -84,9 +84,11 @@ export function NotificationPanel() {
 
   function typeIcon(type: string) {
     const icons: Record<string, string> = {
-      task_assigned: "📋",
-      task_comment:  "💬",
-      task_updated:  "✏️",
+      task_assigned:  "📋",
+      task_comment:   "💬",
+      task_updated:   "✏️",
+      task_due_today: "⏰",
+      task_review:    "👁️",
     };
     return icons[type] ?? "🔔";
   }
