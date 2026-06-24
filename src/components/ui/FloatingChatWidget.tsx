@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bot, Loader2, Minus, Send, User, X } from "lucide-react";
 
 interface ChatMessage {
@@ -20,12 +21,15 @@ export function FloatingChatWidget({
   suggestedQuestions = [],
   title = "13Media Bot",
 }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -80,7 +84,9 @@ export function FloatingChatWidget({
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); }
   }
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <>
       {/* Chat window */}
       <div
@@ -303,6 +309,7 @@ export function FloatingChatWidget({
         {open ? <X size={16} /> : <Bot size={16} />}
         {open ? "Close" : title}
       </button>
-    </>
+    </>,
+    document.body
   );
 }
