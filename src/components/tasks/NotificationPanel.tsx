@@ -95,43 +95,6 @@ export function NotificationPanel() {
 
   const panel = (
     <>
-      {/* Bell button — fixed top-right, left of task button */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          position: "fixed",
-          top: "14px",
-          right: open ? "420px" : "58px",
-          zIndex: 9993,
-          width: "36px",
-          height: "36px",
-          borderRadius: "10px",
-          border: "1px solid var(--border)",
-          background: open ? "var(--accent)" : "var(--bg-card)",
-          color: open ? "#fff" : "var(--text-primary)",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-          transition: "right 0.28s cubic-bezier(0.34,1.06,0.64,1), background 0.15s, color 0.15s",
-        }}
-        title="Notifications"
-      >
-        <Bell size={16} />
-        {unreadCount > 0 && (
-          <span style={{
-            position: "absolute", top: "-5px", right: "-5px",
-            minWidth: "16px", height: "16px", borderRadius: "8px",
-            background: "#ef4444", color: "#fff",
-            fontSize: "9px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center",
-            padding: "0 3px", border: "2px solid var(--bg-card)",
-          }}>
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        )}
-      </button>
-
       {/* Overlay */}
       {open && (
         <div onClick={() => setOpen(false)}
