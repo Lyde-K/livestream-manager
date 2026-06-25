@@ -15,7 +15,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-type BlackoutDate = { id: string; date: string; reason: string };
+type BlackoutDate = { id: string; date: string; reason: string; createdAt?: string };
 
 function mytToday(): string {
   return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
@@ -672,7 +672,7 @@ interface ReviewedApp {
   liveHost: { id: string; displayName: string };
 }
 
-interface BlackoutDate { id: string; date: string; reason: string; createdAt: string; }
+// BlackoutDate type defined at top of file
 interface AuditLog { id: string; liveHostId?: string | null; action: string; detail: string; performedBy: string; createdAt: string; performerName: string; hostName?: string | null; }
 
 function ApproveModal({ app, onClose, onDone }: {
