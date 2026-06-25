@@ -1222,7 +1222,7 @@ function AdminView() {
             </button>
             <button onClick={() => setBlackoutOpen(true)}
               className="text-xs px-2 py-1 rounded cursor-pointer"
-              style={{ background: "var(--accent)20", color: "var(--accent)" }}>
+              style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
               + Add
             </button>
             <div className="cursor-pointer" onClick={() => setShowBlackouts(v => !v)}>
