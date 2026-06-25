@@ -89,7 +89,7 @@ export default function SchedulePage() {
   const [clearOpen, setClearOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"calendar" | "grid" | "dailyList">("grid");
-  const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [gridDate, setGridDate] = useState(() => new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10));
 
   async function loadMeta() {
     const [r, h, b] = await Promise.all([fetch("/api/rooms"), fetch("/api/hosts"), fetch("/api/brands")]);
@@ -1274,7 +1274,10 @@ function SmartCalendarPreview({ month, year, sessions }: { month: number; year: 
 const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function ClearSessionsModal({ brands, onClose, onCleared }: { brands: Brand[]; onClose: () => void; onCleared: () => void }) {
-  const now = new Date();
+  const mytNow = new Date(Date.now() + 8 * 3_600_000);
+  const mytM = mytNow.getUTCMonth() + 1;
+  const mytY = mytNow.getUTCFullYear();
+  const mytMonthStr = mytNow.toISOString().slice(0, 7);
   const livestreamBrands = brands.filter(b => (b as Brand & { hasLivestream?: boolean }).hasLivestream !== false);
 
   // Step 1: config; Step 2: confirm
@@ -1282,10 +1285,10 @@ function ClearSessionsModal({ brands, onClose, onCleared }: { brands: Brand[]; o
 
   const [brandId, setBrandId] = useState<string>("ALL");
   const [rangeType, setRangeType] = useState<"month" | "custom">("month");
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
-  const [customStart, setCustomStart] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
-  const [customEnd, setCustomEnd] = useState(format(endOfMonth(now), "yyyy-MM-dd"));
+  const [month, setMonth] = useState(mytM);
+  const [year, setYear] = useState(mytY);
+  const [customStart, setCustomStart] = useState(`${mytMonthStr}-01`);
+  const [customEnd, setCustomEnd] = useState(`${mytMonthStr}-${String(new Date(mytY, mytM, 0).getDate()).padStart(2, "0")}`);
   const [deleting, setDeleting] = useState(false);
 
   const brandLabel = brandId === "ALL" ? "All Brands" : (brands.find(b => b.id === brandId)?.name ?? brandId);

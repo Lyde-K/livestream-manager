@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getHostMonthlyStats } from "@/lib/commission";
+import { mytMonthYear } from "@/lib/utils";
 import ExcelJS from "exceljs";
 
 export async function GET(req: NextRequest) {
@@ -10,8 +11,9 @@ export async function GET(req: NextRequest) {
     return new Response("Forbidden", { status: 403 });
 
   const { searchParams } = new URL(req.url);
-  const month = Number(searchParams.get("month")) || new Date().getMonth() + 1;
-  const year = Number(searchParams.get("year")) || new Date().getFullYear();
+  const { month: mM, year: mY } = mytMonthYear();
+  const month = Number(searchParams.get("month")) || mM;
+  const year = Number(searchParams.get("year")) || mY;
 
   const hosts = await prisma.liveHost.findMany({ where: { isActive: true } });
   const allStats = (await Promise.all(hosts.map((h) => getHostMonthlyStats(h.id, month, year)))).filter(Boolean);

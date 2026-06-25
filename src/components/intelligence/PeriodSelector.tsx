@@ -2,17 +2,9 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import {
-  endOfDay,
-  endOfMonth,
-  endOfQuarter,
-  endOfYear,
-  format,
-  startOfDay,
-  startOfMonth,
-  startOfQuarter,
-  startOfYear,
-  subDays,
-  subMonths,
+  endOfMonth, endOfQuarter, endOfYear, format,
+  startOfMonth, startOfQuarter, startOfYear,
+  subDays, subMonths,
 } from "date-fns";
 
 export interface RangeChoice {
@@ -26,37 +18,22 @@ function preset(key: string, label: string, from: Date, to: Date): RangeChoice {
   return { key, label, from, to };
 }
 
+function mytDay(dateStr: string, end = false): Date {
+  return new Date(`${dateStr}T${end ? "23:59:59" : "00:00:00"}+08:00`);
+}
+
 function buildPresets(): RangeChoice[] {
-  const now = new Date();
-  const lastMonthAnchor = subMonths(now, 1);
+  const myt = new Date(Date.now() + 8 * 3_600_000);
+  const todayStr = myt.toISOString().slice(0, 10);
+  const lastMonthAnchor = subMonths(myt, 1);
   return [
-    preset(
-      "last7",
-      "Last 7 days",
-      startOfDay(subDays(now, 6)),
-      endOfDay(now),
-    ),
-    preset(
-      "last30",
-      "Last 30 days",
-      startOfDay(subDays(now, 29)),
-      endOfDay(now),
-    ),
-    preset(
-      "last90",
-      "Last 90 days",
-      startOfDay(subDays(now, 89)),
-      endOfDay(now),
-    ),
-    preset("thisMonth", "This month", startOfMonth(now), endOfDay(now)),
-    preset(
-      "lastMonth",
-      "Last month",
-      startOfMonth(lastMonthAnchor),
-      endOfMonth(lastMonthAnchor),
-    ),
-    preset("thisQuarter", "This quarter", startOfQuarter(now), endOfDay(now)),
-    preset("thisYear", "This year", startOfYear(now), endOfYear(now)),
+    preset("last7",      "Last 7 days",   mytDay(format(subDays(myt, 6),  "yyyy-MM-dd")), mytDay(todayStr, true)),
+    preset("last30",     "Last 30 days",  mytDay(format(subDays(myt, 29), "yyyy-MM-dd")), mytDay(todayStr, true)),
+    preset("last90",     "Last 90 days",  mytDay(format(subDays(myt, 89), "yyyy-MM-dd")), mytDay(todayStr, true)),
+    preset("thisMonth",  "This month",    mytDay(format(startOfMonth(myt), "yyyy-MM-dd")), mytDay(todayStr, true)),
+    preset("lastMonth",  "Last month",    mytDay(format(startOfMonth(lastMonthAnchor), "yyyy-MM-dd")), mytDay(format(endOfMonth(lastMonthAnchor), "yyyy-MM-dd"), true)),
+    preset("thisQuarter","This quarter",  mytDay(format(startOfQuarter(myt), "yyyy-MM-dd")), mytDay(todayStr, true)),
+    preset("thisYear",   "This year",     mytDay(format(startOfYear(myt), "yyyy-MM-dd")),  mytDay(format(endOfYear(myt), "yyyy-MM-dd"), true)),
   ];
 }
 

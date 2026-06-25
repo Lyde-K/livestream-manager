@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { toMytDateStr } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -14,8 +15,8 @@ export async function GET(req: NextRequest) {
   const sessionType = searchParams.get("type"); // "BAU" | "CAMPAIGN" | null (all)
   if (!start || !end) return Response.json({ error: "start and end required" }, { status: 400 });
 
-  const startDate = new Date(start + "T00:00:00");
-  const endDate = new Date(end + "T23:59:59");
+  const startDate = new Date(start + "T00:00:00+08:00");
+  const endDate = new Date(end + "T23:59:59+08:00");
 
   const campaignFilter =
     sessionType === "BAU" ? { isCampaignDay: false } :
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
   // ── By date (YYYY-MM-DD) ──────────────────────────────────────────────────
   const byDateMap = new Map<string, { gmv: number; viewers: number; sessions: number; orders: number }>();
   for (const s of sessions) {
-    const key = s.scheduledStart.toISOString().slice(0, 10);
+    const key = toMytDateStr(s.scheduledStart);
     const cur = byDateMap.get(key) ?? { gmv: 0, viewers: 0, sessions: 0, orders: 0 };
     byDateMap.set(key, {
       gmv: cur.gmv + (s.gmv ?? 0),

@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfMonth, endOfMonth, eachDayOfInterval, format, getDay, addDays } from "date-fns";
+import { eachDayOfInterval, format, getDay, addDays } from "date-fns";
+import { mytMonthYear, mytMonthRange } from "@/lib/utils";
 
 // Maps slot label → suggested start time shown in the schedule UI
 const SLOT_START: Record<string, string> = {
@@ -20,12 +21,12 @@ export async function GET(req: NextRequest) {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const month = Number(searchParams.get("month")) || new Date().getMonth() + 1;
-  const year = Number(searchParams.get("year")) || new Date().getFullYear();
+  const { month: mM, year: mY } = mytMonthYear();
+  const month = Number(searchParams.get("month")) || mM;
+  const year = Number(searchParams.get("year")) || mY;
   const filterBrandId = searchParams.get("brandId") || null;
 
-  const monthStart = startOfMonth(new Date(year, month - 1));
-  const monthEnd = endOfMonth(new Date(year, month - 1));
+  const { start: monthStart, end: monthEnd } = mytMonthRange(month, year);
   const allDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
   // Load campaigns for this month to check first-2-days exception

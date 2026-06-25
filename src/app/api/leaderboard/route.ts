@@ -1,46 +1,56 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { subMonths, format } from "date-fns";
+import { mytMonthYear, mytMonthRange } from "@/lib/utils";
 
-// ── Period helpers ────────────────────────────────────────────────────────────
+// ── Period helpers (all boundaries in MYT) ───────────────────────────────────
+
+function mytM(month: number, year: number) { return mytMonthRange(month, year); }
 
 function getPeriodBounds(period: string, month: number, year: number) {
   switch (period) {
     case "quarter": {
-      const q = Math.floor(month / 3);
-      const thisStart = new Date(year, q * 3, 1);
-      const thisEnd   = endOfMonth(new Date(year, q * 3 + 2, 1));
+      const q       = Math.floor((month - 1) / 3);
+      const startM  = q * 3 + 1;
+      const endM    = q * 3 + 3;
+      const { start: thisStart } = mytM(startM, year);
+      const { end:   thisEnd   } = mytM(endM,   year);
       const prevQ     = q === 0 ? 3 : q - 1;
       const prevYear  = q === 0 ? year - 1 : year;
-      const prevStart = new Date(prevYear, prevQ * 3, 1);
-      const prevEnd   = endOfMonth(new Date(prevYear, prevQ * 3 + 2, 1));
+      const prevStartM = prevQ * 3 + 1;
+      const { start: prevStart } = mytM(prevStartM,     prevYear);
+      const { end:   prevEnd   } = mytM(prevStartM + 2, prevYear);
       return { thisStart, thisEnd, prevStart, prevEnd,
         label: `Q${q + 1} ${year}`, prevLabel: `Q${prevQ + 1} ${prevYear}` };
     }
     case "halfyear": {
-      const h = month < 6 ? 0 : 1;
-      const thisStart = new Date(year, h * 6, 1);
-      const thisEnd   = endOfMonth(new Date(year, h * 6 + 5, 1));
-      const prevStart = h === 0 ? new Date(year - 1, 6, 1)  : new Date(year, 0, 1);
-      const prevEnd   = h === 0 ? endOfMonth(new Date(year - 1, 11, 1)) : endOfMonth(new Date(year, 5, 1));
+      const h = month <= 6 ? 0 : 1;
+      const { start: thisStart } = mytM(h * 6 + 1, year);
+      const { end:   thisEnd   } = mytM(h * 6 + 6, year);
+      const [prevHStartM, prevHEndM, prevYear] = h === 0
+        ? [7, 12, year - 1] : [1, 6, year];
+      const { start: prevStart } = mytM(prevHStartM, prevYear);
+      const { end:   prevEnd   } = mytM(prevHEndM,   prevYear);
       return { thisStart, thisEnd, prevStart, prevEnd,
         label: `H${h + 1} ${year}`, prevLabel: h === 0 ? `H2 ${year - 1}` : `H1 ${year}` };
     }
     case "year": {
-      const thisStart = new Date(year, 0, 1);
-      const thisEnd   = new Date(year, 11, 31, 23, 59, 59, 999);
-      const prevStart = new Date(year - 1, 0, 1);
-      const prevEnd   = new Date(year - 1, 11, 31, 23, 59, 59, 999);
+      const { start: thisStart } = mytM(1,  year);
+      const { end:   thisEnd   } = mytM(12, year);
+      const { start: prevStart } = mytM(1,  year - 1);
+      const { end:   prevEnd   } = mytM(12, year - 1);
       return { thisStart, thisEnd, prevStart, prevEnd,
         label: String(year), prevLabel: String(year - 1) };
     }
     default: { // month
-      const anchor    = new Date(year, month, 1);
+      const anchor     = new Date(year, month - 1, 1);
       const prevAnchor = subMonths(anchor, 1);
+      const pm = prevAnchor.getMonth() + 1;
+      const py = prevAnchor.getFullYear();
       return {
-        thisStart: startOfMonth(anchor), thisEnd: endOfMonth(anchor),
-        prevStart: startOfMonth(prevAnchor), prevEnd: endOfMonth(prevAnchor),
+        thisStart: mytM(month, year).start, thisEnd: mytM(month, year).end,
+        prevStart: mytM(pm, py).start,      prevEnd:  mytM(pm, py).end,
         label: format(anchor, "MMMM yyyy"), prevLabel: format(prevAnchor, "MMMM yyyy"),
       };
     }
@@ -55,9 +65,10 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
+  const { month: mM, year: mY } = mytMonthYear();
   const period = searchParams.get("period") ?? "month";
-  const month  = parseInt(searchParams.get("month") ?? String(new Date().getMonth()));
-  const year   = parseInt(searchParams.get("year")  ?? String(new Date().getFullYear()));
+  const month  = parseInt(searchParams.get("month") ?? String(mM));
+  const year   = parseInt(searchParams.get("year")  ?? String(mY));
 
   const { thisStart, thisEnd, prevStart, prevEnd, label, prevLabel } =
     getPeriodBounds(period, month, year);

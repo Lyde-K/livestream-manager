@@ -44,18 +44,19 @@ interface ChartBar { label: string; sublabel?: string; value: number; sessions?:
 // ─── Date range helpers ───────────────────────────────────────────────────────
 
 function getDateRange(period: Period, anchor: Date, cs?: string, ce?: string) {
-  const today = new Date();
+  const today = mytNow();
+  const todayStr = today.toISOString().slice(0, 10);
   switch (period) {
-    case "day":    return { start: startOfDay(anchor), end: endOfDay(anchor),    label: format(anchor, "d MMMM yyyy") };
-    case "week": { const s = startOfWeek(anchor,{weekStartsOn:1}), e = endOfWeek(anchor,{weekStartsOn:1}); return { start:s, end:e, label:`${format(s,"d MMM")} – ${format(e,"d MMM yyyy")}` }; }
-    case "month":  return { start: startOfMonth(anchor), end: endOfMonth(anchor), label: format(anchor, "MMMM yyyy") };
-    case "quarter":{ const s=startOfQuarter(anchor),e=endOfQuarter(anchor),q=Math.floor(anchor.getMonth()/3)+1; return {start:s,end:e,label:`Q${q} ${anchor.getFullYear()}`}; }
-    case "year":   return { start: startOfYear(anchor), end: endOfYear(anchor),  label: String(anchor.getFullYear()) };
-    case "last30": return { start: startOfDay(subDays(today,29)), end: endOfDay(today), label: "Last 30 Days" };
-    case "last90": return { start: startOfDay(subDays(today,89)), end: endOfDay(today), label: "Last 90 Days" };
-    case "custom": if (cs && ce) { const s=parseISO(cs),e=parseISO(ce); return {start:s,end:e,label:`${format(s,"d MMM")} – ${format(e,"d MMM yyyy")}`}; }
+    case "day":    return { start: new Date(`${anchor.toISOString().slice(0,10)}T00:00:00+08:00`), end: new Date(`${anchor.toISOString().slice(0,10)}T23:59:59+08:00`), label: format(anchor, "d MMMM yyyy") };
+    case "week": { const s = startOfWeek(anchor,{weekStartsOn:1}), e = endOfWeek(anchor,{weekStartsOn:1}); return { start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`), end:new Date(`${format(e,"yyyy-MM-dd")}T23:59:59+08:00`), label:`${format(s,"d MMM")} – ${format(e,"d MMM yyyy")}` }; }
+    case "month":  { const s=startOfMonth(anchor),e=endOfMonth(anchor); return { start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`), end:new Date(`${format(e,"yyyy-MM-dd")}T23:59:59+08:00`), label: format(anchor, "MMMM yyyy") }; }
+    case "quarter":{ const s=startOfQuarter(anchor),e=endOfQuarter(anchor),q=Math.floor(anchor.getMonth()/3)+1; return {start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`),end:new Date(`${format(e,"yyyy-MM-dd")}T23:59:59+08:00`),label:`Q${q} ${anchor.getFullYear()}`}; }
+    case "year":   { const s=startOfYear(anchor),e=endOfYear(anchor); return { start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`), end:new Date(`${format(e,"yyyy-MM-dd")}T23:59:59+08:00`), label: String(anchor.getFullYear()) }; }
+    case "last30": { const s=subDays(today,29); return { start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`), end:new Date(`${todayStr}T23:59:59+08:00`), label: "Last 30 Days" }; }
+    case "last90": { const s=subDays(today,89); return { start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`), end:new Date(`${todayStr}T23:59:59+08:00`), label: "Last 90 Days" }; }
+    case "custom": if (cs && ce) return {start:new Date(`${cs}T00:00:00+08:00`),end:new Date(`${ce}T23:59:59+08:00`),label:`${format(parseISO(cs),"d MMM")} – ${format(parseISO(ce),"d MMM yyyy")}`};
     // fallthrough
-    default: return { start: startOfMonth(anchor), end: endOfMonth(anchor), label: format(anchor, "MMMM yyyy") };
+    default: { const s=startOfMonth(anchor),e=endOfMonth(anchor); return { start:new Date(`${format(s,"yyyy-MM-dd")}T00:00:00+08:00`), end:new Date(`${format(e,"yyyy-MM-dd")}T23:59:59+08:00`), label: format(anchor, "MMMM yyyy") }; }
   }
 }
 
@@ -127,8 +128,10 @@ const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   {key:"last30",label:"Last 30"},{key:"last90",label:"Last 90"},{key:"custom",label:"Custom"},
 ];
 
+function mytNow() { return new Date(Date.now() + 8 * 3_600_000); }
+
 export default function PerformancePage() {
-  const now = new Date();
+  const now = mytNow();
 
   // ── Main tab ──────────────────────────────────────────────────────────────
   const [mainTab, setMainTab] = useState<MainTab>("analytics");
@@ -235,7 +238,7 @@ export default function PerformancePage() {
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
                 {PERIOD_OPTIONS.map(p => (
-                  <button key={p.key} onClick={()=>{ setPeriod(p.key); setAnchor(new Date()); }}
+                  <button key={p.key} onClick={()=>{ setPeriod(p.key); setAnchor(mytNow()); }}
                     className="px-3 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
                     style={{ background: period===p.key?"var(--accent)":"transparent", color: period===p.key?"#fff":"var(--text-secondary)" }}>
                     {p.label}

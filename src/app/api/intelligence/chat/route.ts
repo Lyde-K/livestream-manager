@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveAccessScope } from "@/lib/intelligence/scope";
 import { LIVESTREAM_KNOWLEDGE } from "@/lib/intelligence/chat-knowledge";
+import { toMytDateStr } from "@/lib/utils";
 import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic();
@@ -32,9 +33,9 @@ export async function POST(req: NextRequest) {
 
   const scope = await resolveAccessScope(user.id, user.role, { brandId });
 
-  const now = new Date();
-  const fromDate = body.from ? new Date(body.from) : new Date(now.getTime() - 30 * 86400_000);
-  const toDate = body.to ? new Date(body.to) : now;
+  const now = new Date(Date.now() + 8 * 3_600_000);
+  const fromDate = body.from ? new Date(body.from) : new Date(Date.now() - 30 * 86400_000);
+  const toDate = body.to ? new Date(body.to) : new Date();
 
   // Build prisma filters based on scope
   const brandFilter = scope.brandIds ? { in: scope.brandIds } : undefined;
@@ -112,13 +113,13 @@ export async function POST(req: NextRequest) {
   const top5 = sorted.slice(0, 5).map(s => {
     const hrs = (s.actualDurationMinutes ?? 0) / 60;
     const gmvPH = hrs > 0 ? Number(s.gmv ?? 0) / hrs : null;
-    return `  - ${brandMap.get(s.brandId) ?? "?"} / ${hostMap.get(s.liveHostId ?? "") ?? "?"} · ${s.scheduledStart.toISOString().slice(0, 10)} · GMV ${fmt(Number(s.gmv ?? 0))}${gmvPH ? ` · ${fmt(gmvPH)}/hr` : ""} · ${s.isCampaignDay ? "Campaign" : "BAU"} · ${s.platform}`;
+    return `  - ${brandMap.get(s.brandId) ?? "?"} / ${hostMap.get(s.liveHostId ?? "") ?? "?"} · ${toMytDateStr(s.scheduledStart)} · GMV ${fmt(Number(s.gmv ?? 0))}${gmvPH ? ` · ${fmt(gmvPH)}/hr` : ""} · ${s.isCampaignDay ? "Campaign" : "BAU"} · ${s.platform}`;
   }).join("\n");
 
   const bottom5 = sorted.slice(-5).reverse().map(s => {
     const hrs = (s.actualDurationMinutes ?? 0) / 60;
     const gmvPH = hrs > 0 ? Number(s.gmv ?? 0) / hrs : null;
-    return `  - ${brandMap.get(s.brandId) ?? "?"} / ${hostMap.get(s.liveHostId ?? "") ?? "?"} · ${s.scheduledStart.toISOString().slice(0, 10)} · GMV ${fmt(Number(s.gmv ?? 0))}${gmvPH ? ` · ${fmt(gmvPH)}/hr` : ""} · ${s.isCampaignDay ? "Campaign" : "BAU"} · ${s.platform}`;
+    return `  - ${brandMap.get(s.brandId) ?? "?"} / ${hostMap.get(s.liveHostId ?? "") ?? "?"} · ${toMytDateStr(s.scheduledStart)} · GMV ${fmt(Number(s.gmv ?? 0))}${gmvPH ? ` · ${fmt(gmvPH)}/hr` : ""} · ${s.isCampaignDay ? "Campaign" : "BAU"} · ${s.platform}`;
   }).join("\n");
 
   const hostLeaderboard = [...hostStats.values()]
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest) {
     .map(b => `  - ${b.name}: ${b.sessions} sessions · ${fmtHr(b.hours)} · GMV ${fmt(b.gmv)}`)
     .join("\n");
 
-  const periodLabel = `${fromDate.toISOString().slice(0, 10)} to ${toDate.toISOString().slice(0, 10)}`;
+  const periodLabel = `${toMytDateStr(fromDate)} to ${toMytDateStr(toDate)}`;
 
   const contextBlock = `
 LIVESTREAM DATA CONTEXT

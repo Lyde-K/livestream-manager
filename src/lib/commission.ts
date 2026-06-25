@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { startOfMonth, endOfMonth, getDaysInMonth } from "date-fns";
+import { getDaysInMonth } from "date-fns";
+import { mytMonthRange } from "@/lib/utils";
 
 export interface HostMonthlyStats {
   hostId: string;
@@ -75,8 +76,7 @@ export async function getHostMonthlyStats(
   });
   if (!host) return null;
 
-  const monthStart = startOfMonth(new Date(year, month - 1));
-  const monthEnd = endOfMonth(new Date(year, month - 1));
+  const { start: monthStart, end: monthEnd } = mytMonthRange(month, year);
 
   const sessions = await prisma.session.findMany({
     where: { liveHostId: hostId, scheduledStart: { gte: monthStart, lte: monthEnd } },

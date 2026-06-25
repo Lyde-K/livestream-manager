@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, mytMonthYear, mytMonthRange, mytToday } from "@/lib/utils";
 import {
   Users, Building2, DoorOpen, Calendar, TrendingUp, Clock,
   CheckCircle2, ArrowUpRight, Medal, RefreshCw,
@@ -10,15 +10,15 @@ import { PlatformBadge } from "@/components/ui/platform-badge";
 import { MonthSelector } from "@/components/ui/month-selector";
 import { BrandDashboardPanel } from "@/components/dashboard/brand-dashboard-panel";
 import { AllBrandsAnalyticsPanel } from "@/components/dashboard/all-brands-analytics-panel";
-import { format, startOfMonth, endOfMonth, startOfDay, endOfDay, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
+
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
 async function fetchAdminStats(month: number, year: number, brandId?: string) {
-  const monthStart = startOfMonth(new Date(year, month, 1));
-  const monthEnd   = endOfMonth(new Date(year, month, 1));
+  const { start: monthStart, end: monthEnd } = mytMonthRange(month, year);
 
   const sessionWhere = {
     scheduledStart: { gte: monthStart, lte: monthEnd },
@@ -85,14 +85,11 @@ function getAdminStats(month: number, year: number, brandId?: string) {
 async function getLiveHostStats(userId: string) {
   const host = await prisma.liveHost.findUnique({ where: { userId } });
   if (!host) return null;
-  const now = new Date();
-  const monthStart = startOfMonth(now);
-  const monthEnd   = endOfMonth(now);
-  // Use MYT (UTC+8) boundaries so dashboard matches the host schedule view
-  const mytNow = new Date(now.getTime() + 8 * 3_600_000);
-  const mytTodayStr = mytNow.toISOString().slice(0, 10);
-  const todayStart = new Date(`${mytTodayStr}T00:00:00+08:00`);
-  const todayEnd   = new Date(`${mytTodayStr}T23:59:59+08:00`);
+  const { month: mM, year: mY } = mytMonthYear();
+  const todayStr = mytToday();
+  const { start: monthStart, end: monthEnd } = mytMonthRange(mM, mY);
+  const todayStart = new Date(`${todayStr}T00:00:00+08:00`);
+  const todayEnd   = new Date(`${todayStr}T23:59:59+08:00`);
 
   const [todaySessions, monthSessions] = await Promise.all([
     prisma.session.findMany({
@@ -125,11 +122,12 @@ export default async function DashboardPage(props: {
 
   if (user.role === "ADMIN") {
     const sp    = await props.searchParams;
-    const now   = new Date();
-    const month = sp.month !== undefined ? parseInt(sp.month) : now.getMonth();
-    const year  = sp.year  !== undefined ? parseInt(sp.year)  : now.getFullYear();
+    const { month: mM, year: mY } = mytMonthYear();
+    const now = new Date(Date.now() + 8 * 3_600_000);
+    const month = sp.month !== undefined ? parseInt(sp.month) : mM;
+    const year  = sp.year  !== undefined ? parseInt(sp.year)  : mY;
     const selectedBrandId = sp.brand ?? null;
-    const isMTD = month === now.getMonth() && year === now.getFullYear();
+    const isMTD = month === mM && year === mY;
 
     const [stats, brands] = await Promise.all([
       getAdminStats(month, year, selectedBrandId ?? undefined),

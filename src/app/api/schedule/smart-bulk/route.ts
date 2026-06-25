@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfMonth, endOfMonth, eachDayOfInterval, format, getDay, addDays } from "date-fns";
+import { eachDayOfInterval, format, getDay, addDays } from "date-fns";
+import { mytMonthRange } from "@/lib/utils";
 
 // 8 time slots × 2h each
 const ALL_SLOTS = [
@@ -107,9 +108,10 @@ export async function POST(req: NextRequest) {
 
   // ── 4. Generate sessions — no host assigned ──
   const strategy = getStrategy(targetHours);
+  const { start: mStart, end: mEnd } = mytMonthRange(month, year);
   const allDays = eachDayOfInterval({
-    start: startOfMonth(new Date(year, month - 1)),
-    end:   endOfMonth(new Date(year, month - 1)),
+    start: mStart,
+    end:   mEnd,
   });
 
   const DOW_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];

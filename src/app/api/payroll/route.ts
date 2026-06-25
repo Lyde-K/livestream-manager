@@ -1,18 +1,18 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfMonth, endOfMonth } from "date-fns";
+import { mytMonthYear, mytMonthRange } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const month = Number(searchParams.get("month")) || new Date().getMonth() + 1;
-  const year = Number(searchParams.get("year")) || new Date().getFullYear();
+  const { month: mM, year: mY } = mytMonthYear();
+  const month = Number(searchParams.get("month")) || mM;
+  const year = Number(searchParams.get("year")) || mY;
 
-  const monthStart = startOfMonth(new Date(year, month - 1));
-  const monthEnd = endOfMonth(new Date(year, month - 1));
+  const { start: monthStart, end: monthEnd } = mytMonthRange(month, year);
 
   // Get all part-time hosts
   const partTimeHosts = await prisma.liveHost.findMany({

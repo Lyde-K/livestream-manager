@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { mytToday } from "@/lib/utils";
 import { deriveMetrics, getPercentileMetricKeys } from "./derive";
 import type {
   BenchmarkRow,
@@ -185,7 +186,7 @@ export async function computeBenchmark(
     brandId: source === "PLATFORM_FALLBACK" ? null : brandId,
     platform,
     source,
-    asOf: new Date().toISOString().slice(0, 10),
+    asOf: mytToday(),
     metrics: buildBenchmarkRows(filtered, platform),
   };
 }

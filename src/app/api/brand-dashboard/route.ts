@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
+import { subMonths, format } from "date-fns";
+import { mytMonthRange } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -23,8 +24,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid month/year" }, { status: 400 });
   }
 
-  const monthStart = startOfMonth(new Date(year, month, 1));
-  const monthEnd   = endOfMonth(new Date(year, month, 1));
+  const { start: monthStart, end: monthEnd } = mytMonthRange(month, year);
 
   // ── 1. Top hosts for this brand this month ────────────────────────────────
   const completedWithHost = await prisma.session.findMany({
@@ -64,13 +64,14 @@ export async function GET(req: NextRequest) {
     .map(h => ({ ...h, gmvPerHour: h.hours > 0 ? h.gmv / h.hours : 0 }));
 
   // ── 2. 6-month GMV trend ──────────────────────────────────────────────────
-  const anchorDate = new Date(year, month, 1);
+  const anchorDate = new Date(year, month - 1, 1);
   const trendMonthDates = Array.from({ length: 6 }, (_, i) => subMonths(anchorDate, 5 - i));
 
   const monthlyTrend = await Promise.all(
     trendMonthDates.map(async (d) => {
-      const start = startOfMonth(d);
-      const end   = endOfMonth(d);
+      const m = d.getMonth() + 1;
+      const y = d.getFullYear();
+      const { start, end } = mytMonthRange(m, y);
       const rows  = await prisma.session.findMany({
         where: { brandId, scheduledStart: { gte: start, lte: end }, status: "COMPLETED" },
         select: { gmv: true, actualDurationMinutes: true, adsCost: true },
@@ -79,8 +80,8 @@ export async function GET(req: NextRequest) {
       const hours    = rows.reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0) / 60, 0);
       const adsCost  = rows.reduce((sum, s) => sum + (s.adsCost            ?? 0), 0);
       return {
-        month:    d.getMonth(),
-        year:     d.getFullYear(),
+        month:    m - 1,
+        year:     y,
         label:    format(d, "MMM"),
         gmv,
         hours,

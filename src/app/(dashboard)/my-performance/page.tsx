@@ -8,10 +8,15 @@ import type { HostMonthlyStats } from "@/lib/commission";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+function mytMonthYear() {
+  const myt = new Date(Date.now() + 8 * 3_600_000);
+  return { month: myt.getUTCMonth() + 1, year: myt.getUTCFullYear() };
+}
+
 export default function MyPerformancePage() {
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const { month: mM, year: mY } = mytMonthYear();
+  const [month, setMonth] = useState(mM);
+  const [year, setYear] = useState(mY);
   const [stats, setStats] = useState<HostMonthlyStats | null>(null);
   const [loading, setLoading] = useState(false);
 
