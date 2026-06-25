@@ -860,6 +860,17 @@ export default function SchedulePage() {
             setDetailSession(null);
             setOpen(true);
           }}
+          onPasteSlot={async (roomId, start, end, cb) => {
+            await fetch("/api/sessions", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                roomId, liveHostId: cb.liveHostId ?? "", brandId: cb.brandId,
+                platform: cb.platform, isCampaignDay: cb.isCampaignDay,
+                scheduledStart: toMYT(start), scheduledEnd: toMYT(end), notes: "",
+              }),
+            });
+            await reloadCurrentRange();
+          }}
         />
       )}
 
