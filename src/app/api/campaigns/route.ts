@@ -1,6 +1,17 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { toMytDateStr } from "@/lib/utils";
+
+// Returns the first N MYT date strings starting from a UTC Date
+function campaignBlackoutDays(startDate: Date, n = 2): string[] {
+  const days: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(startDate.getTime() + i * 86_400_000);
+    days.push(toMytDateStr(d));
+  }
+  return days;
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -34,6 +45,7 @@ export async function POST(req: NextRequest) {
   if (!name || !platform || !startDate || !endDate)
     return Response.json({ error: "name, platform, startDate and endDate are required" }, { status: 400 });
 
+  const user = session.user as { id: string };
   const start = new Date(startDate);
   const end   = new Date(endDate);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,5 +61,22 @@ export async function POST(req: NextRequest) {
     },
     include: { brand: { select: { id: true, name: true, color: true } } },
   });
+
+  // Auto-create blackout dates for the first 2 days of the campaign
+  const blackoutDays = campaignBlackoutDays(start);
+  await Promise.all(blackoutDays.map(async (date, i) => {
+    const existing = await prisma.rLBlackoutDate.findFirst({ where: { date } });
+    if (!existing) {
+      await prisma.rLBlackoutDate.create({
+        data: {
+          id: `bl_camp_${campaign.id}_d${i + 1}`,
+          date,
+          reason: `Campaign: ${name} (Day ${i + 1})`,
+          createdBy: user.id,
+        },
+      });
+    }
+  }));
+
   return Response.json(campaign, { status: 201 });
 }
