@@ -706,35 +706,38 @@ export function DailyGridView({
                       const isBrandSel = selBrandKey === cellKey;
                       const isPasteTarget = pasteKey === cellKey;
                       const isBrandCopied = isBrandSel && clipboard?.kind === "brand";
-                      const canPaste = editMode && !!clipboard;
+                      // Empty brand-row cell: only paste-able when clipboard is a brand (can't create session with host alone)
+                      const canPasteBrandEmpty = editMode && clipboard?.kind === "brand";
 
                       if (!session) return (
                         <td key={si}
-                          title={canPaste ? "Click to set paste target, then Ctrl+V" : !editMode && onAddSlot ? "Click to add session" : undefined}
+                          title={canPasteBrandEmpty ? "Click to set paste target, then Ctrl+V" : !editMode && onAddSlot ? "Click to add session" : undefined}
                           onClick={() => {
-                            if (canPaste) setPasteKey(isPasteTarget ? null : cellKey);
+                            if (canPasteBrandEmpty) setPasteKey(isPasteTarget ? null : cellKey);
                             else if (!editMode && onAddSlot) onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end));
                           }}
                           style={{
                             border: isPasteTarget ? "2px dashed var(--accent)" : "1px solid var(--border)",
                             background: isPasteTarget ? "var(--accent-light)" : "var(--bg-card)",
-                            cursor: canPaste || (!editMode && onAddSlot) ? "pointer" : "default",
+                            cursor: canPasteBrandEmpty || (!editMode && onAddSlot) ? "pointer" : "default",
                             textAlign: "center", verticalAlign: "middle", transition: "background 0.15s",
                           }}>
                           {isPasteTarget && clipboard?.kind === "brand"
                             ? <div style={{ padding: "2px 4px", opacity: 0.65, fontSize: 9, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clipboard.brandName}</div>
-                            : canPaste ? <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
+                            : canPasteBrandEmpty ? <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
                             : !editMode && onAddSlot ? <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span>
                             : null}
                         </td>
                       );
 
                       const bg = session.brand.color || "#888";
+                      // Brand row: paste target when clipboard is brand; otherwise select for copy
+                      const brandRowIsPasteMode = editMode && clipboard?.kind === "brand";
                       return (
                         <td key={si}
-                          title={editMode && clipboard ? "Click to set paste target, then Ctrl+V" : editMode ? "Click to select brand · Ctrl+C to copy" : "Click to open"}
+                          title={brandRowIsPasteMode ? "Click to set paste target, then Ctrl+V" : editMode ? "Click to select brand · Ctrl+C to copy" : "Click to open"}
                           onClick={() => {
-                            if (editMode && clipboard) setPasteKey(isPasteTarget ? null : cellKey);
+                            if (brandRowIsPasteMode) setPasteKey(isPasteTarget ? null : cellKey);
                             else if (editMode) setSelBrandKey(isBrandSel ? null : cellKey);
                             else onSessionClick(session);
                           }}
@@ -763,33 +766,30 @@ export function DailyGridView({
                       const isHostSel = selHostKey === cellKey;
                       const isPasteTarget = pasteKey === cellKey;
                       const isHostCopied = isHostSel && clipboard?.kind === "host";
-                      const canPaste = editMode && !!clipboard;
+                      // Host row: paste-able only when clipboard is a host (empty cell: need existing session to assign host to)
+                      const hostRowIsPasteMode = editMode && clipboard?.kind === "host";
 
                       if (!session) return (
                         <td key={si}
                           onClick={() => {
-                            if (canPaste) setPasteKey(isPasteTarget ? null : cellKey);
-                            else if (!editMode && onAddSlot) onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end));
+                            // Can't paste host into an empty slot (no session exists to assign to)
+                            if (!editMode && onAddSlot) onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end));
                           }}
                           style={{
-                            border: isPasteTarget ? "2px dashed var(--accent)" : "1px solid var(--border)",
-                            background: isPasteTarget ? "var(--accent-light)" : "var(--bg-card)",
-                            cursor: canPaste || (!editMode && onAddSlot) ? "pointer" : "default",
+                            border: "1px solid var(--border)",
+                            background: "var(--bg-card)",
+                            cursor: !editMode && onAddSlot ? "pointer" : "default",
                             textAlign: "center", verticalAlign: "middle",
                           }}>
-                          {isPasteTarget && clipboard?.kind === "host"
-                            ? <div style={{ padding: "2px 4px", opacity: 0.65, fontSize: 9, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clipboard.hostName}</div>
-                            : canPaste ? <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
-                            : !editMode && onAddSlot ? <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span>
-                            : null}
+                          {!editMode && onAddSlot ? <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span> : null}
                         </td>
                       );
 
                       return (
                         <td key={si}
-                          title={editMode && clipboard ? "Click to set paste target, then Ctrl+V" : editMode ? "Click to select host · Ctrl+C to copy" : "Click to open"}
+                          title={hostRowIsPasteMode ? "Click to set paste target, then Ctrl+V" : editMode ? "Click to select host · Ctrl+C to copy" : "Click to open"}
                           onClick={() => {
-                            if (editMode && clipboard) setPasteKey(isPasteTarget ? null : cellKey);
+                            if (hostRowIsPasteMode) setPasteKey(isPasteTarget ? null : cellKey);
                             else if (editMode) setSelHostKey(isHostSel ? null : cellKey);
                             else onSessionClick(session);
                           }}
