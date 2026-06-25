@@ -1,17 +1,16 @@
 "use client";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { format, parseISO, addDays } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   CalendarOff, CheckCircle2, XCircle, Clock, Plus, ChevronDown, ChevronUp,
-  Info, TrendingUp, Hourglass, CircleCheck, Sparkles, Users, AlertCircle,
-  Download, Shield, Calendar, ChevronLeft, ChevronRight, Ban, History,
-  BarChart3, Target, Zap,
+  Info, TrendingUp, CircleCheck, Sparkles, Users, AlertCircle,
+  Download, Calendar, ChevronLeft, ChevronRight, Ban, History,
+  BarChart3, Target, Zap, Hourglass,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
-import { Badge } from "@/components/ui/badge";
-import type { RLContribution, RLUnit, RLSummary } from "@/app/api/replacement-leave/route";
+import type { RLUnit, RLSummary } from "@/app/api/replacement-leave/route";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -110,7 +109,7 @@ function AccrualProgressBar({ summary }: { summary: RLSummary }) {
       </div>
       <div className="flex justify-between mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
         <span>{pct}% complete</span>
-        <span>{pct < 100 ? `${needed.toFixed(1)}h to go` : "Ready to unlock!"}</span>
+        <span>{pct < 100 ? `${needed.toFixed(1)}h to go` : "Ready to use!"}</span>
       </div>
     </div>
   );
@@ -244,8 +243,6 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const nextUnlock = summary.units.find(u => !u.isUnlocked);
-
   async function submit() {
     if (!selectedDate) { setError("Please select a date."); return; }
     if (!category) { setError("Please select a leave category."); return; }
@@ -272,18 +269,14 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
           </div>
           <div className="w-px h-8 self-center" style={{ background: "var(--border)" }} />
           <div className="text-center flex-1">
-            <div className="text-2xl font-bold" style={{ color: "var(--text-secondary)" }}>{summary.unitsPendingUnlock}</div>
-            <div className="text-xs" style={{ color: "var(--text-muted)" }}>Pending Unlock</div>
+            <div className="text-2xl font-bold" style={{ color: "var(--text-secondary)" }}>{summary.unitsUsed}</div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>Used</div>
           </div>
-          {nextUnlock && (
-            <>
-              <div className="w-px h-8 self-center" style={{ background: "var(--border)" }} />
-              <div className="text-center flex-1">
-                <div className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Next unlock</div>
-                <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{fmtDate(nextUnlock.unlockDate)}</div>
-              </div>
-            </>
-          )}
+          <div className="w-px h-8 self-center" style={{ background: "var(--border)" }} />
+          <div className="text-center flex-1">
+            <div className="text-2xl font-bold" style={{ color: "#f97316" }}>{summary.hoursToNextUnit.toFixed(1)}h</div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>To next unit</div>
+          </div>
         </div>
 
         {summary.unitsAvailable < 1 ? (
@@ -401,6 +394,8 @@ function HostView() {
 
   const { summary, applications } = data!;
   const today = mytToday();
+  const soon = new Date(Date.now() + 7 * 86_400_000);
+  const expiringSoon = summary.units.filter(u => !u.isExpired && new Date(u.expiresAt) <= soon).length;
 
   return (
     <div className="space-y-6">
@@ -420,10 +415,10 @@ function HostView() {
       {/* Balance Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { icon: CircleCheck,  label: "Available",        value: summary.unitsAvailable,      color: "#22c55e",           hint: "Ready to use now" },
-          { icon: Hourglass,    label: "Expiring Soon",    value: summary.units.filter(u => !u.isExpired && u.isUnlocked && new Date(u.expiresAt) <= new Date(Date.now() + 7 * 86400_000)).length, color: "#f59e0b", hint: "Expire within 7 days" },
-          { icon: Clock,        label: "Awaiting Approval",value: summary.unitsPendingApproval, color: "#6366f1",           hint: "Applications pending" },
-          { icon: TrendingUp,   label: "Used",             value: summary.unitsUsed,            color: "var(--text-muted)", hint: "Approved leaves taken" },
+          { icon: CircleCheck, label: "Available",         value: summary.unitsAvailable,      color: "#22c55e",           hint: "Ready to use now" },
+          { icon: Hourglass,   label: "Expiring Soon",     value: expiringSoon,                color: "#f59e0b",           hint: "Expire within 7 days" },
+          { icon: Clock,       label: "Awaiting Approval", value: summary.unitsPendingApproval, color: "#6366f1",          hint: "Applications pending" },
+          { icon: TrendingUp,  label: "Used",              value: summary.unitsUsed,            color: "var(--text-muted)", hint: "Approved leaves taken" },
         ].map(({ icon: Icon, label, value, color, hint }) => (
           <div key={label} className="section-card p-4 flex flex-col gap-1">
             <div className="flex items-center gap-2 mb-1">
