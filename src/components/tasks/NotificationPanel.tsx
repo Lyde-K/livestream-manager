@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, Bell, CheckCheck, Clock, RefreshCw, X } from "lucide-react";
 
 interface TaskRef { id: string; title: string; }
@@ -23,7 +24,20 @@ interface AlertTask {
   team?: { id: string; name: string } | null;
 }
 
+// Map notification type → page route (null = task panel via event)
+const NOTIFICATION_ROUTES: Record<string, string | null> = {
+  rl_apply:       "/leave",
+  rl_approved:    "/leave",
+  rl_rejected:    "/leave",
+  task_assigned:  null,
+  task_comment:   null,
+  task_updated:   null,
+  task_due_today: null,
+  task_review:    null,
+};
+
 export function NotificationPanel() {
+  const router = useRouter();
   const [mounted, setMounted]             = useState(false);
   const [open, setOpen]                   = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -116,6 +130,23 @@ export function NotificationPanel() {
     setOpen(false);
   }
 
+  function handleNotificationClick(n: Notification) {
+    if (!n.read) markRead(n.id);
+    const route = NOTIFICATION_ROUTES[n.type];
+    if (route !== undefined) {
+      // Known route: navigate to page (null means task panel)
+      if (route === null && n.task?.id) {
+        goToTask(n.task.id);
+      } else if (route) {
+        setOpen(false);
+        router.push(route);
+      }
+    } else if (n.task?.id) {
+      // Unknown type but has task reference — fall back to task panel
+      goToTask(n.task.id);
+    }
+  }
+
   function timeAgo(iso: string) {
     const diff = Date.now() - new Date(iso).getTime();
     const m = Math.floor(diff / 60_000);
@@ -133,8 +164,19 @@ export function NotificationPanel() {
       task_updated:   "✏️",
       task_due_today: "⏰",
       task_review:    "👁️",
+      rl_apply:       "🗓️",
+      rl_approved:    "✅",
+      rl_rejected:    "❌",
     };
     return icons[type] ?? "🔔";
+  }
+
+  function notificationActionLabel(n: Notification): string | null {
+    const route = NOTIFICATION_ROUTES[n.type];
+    if (route === "/leave") return "View in Leave →";
+    if (route === null && n.task?.id) return "Go to task →";
+    if (n.task?.id) return "Go to task →";
+    return null;
   }
 
   function alertMeta(reason: "review" | "overdue" | "due_today") {
@@ -251,49 +293,53 @@ export function NotificationPanel() {
               <p style={{ margin: 0, fontSize: "13px" }}>You're all caught up!</p>
             </div>
           ) : (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                onClick={() => { if (!n.read) markRead(n.id); }}
-                style={{
-                  padding: "12px 16px",
-                  borderBottom: "1px solid var(--border)",
-                  background: n.read ? "transparent" : "var(--accent-light)",
-                  cursor: n.read ? "default" : "pointer",
-                  display: "flex", gap: "10px", alignItems: "flex-start",
-                  transition: "background 0.15s",
-                }}
-              >
-                <span style={{ fontSize: "18px", flexShrink: 0, marginTop: "2px" }}>{typeIcon(n.type)}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                    <p style={{ margin: "0 0 3px", fontSize: "12px", fontWeight: n.read ? 400 : 600, color: "var(--text-primary)", lineHeight: 1.4 }}>
-                      {n.title}
-                    </p>
-                    {!n.read && (
-                      <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--accent)", flexShrink: 0, marginTop: "4px" }} />
-                    )}
-                  </div>
-                  <p style={{ margin: "0 0 4px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.4 }}>{n.message}</p>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                    <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{timeAgo(n.createdAt)}</span>
-                    {n.task?.id && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); goToTask(n.task!.id); }}
-                        style={{
-                          fontSize: "10px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px",
-                          border: "1px solid var(--border)", background: "none",
-                          color: "var(--accent)", cursor: "pointer", fontFamily: "inherit",
-                          flexShrink: 0,
-                        }}
-                      >
-                        Go to task →
-                      </button>
-                    )}
+            notifications.map((n) => {
+              const actionLabel = notificationActionLabel(n);
+              const isClickable = !!actionLabel;
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => handleNotificationClick(n)}
+                  style={{
+                    padding: "12px 16px",
+                    borderBottom: "1px solid var(--border)",
+                    background: n.read ? "transparent" : "var(--accent-light)",
+                    cursor: isClickable ? "pointer" : "default",
+                    display: "flex", gap: "10px", alignItems: "flex-start",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  <span style={{ fontSize: "18px", flexShrink: 0, marginTop: "2px" }}>{typeIcon(n.type)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                      <p style={{ margin: "0 0 3px", fontSize: "12px", fontWeight: n.read ? 400 : 600, color: "var(--text-primary)", lineHeight: 1.4 }}>
+                        {n.title}
+                      </p>
+                      {!n.read && (
+                        <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--accent)", flexShrink: 0, marginTop: "4px" }} />
+                      )}
+                    </div>
+                    <p style={{ margin: "0 0 4px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.4 }}>{n.message}</p>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                      <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{timeAgo(n.createdAt)}</span>
+                      {actionLabel && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleNotificationClick(n); }}
+                          style={{
+                            fontSize: "10px", fontWeight: 600, padding: "2px 8px", borderRadius: "6px",
+                            border: "1px solid var(--border)", background: "none",
+                            color: "var(--accent)", cursor: "pointer", fontFamily: "inherit",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {actionLabel}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
