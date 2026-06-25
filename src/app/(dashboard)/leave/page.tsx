@@ -1216,13 +1216,13 @@ function AdminView() {
           <div className="flex items-center gap-2">
             <button onClick={syncCampaignBlackouts}
               disabled={syncing}
-              className="text-xs px-2 py-1 rounded cursor-pointer"
-              style={{ background: "#6366f120", color: "#6366f1", opacity: syncing ? 0.6 : 1 }}>
+              className="text-xs px-3 py-1.5 rounded-lg cursor-pointer font-medium"
+              style={{ background: "rgba(99,102,241,0.18)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.3)", opacity: syncing ? 0.6 : 1 }}>
               {syncing ? "Syncing…" : "↻ Sync Campaigns"}
             </button>
             <button onClick={() => setBlackoutOpen(true)}
-              className="text-xs px-2 py-1 rounded cursor-pointer"
-              style={{ background: "var(--accent-light)", color: "var(--accent)" }}>
+              className="text-xs px-3 py-1.5 rounded-lg cursor-pointer font-medium"
+              style={{ background: "var(--accent-light)", color: "var(--accent)", border: "1px solid rgba(22,119,255,0.3)" }}>
               + Add
             </button>
             <div className="cursor-pointer" onClick={() => setShowBlackouts(v => !v)}>
