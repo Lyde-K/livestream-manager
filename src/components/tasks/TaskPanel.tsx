@@ -65,13 +65,53 @@ function labelColor(label: string): string {
   return colors[label.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % colors.length];
 }
 
-const STATUS_NEXT: Record<string, string> = { todo: "in_progress", in_progress: "done", in_review: "done", done: "todo" };
+const STATUS_NEXT: Record<string, string> = { todo: "in_progress", in_progress: "in_review", in_review: "done", done: "todo" };
 
 const PILL = (text: string, color: string, bg: string) => (
   <span style={{ fontSize: "10px", fontWeight: 600, padding: "2px 7px", borderRadius: "20px", background: bg, color, letterSpacing: "0.03em", whiteSpace: "nowrap" as const }}>
     {text}
   </span>
 );
+
+// ── ReviewChoiceModal ─────────────────────────────────────────────────────────
+
+function ReviewChoiceModal({ taskTitle, onReview, onDone, onCancel }: {
+  taskTitle: string;
+  onReview: () => void;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  return createPortal(
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 360, background: "var(--bg-card)", border: "1px solid var(--border-strong)", borderRadius: 16, padding: "24px", boxShadow: "0 24px 80px rgba(0,0,0,0.4)" }}>
+        <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>Complete Task</p>
+        <p style={{ margin: "0 0 20px", fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+          How would you like to progress <strong style={{ color: "var(--text-primary)" }}>&ldquo;{taskTitle}&rdquo;</strong>?
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button onClick={onReview} style={{ padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(139,92,246,0.4)", background: "rgba(139,92,246,0.10)", color: "#a78bfa", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+            <Clock size={14} />
+            <div>
+              <div>Send for Review</div>
+              <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>Notify the team owner to review this task</div>
+            </div>
+          </button>
+          <button onClick={onDone} style={{ padding: "11px 16px", borderRadius: 10, border: "1px solid rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.10)", color: "#34d399", fontSize: 13, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+            <CheckCircle2 size={14} />
+            <div>
+              <div>Mark as Done</div>
+              <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.8 }}>Skip review and complete immediately</div>
+            </div>
+          </button>
+          <button onClick={onCancel} style={{ padding: "8px", borderRadius: 8, border: "none", background: "none", color: "var(--text-muted)", fontSize: 12, cursor: "pointer" }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 // ── Avatar ─────────────────────────────────────────────────────────────────────
 
@@ -100,9 +140,11 @@ function TaskCard({
   onSelect: (id: string) => void;
   selected: boolean; compact?: boolean; draggable?: boolean;
 }) {
+  const [showReviewChoice, setShowReviewChoice] = useState(false);
   const sm = STATUS_META[task.status] ?? STATUS_META.todo;
   const pm = PRIORITY_META[task.priority] ?? PRIORITY_META.medium;
-  const isOverdue = task.dueDate && task.status !== "done" && task.status !== "in_review" && new Date(task.dueDate) < new Date();
+  const isDone    = task.status === "done";
+  const isOverdue = task.dueDate && !isDone && task.status !== "in_review" && new Date(task.dueDate) < new Date();
   const labels = parseLabels(task.labels);
   const isAssignee  = task.assignees.some((a) => a.userId === currentUserId);
   const isCreator   = task.createdBy?.id === currentUserId;
@@ -110,6 +152,16 @@ function TaskCard({
     ? teams.some((t) => t.id === task.team?.id && t.members.some((m) => m.userId === currentUserId && m.role === "owner"))
     : false;
   const canChange   = isAssignee || isCreator || isTeamOwner;
+
+  function handleStatusClick(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!canChange) return;
+    if (task.status === "in_progress") {
+      setShowReviewChoice(true);
+    } else {
+      onStatusChange(task.id, STATUS_NEXT[task.status] ?? "todo");
+    }
+  }
   const subtaskTotal = task._count.children ?? 0;
 
   return (
@@ -123,12 +175,21 @@ function TaskCard({
         borderRadius: "10px", padding: compact ? "8px 10px" : "10px 12px",
         cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
         marginBottom: "6px", userSelect: "none",
+        opacity: isDone ? 0.45 : 1,
       }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+        {showReviewChoice && (
+          <ReviewChoiceModal
+            taskTitle={task.title}
+            onReview={() => { setShowReviewChoice(false); onStatusChange(task.id, "in_review"); }}
+            onDone={() => { setShowReviewChoice(false); onStatusChange(task.id, "done"); }}
+            onCancel={() => setShowReviewChoice(false)}
+          />
+        )}
         <button
-          onClick={(e) => { e.stopPropagation(); if (canChange) onStatusChange(task.id, STATUS_NEXT[task.status] ?? "todo"); }}
-          title={canChange ? `Mark as ${STATUS_NEXT[task.status]}` : "Only assignees or owner can change status"}
+          onClick={handleStatusClick}
+          title={canChange ? (task.status === "in_progress" ? "Complete task…" : `Mark as ${STATUS_NEXT[task.status]}`) : "Only assignees or owner can change status"}
           style={{ background: "none", border: "none", cursor: canChange ? "pointer" : "not-allowed", padding: "2px", color: sm.color, flexShrink: 0, marginTop: "1px", opacity: canChange ? 1 : 0.4 }}
         >
           <sm.Icon size={15} />
@@ -1443,20 +1504,27 @@ export function TaskPanel({ userId, userRole }: Props) {
   const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
   const activeListTasks = (tab === "mine" || tab === "all")
-    ? tasks
-        .filter(t => t.status === "in_progress")
-        .map(t => ({ ...t, _dynPriority: computeDynamicPriority(t) }))
-        .sort((a, b) => {
-          const aHas = !!a.dueDate, bHas = !!b.dueDate;
-          if (aHas && bHas) {
-            const dateDiff = new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime();
-            if (dateDiff !== 0) return dateDiff; // soonest first
+    ? (() => {
+        const inProgress = tasks
+          .filter(t => t.status === "in_progress")
+          .map(t => ({ ...t, _dynPriority: computeDynamicPriority(t) }))
+          .sort((a, b) => {
+            const aHas = !!a.dueDate, bHas = !!b.dueDate;
+            if (aHas && bHas) {
+              const diff = new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime();
+              if (diff !== 0) return diff;
+              return (PRIORITY_RANK[a._dynPriority] ?? 3) - (PRIORITY_RANK[b._dynPriority] ?? 3);
+            }
+            if (aHas) return -1;
+            if (bHas) return 1;
             return (PRIORITY_RANK[a._dynPriority] ?? 3) - (PRIORITY_RANK[b._dynPriority] ?? 3);
-          }
-          if (aHas) return -1; // tasks with deadline float up
-          if (bHas) return 1;
-          return (PRIORITY_RANK[a._dynPriority] ?? 3) - (PRIORITY_RANK[b._dynPriority] ?? 3);
-        })
+          });
+        const done = tasks
+          .filter(t => t.status === "done")
+          .map(t => ({ ...t, _dynPriority: t.priority }))
+          .sort((a, b) => (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3));
+        return [...inProgress, ...done];
+      })()
     : null;
   const panelWidth   = expanded || tab === "board" ? "680px" : "420px";
 
