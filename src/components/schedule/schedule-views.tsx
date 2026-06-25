@@ -402,6 +402,10 @@ type Clipboard =
   | { kind: "host";  liveHostId: string | null; hostName: string }
   | null;
 
+type UndoEntry =
+  | { action: "created"; sessionId: string }
+  | { action: "updated"; sessionId: string; prev: NonNullable<Clipboard> };
+
 interface DailyGridViewProps {
   gridDate: string;
   setGridDate: (d: string) => void;
@@ -414,14 +418,15 @@ interface DailyGridViewProps {
   filterHost?: string;
   onSessionClick: (s: Session) => void;
   onAddSlot?: (roomId: string, start: string, end: string) => void;
-  onPasteSlot?: (roomId: string, start: string, end: string, cb: NonNullable<Clipboard>) => void;
-  onUpdateSlot?: (sessionId: string, cb: NonNullable<Clipboard>) => void;
+  onPasteSlot?: (roomId: string, start: string, end: string, cb: NonNullable<Clipboard>) => Promise<string>;
+  onUpdateSlot?: (sessionId: string, cb: NonNullable<Clipboard>) => Promise<void>;
+  onDeleteSlot?: (sessionId: string) => Promise<void>;
 }
 
 export function DailyGridView({
   gridDate, setGridDate, sessions, rooms, hosts = [],
   filterBrand = "", filterRoom = "", filterType = "", filterHost = "",
-  onSessionClick, onAddSlot, onPasteSlot, onUpdateSlot,
+  onSessionClick, onAddSlot, onPasteSlot, onUpdateSlot, onDeleteSlot,
 }: DailyGridViewProps) {
   const [editMode, setEditMode]   = useState(false);
   // one selected row key at a time: either a brand-row or host-row cell
@@ -430,13 +435,17 @@ export function DailyGridView({
   // single clipboard — last Ctrl+C wins and replaces everything
   const [clipboard, setClipboard] = useState<Clipboard>(null);
   const [pasteKey, setPasteKey]   = useState<string | null>(null);
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
 
   function clearSel() { setSelBrandKey(null); setSelHostKey(null); }
+
+  function pushUndo(entry: UndoEntry) { setUndoStack(s => [...s, entry]); }
 
   function exitEditMode() {
     setEditMode(false);
     setSelBrandKey(null); setSelHostKey(null);
     setClipboard(null); setPasteKey(null);
+    setUndoStack([]);
   }
 
   function slotDatetime(h: number): string {
@@ -499,11 +508,12 @@ export function DailyGridView({
     return map;
   }, [daySessions, activeSlots]);
 
-  // Reset when day changes or edit mode exits
+  // Reset when day changes
   useEffect(() => {
     setSelBrandKey(null); setSelHostKey(null);
     setClipboard(null); setPasteKey(null);
-  }, [gridDate, editMode]);
+    setUndoStack([]);
+  }, [gridDate]);
 
   // Keyboard shortcuts — only active in edit mode
   useEffect(() => {
@@ -512,7 +522,6 @@ export function DailyGridView({
       if (e.key === "Escape") { exitEditMode(); return; }
 
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        // Last selected row type wins — replaces entire clipboard
         if (selHostKey) {
           const s = roomSlotMap.get(selHostKey);
           if (s) { setClipboard({ kind: "host", liveHostId: s.liveHostId, hostName: s.liveHost?.displayName ?? "" }); clearSel(); e.preventDefault(); }
@@ -520,29 +529,52 @@ export function DailyGridView({
           const s = roomSlotMap.get(selBrandKey);
           if (s) { setClipboard({ kind: "brand", brandId: s.brandId, brandName: s.brand.name, brandColor: s.brand.color, platform: s.platform, isCampaignDay: s.isCampaignDay }); clearSel(); e.preventDefault(); }
         }
+        return;
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === "v" && pasteKey && clipboard) {
+        e.preventDefault();
         const [roomId, siStr] = pasteKey.split("|");
         const slot = activeSlots[Number(siStr)];
         if (!slot) return;
         const existing = roomSlotMap.get(pasteKey);
-        if (existing) {
-          // Update only the specific field that was copied
-          onUpdateSlot?.(existing.id, clipboard);
-        } else if (clipboard.kind === "brand") {
-          // Create new session with brand (host left empty — can be filled later)
-          onPasteSlot?.(roomId, slotDatetime(slot.start), slotDatetime(slot.end), clipboard);
-        }
-        // If clipboard is host-only and slot is empty, nothing to do (no brand to create with)
         setPasteKey(null);
+        if (existing) {
+          // Capture previous state for undo before updating
+          const prev: NonNullable<Clipboard> = clipboard.kind === "brand"
+            ? { kind: "brand", brandId: existing.brandId, brandName: existing.brand.name, brandColor: existing.brand.color, platform: existing.platform, isCampaignDay: existing.isCampaignDay }
+            : { kind: "host", liveHostId: existing.liveHostId, hostName: existing.liveHost?.displayName ?? "" };
+          onUpdateSlot?.(existing.id, clipboard).then(() => {
+            pushUndo({ action: "updated", sessionId: existing.id, prev });
+          });
+        } else if (clipboard.kind === "brand") {
+          const cb = clipboard;
+          onPasteSlot?.(roomId, slotDatetime(slot.start), slotDatetime(slot.end), cb).then((newId) => {
+            pushUndo({ action: "created", sessionId: newId });
+          });
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
+        setUndoStack(stack => {
+          if (stack.length === 0) return stack;
+          const entry = stack[stack.length - 1];
+          const next = stack.slice(0, -1);
+          if (entry.action === "created") {
+            onDeleteSlot?.(entry.sessionId);
+          } else {
+            onUpdateSlot?.(entry.sessionId, entry.prev);
+          }
+          return next;
+        });
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, selBrandKey, selHostKey, clipboard, pasteKey, roomSlotMap, activeSlots, onPasteSlot, onUpdateSlot]);
+  }, [editMode, selBrandKey, selHostKey, clipboard, pasteKey, roomSlotMap, activeSlots, onPasteSlot, onUpdateSlot, onDeleteSlot]);
 
   const colWidth = 120;
   const labelWidth = 140;
@@ -607,6 +639,11 @@ export function DailyGridView({
               Click <strong style={{ color: "var(--accent)" }}>Store row</strong> to select brand ·&nbsp;
               Click <strong style={{ color: "var(--accent)" }}>Host row</strong> to select host ·&nbsp;
               Ctrl+C to copy · Ctrl+V to paste · Esc to exit
+            </span>
+          )}
+          {undoStack.length > 0 && (
+            <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 10 }}>
+              Ctrl+Z to undo ({undoStack.length})
             </span>
           )}
         </div>

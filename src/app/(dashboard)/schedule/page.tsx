@@ -861,8 +861,8 @@ export default function SchedulePage() {
             setOpen(true);
           }}
           onPasteSlot={async (roomId, start, end, cb) => {
-            if (cb.kind !== "brand") return;
-            await fetch("/api/sessions", {
+            if (cb.kind !== "brand") return "";
+            const res = await fetch("/api/sessions", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 roomId, brandId: cb.brandId, liveHostId: "",
@@ -870,7 +870,9 @@ export default function SchedulePage() {
                 scheduledStart: toMYT(start), scheduledEnd: toMYT(end), notes: "",
               }),
             });
+            const data = await res.json();
             await reloadCurrentRange();
+            return data.id as string;
           }}
           onUpdateSlot={async (sessionId, cb) => {
             const body: Record<string, unknown> = cb.kind === "brand"
@@ -880,6 +882,10 @@ export default function SchedulePage() {
               method: "PUT", headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
             });
+            await reloadCurrentRange();
+          }}
+          onDeleteSlot={async (sessionId) => {
+            await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
             await reloadCurrentRange();
           }}
         />
