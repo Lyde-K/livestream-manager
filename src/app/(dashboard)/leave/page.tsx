@@ -14,6 +14,8 @@ import type { RLUnit, RLSummary } from "@/app/api/replacement-leave/route";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
+type BlackoutDate = { id: string; date: string; reason: string };
+
 function mytToday(): string {
   return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
 }
@@ -242,6 +244,19 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [blackoutDates, setBlackoutDates] = useState<BlackoutDate[]>([]);
+
+  useEffect(() => {
+    fetch("/api/replacement-leave/blackout")
+      .then(r => r.ok ? r.json() : { blackouts: [] })
+      .then(d => setBlackoutDates(Array.isArray(d?.blackouts) ? d.blackouts : []));
+  }, []);
+
+  const selectedBlackout = selectedDate ? blackoutDates.find(b => b.date === selectedDate) : null;
+  const upcomingBlackouts = blackoutDates
+    .filter(b => b.date >= minDate)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 10);
 
   async function submit() {
     if (!selectedDate) { setError("Please select a date."); return; }
@@ -279,6 +294,25 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
           </div>
         </div>
 
+        {/* Upcoming blackout dates */}
+        {upcomingBlackouts.length > 0 && (
+          <div className="rounded-xl p-3 space-y-2" style={{ background: "#ef444408", border: "1px solid #ef444430" }}>
+            <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "#ef4444" }}>
+              <Ban size={12} /> Blackout Dates — Leave cannot be taken on these days
+            </div>
+            <div className="space-y-1">
+              {upcomingBlackouts.map(b => (
+                <div key={b.id} className="flex items-center justify-between text-xs">
+                  <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                    {format(parseISO(b.date), "d MMM yyyy (EEE)")}
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}>{b.reason}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {summary.unitsAvailable < 1 ? (
           <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: "#ef444410", border: "1px solid #ef444430", color: "#ef4444" }}>
             <AlertCircle size={15} />
@@ -297,8 +331,19 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
                   min={minDate}
                   onChange={e => { setSelectedDate(e.target.value); setError(""); }}
                   className="w-full px-3 py-2 rounded-lg text-sm"
-                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", colorScheme: "dark" }}
+                  style={{
+                    background: "var(--bg-subtle)",
+                    border: `1px solid ${selectedBlackout ? "#ef4444" : "var(--border)"}`,
+                    color: "var(--text-primary)",
+                    colorScheme: "dark",
+                  }}
                 />
+                {selectedBlackout && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-xs" style={{ color: "#ef4444" }}>
+                    <Ban size={11} />
+                    <span>This date is blacked out: <strong>{selectedBlackout.reason}</strong>. Please choose another date.</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -347,7 +392,7 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           {summary.unitsAvailable > 0 && (
-            <Button onClick={submit} loading={saving} disabled={!selectedDate || !category}>
+            <Button onClick={submit} loading={saving} disabled={!selectedDate || !category || !!selectedBlackout}>
               <CheckCircle2 size={14} /> Submit Application
             </Button>
           )}
