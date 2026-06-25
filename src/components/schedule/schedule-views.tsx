@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from "date-fns";
+import { formatMYT, mytDateStr } from "@/lib/myt";
 import { ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Calendar } from "lucide-react";
 import { useTheme } from "@/components/ui/date-picker";
 
@@ -36,11 +37,8 @@ export const TIME_SLOTS = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export function formatMYT(iso: string, fmt: string): string {
-  const d = new Date(iso);
-  const myt = new Date(d.getTime() + 8 * 3600_000);
-  return format(parseISO(myt.toISOString().slice(0, 16)), fmt);
-}
+export { formatMYT, mytDateStr } from "@/lib/myt";
+
 
 export function sessionOverlapsSlot(session: Session, slot: { start: number; end: number }): boolean {
   const d = new Date(session.scheduledStart);
@@ -274,7 +272,7 @@ export function DailyListView({
       if (filterBrand && s.brandId    !== filterBrand) continue;
       if (filterRoom  && s.roomId     !== filterRoom)  continue;
       if (filterType  && s.platform   !== filterType)  continue;
-      const dateStr = format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000), "yyyy-MM-dd");
+      const dateStr = mytDateStr(s.scheduledStart);
       const arr = map.get(dateStr) ?? [];
       arr.push(s);
       map.set(dateStr, arr);

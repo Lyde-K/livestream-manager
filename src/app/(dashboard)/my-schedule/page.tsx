@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { PlatformBadge } from "@/components/ui/platform-badge";
 import { formatCurrency } from "@/lib/utils";
-import { Session, formatMYT } from "@/components/schedule/schedule-views";
+import { Session } from "@/components/schedule/schedule-views";
+import { formatMYT, mytDateStr, mytMonthStr } from "@/lib/myt";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ export default function MySchedulePage() {
   const byDay = useMemo(() => {
     const map = new Map<string, Session[]>();
     for (const s of sessions) {
-      const dateStr = new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
+      const dateStr = mytDateStr(s.scheduledStart);
       const arr = map.get(dateStr) ?? [];
       arr.push(s);
       map.set(dateStr, arr);
@@ -109,7 +110,7 @@ export default function MySchedulePage() {
   }
 
   const totalThisMonth = sessions.filter(s =>
-    new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000).toISOString().slice(0, 7) === monthStr
+    mytMonthStr(s.scheduledStart) === monthStr
   ).length;
 
   return (

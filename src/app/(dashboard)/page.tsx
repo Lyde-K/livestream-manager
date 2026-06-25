@@ -11,6 +11,7 @@ import { MonthSelector } from "@/components/ui/month-selector";
 import { BrandDashboardPanel } from "@/components/dashboard/brand-dashboard-panel";
 import { AllBrandsAnalyticsPanel } from "@/components/dashboard/all-brands-analytics-panel";
 import { format, formatDistanceToNow } from "date-fns";
+import { formatMYT } from "@/lib/myt";
 
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
@@ -391,7 +392,7 @@ export default async function DashboardPage(props: {
                       <div className="text-xs" style={{ color: "var(--text-muted)" }}>{s.room?.name ?? "—"} · {s.platform}</div>
                     </div>
                     <div className="text-right text-xs flex-shrink-0" style={{ color: "var(--text-secondary)" }}>
-                      <div className="font-medium">{format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000), "HH:mm")} – {format(new Date(new Date(s.scheduledEnd).getTime() + 8 * 3_600_000), "HH:mm")}</div>
+                      <div className="font-medium">{formatMYT(s.scheduledStart, "HH:mm")} – {formatMYT(s.scheduledEnd, "HH:mm")}</div>
                     </div>
                     <StatusPill status={s.status} punctuality={s.punctuality} />
                   </div>

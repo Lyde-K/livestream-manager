@@ -1,15 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { format } from "date-fns";
+import { formatMYT } from "@/lib/myt";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle2, RefreshCw, Trash2, Info, Flame } from "lucide-react";
 import type { DuplicatePair } from "@/app/api/admin/sessions/duplicates/route";
 
-function sgt(iso: string) {
-  // Display UTC timestamp in SGT (+08:00)
-  const d = new Date(iso);
-  return format(new Date(d.getTime() + 8 * 3600_000), "d MMM yyyy HH:mm");
-}
+const sgt = (iso: string) => formatMYT(iso, "d MMM yyyy HH:mm");
 
 export default function FixDuplicatesPage() {
   const [pairs, setPairs]       = useState<DuplicatePair[]>([]);
