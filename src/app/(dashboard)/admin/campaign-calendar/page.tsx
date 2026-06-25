@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface Brand { id: string; name: string; color: string; }
 interface Campaign {
@@ -249,11 +250,11 @@ export default function CampaignCalendarPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Start Date *</label>
-              <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+              <DatePicker value={form.startDate} onChange={v => setForm({ ...form, startDate: v })} placeholder="Start date" />
             </div>
             <div>
               <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>End Date *</label>
-              <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+              <DatePicker value={form.endDate} min={form.startDate || undefined} onChange={v => setForm({ ...form, endDate: v })} placeholder="End date" />
             </div>
           </div>
           <div>

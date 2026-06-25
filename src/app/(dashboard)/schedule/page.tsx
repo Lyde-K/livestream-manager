@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, X, Filter, Mail, Sparkles, ChevronDown, ChevronUp, CalendarPlus, Wand2, Download, Upload, Clock, BarChart2, Users, LayoutGrid, Calendar, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { formatCurrency } from "@/lib/utils";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Session, Room, Host, MONTHS_SHORT, formatMYT, sessionOverlapsSlot, TIME_SLOTS,
   DayDatePicker, MonthDatePicker, DailyListView, DailyGridView, ScheduleViewToggle,
@@ -1398,11 +1399,11 @@ function ClearSessionsModal({ brands, onClose, onCleared }: { brands: Brand[]; o
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>From</label>
-                <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+                <DatePicker value={customStart} onChange={setCustomStart} placeholder="From" />
               </div>
               <div>
                 <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>To</label>
-                <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+                <DatePicker value={customEnd} onChange={setCustomEnd} min={customStart || undefined} placeholder="To" />
               </div>
             </div>
           )}
@@ -1536,11 +1537,11 @@ function AssignHostsModal({ hosts, onClose, onAssigned }: { hosts: Host[]; onClo
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>From</label>
-                <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+                <DatePicker value={customStart} onChange={setCustomStart} placeholder="From" />
               </div>
               <div>
                 <label className="block text-[11px] mb-1" style={{ color: "var(--text-muted)" }}>To</label>
-                <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+                <DatePicker value={customEnd} onChange={setCustomEnd} min={customStart || undefined} placeholder="To" />
               </div>
             </div>
           )}

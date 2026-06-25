@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import type { RLUnit, RLSummary } from "@/app/api/replacement-leave/route";
+import { DatePicker } from "@/components/ui/date-picker";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -325,18 +326,13 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
                 <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
                   Select Leave Date * <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>(min. 3 days notice)</span>
                 </label>
-                <input
-                  type="date"
+                <DatePicker
                   value={selectedDate}
                   min={minDate}
-                  onChange={e => { setSelectedDate(e.target.value); setError(""); }}
-                  className="w-full px-3 py-2 rounded-lg text-sm"
-                  style={{
-                    background: "var(--bg-subtle)",
-                    border: `1px solid ${selectedBlackout ? "#ef4444" : "var(--border)"}`,
-                    color: "var(--text-primary)",
-                    colorScheme: "dark",
-                  }}
+                  onChange={v => { setSelectedDate(v); setError(""); }}
+                  placeholder="Pick a date…"
+                  highlightDates={upcomingBlackouts.map(b => ({ date: b.date, color: "#ef4444" }))}
+                  style={{ border: selectedBlackout ? "1px solid #ef4444" : undefined }}
                 />
                 {selectedBlackout && (
                   <div className="flex items-center gap-1.5 mt-1.5 text-xs" style={{ color: "#ef4444" }}>
@@ -813,9 +809,7 @@ function AddCreditModal({ hosts, onClose, onDone }: {
           </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Date *</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-sm"
-              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
+            <DatePicker value={date} onChange={setDate} placeholder="Pick a date…" />
           </div>
           <div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Hours (+add / -deduct)</label>
@@ -923,9 +917,7 @@ function BlackoutModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
       <div className="space-y-4">
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Date *</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg text-sm"
-            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
+          <DatePicker value={date} onChange={setDate} placeholder="Pick a date…" />
         </div>
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Reason *</label>

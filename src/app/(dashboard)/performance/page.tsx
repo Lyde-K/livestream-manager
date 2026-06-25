@@ -19,6 +19,7 @@ import {
   startOfDay, endOfDay,
 } from "date-fns";
 import type { HostMonthlyStats } from "@/lib/commission";
+import { DatePicker } from "@/components/ui/date-picker";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -257,9 +258,9 @@ export default function PerformancePage() {
               )}
               {period === "custom" && (
                 <div className="flex items-center gap-2">
-                  <Input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} className="w-36 text-sm"/>
+                  <DatePicker value={customStart} onChange={setCustomStart} placeholder="Start" className="w-36" />
                   <span style={{color:"var(--text-muted)"}}>–</span>
-                  <Input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} className="w-36 text-sm"/>
+                  <DatePicker value={customEnd} onChange={setCustomEnd} min={customStart || undefined} placeholder="End" className="w-36" />
                 </div>
               )}
               {/* Session type filter */}
