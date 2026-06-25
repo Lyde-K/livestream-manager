@@ -1,32 +1,30 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
-import { format, parseISO, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameDay, isToday, isBefore, isAfter, startOfDay } from "date-fns";
+import {
+  format, parseISO, addMonths, subMonths,
+  startOfMonth, endOfMonth, eachDayOfInterval,
+  getDay, isSameDay, isToday, isBefore, isAfter, startOfDay,
+} from "date-fns";
 
 interface DatePickerProps {
-  value: string;           // "YYYY-MM-DD" or ""
+  value: string;
   onChange: (v: string) => void;
-  min?: string;            // "YYYY-MM-DD"
+  min?: string;
   max?: string;
   placeholder?: string;
   className?: string;
   style?: React.CSSProperties;
   disabled?: boolean;
-  highlightDates?: { date: string; color?: string }[];  // dates to highlight
+  highlightDates?: { date: string; color?: string }[];
 }
 
 function toLocal(dateStr: string): Date {
   return parseISO(dateStr + "T00:00:00");
 }
 
-export function DatePicker({
-  value, onChange, min, max, placeholder = "Select date", className = "", style, disabled, highlightDates = []
-}: DatePickerProps) {
-  const [open, setOpen] = useState(false);
-  const [view, setView] = useState<Date>(value ? toLocal(value) : new Date());
-  const [theme, setTheme] = useState<string>("dark");
-  const ref = useRef<HTMLDivElement>(null);
-
+function useTheme() {
+  const [theme, setTheme] = useState("dark");
   useEffect(() => {
     const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
     update();
@@ -34,6 +32,17 @@ export function DatePicker({
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => obs.disconnect();
   }, []);
+  return theme;
+}
+
+export function DatePicker({
+  value, onChange, min, max, placeholder = "Select date",
+  className = "", style, disabled, highlightDates = [],
+}: DatePickerProps) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<Date>(value ? toLocal(value) : new Date());
+  const theme = useTheme();
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -58,18 +67,26 @@ export function DatePicker({
   }, [minDate, maxDate]);
 
   const days = eachDayOfInterval({ start: startOfMonth(view), end: endOfMonth(view) });
-  // Day of week for first day (0=Sun → Mon-indexed: shift)
-  const firstDow = (getDay(startOfMonth(view)) + 6) % 7; // Mon=0
-
+  const firstDow = (getDay(startOfMonth(view)) + 6) % 7;
   const selected = value ? toLocal(value) : null;
+  const highlightMap = new Map(highlightDates.map(h => [h.date, h.color ?? "#ef4444"]));
+
+  const isDark = theme !== "light";
+  const dropBg   = isDark ? "rgba(13,27,48,0.98)"  : "#ffffff";
+  const navBg    = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const navColor = isDark ? "#94a3b8" : "#475569";
+  const headerColor = isDark ? "#f8fafc" : "#07111f";
+  const mutedColor  = isDark ? "#64748b" : "#94a3b8";
+  const dayColor    = isDark ? "#f8fafc" : "#07111f";
+  const dayDisabled = isDark ? "#334155" : "#cbd5e1";
+  const hoverBg     = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)";
+  const todayBorder = "1.5px solid #1677ff";
 
   function select(d: Date) {
     if (isDisabled(d)) return;
     onChange(format(d, "yyyy-MM-dd"));
     setOpen(false);
   }
-
-  const highlightMap = new Map(highlightDates.map(h => [h.date, h.color ?? "#ef4444"]));
 
   return (
     <div ref={ref} className={`relative ${className}`} style={style}>
@@ -82,7 +99,7 @@ export function DatePicker({
         style={{
           height: 34,
           background: "var(--bg-card)",
-          border: `1px solid var(--border)`,
+          border: "1px solid var(--border)",
           borderRadius: "var(--radius-sm)",
           color: value ? "var(--text-primary)" : "var(--text-muted)",
           cursor: disabled ? "not-allowed" : "pointer",
@@ -95,63 +112,69 @@ export function DatePicker({
         </span>
       </button>
 
-      {/* Dropdown calendar */}
+      {/* Dropdown */}
       {open && (
         <div
-          className="absolute z-50 mt-1.5 left-0"
           data-theme={theme}
+          className="absolute z-50 mt-2 left-0"
           style={{
-            background: "var(--bg-card)",
-            border: "1px solid var(--border-strong)",
-            borderRadius: "var(--radius)",
-            boxShadow: "0 16px 48px rgba(0,0,0,0.32)",
-            width: 280,
-            padding: "12px",
-            color: "var(--text-primary)",
+            background: dropBg,
+            borderRadius: 20,
+            boxShadow: isDark
+              ? "0 20px 60px rgba(0,0,0,0.5)"
+              : "0 8px 40px rgba(0,0,0,0.12)",
+            width: 320,
+            padding: "20px 20px 16px",
+            border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)",
           }}
         >
           {/* Month nav */}
-          <div className="flex items-center justify-between mb-3">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <button
               type="button"
               onClick={() => setView(v => subMonths(v, 1))}
-              className="flex items-center justify-center rounded-lg"
-              style={{ width: 28, height: 28, background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}
+              style={{
+                width: 36, height: 36, borderRadius: "50%",
+                background: navBg, border: "none",
+                color: navColor, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
             >
-              <ChevronLeft size={13} />
+              <ChevronLeft size={16} />
             </button>
-            <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: headerColor, letterSpacing: "-0.01em" }}>
               {format(view, "MMMM yyyy")}
             </span>
             <button
               type="button"
               onClick={() => setView(v => addMonths(v, 1))}
-              className="flex items-center justify-center rounded-lg"
-              style={{ width: 28, height: 28, background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-secondary)", cursor: "pointer" }}
+              style={{
+                width: 36, height: 36, borderRadius: "50%",
+                background: navBg, border: "none",
+                color: navColor, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
             >
-              <ChevronRight size={13} />
+              <ChevronRight size={16} />
             </button>
           </div>
 
           {/* Day-of-week headers */}
-          <div className="grid grid-cols-7 mb-1">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6 }}>
             {["Mo","Tu","We","Th","Fr","Sa","Su"].map(d => (
-              <div key={d} className="text-center text-[11px] font-medium py-1"
-                style={{ color: "var(--text-muted)" }}>{d}</div>
+              <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: mutedColor, padding: "4px 0" }}>{d}</div>
             ))}
           </div>
 
           {/* Days grid */}
-          <div className="grid grid-cols-7 gap-y-0.5">
-            {/* Leading empty cells */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px 0" }}>
             {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
-
             {days.map(d => {
               const dateStr = format(d, "yyyy-MM-dd");
-              const isSelected = selected && isSameDay(d, selected);
-              const isTodayDate = isToday(d);
-              const dis = isDisabled(d);
-              const highlight = highlightMap.get(dateStr);
+              const isSel   = selected ? isSameDay(d, selected) : false;
+              const isTod   = isToday(d);
+              const dis     = isDisabled(d);
+              const hl      = highlightMap.get(dateStr);
 
               return (
                 <button
@@ -159,65 +182,38 @@ export function DatePicker({
                   type="button"
                   disabled={dis}
                   onClick={() => select(d)}
-                  className="flex items-center justify-center text-[13px] rounded-lg relative"
                   style={{
-                    height: 32,
-                    fontWeight: isSelected ? 700 : 400,
-                    background: isSelected
-                      ? "var(--accent)"
-                      : isTodayDate
-                        ? "var(--accent-light)"
-                        : "transparent",
-                    color: isSelected
-                      ? "#fff"
-                      : dis
-                        ? "var(--text-muted)"
-                        : highlight
-                          ? highlight
-                          : "var(--text-primary)",
+                    height: 38, width: "100%",
+                    borderRadius: "50%",
+                    border: isTod && !isSel ? todayBorder : "none",
+                    background: isSel ? "#1677ff" : "transparent",
+                    color: isSel ? "#fff" : dis ? dayDisabled : hl ? hl : dayColor,
+                    fontSize: 14,
+                    fontWeight: isSel || isTod ? 700 : 400,
                     cursor: dis ? "not-allowed" : "pointer",
-                    opacity: dis ? 0.4 : 1,
-                    border: isTodayDate && !isSelected ? "1px solid var(--accent)" : "1px solid transparent",
-                    outline: "none",
+                    opacity: dis ? 0.35 : 1,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    position: "relative",
+                    transition: "background 0.12s",
                   }}
                   onMouseEnter={e => {
-                    if (!dis && !isSelected) (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)";
+                    if (!dis && !isSel) (e.currentTarget as HTMLElement).style.background = hoverBg;
                   }}
                   onMouseLeave={e => {
-                    if (!isSelected) (e.currentTarget as HTMLElement).style.background = isTodayDate ? "var(--accent-light)" : "transparent";
+                    if (!isSel) (e.currentTarget as HTMLElement).style.background = "transparent";
                   }}
                 >
                   {d.getDate()}
-                  {highlight && !isSelected && (
-                    <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full" style={{ background: highlight }} />
+                  {hl && !isSel && (
+                    <span style={{
+                      position: "absolute", bottom: 4, left: "50%",
+                      transform: "translateX(-50%)",
+                      width: 4, height: 4, borderRadius: "50%", background: hl,
+                    }} />
                   )}
                 </button>
               );
             })}
-          </div>
-
-          {/* Footer */}
-          <div className="flex justify-between mt-3 pt-2.5" style={{ borderTop: "1px solid var(--border)" }}>
-            <button
-              type="button"
-              onClick={() => { onChange(""); setOpen(false); }}
-              className="text-xs px-2 py-1 rounded-lg"
-              style={{ color: "var(--text-muted)", cursor: "pointer" }}
-            >
-              Clear
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const today = new Date();
-                if (!isDisabled(today)) { select(today); }
-                else setView(today);
-              }}
-              className="text-xs px-2 py-1 rounded-lg"
-              style={{ color: "var(--accent)", cursor: "pointer" }}
-            >
-              Today
-            </button>
           </div>
         </div>
       )}

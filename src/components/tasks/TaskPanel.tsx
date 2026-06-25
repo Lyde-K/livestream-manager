@@ -461,61 +461,51 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
       {open && (
         <div data-theme={theme}
           style={{
-          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
-          background: "var(--bg-card)", border: "1px solid var(--border-strong)",
-          borderRadius: "var(--radius)", padding: "14px 14px 12px", minWidth: "248px",
-          boxShadow: "0 16px 48px rgba(0,0,0,0.32)", color: "var(--text-primary)",
+          position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 100,
+          background: theme !== "light" ? "rgba(13,27,48,0.98)" : "#ffffff",
+          borderRadius: 20,
+          padding: "20px 20px 16px",
+          width: 300,
+          boxShadow: theme !== "light" ? "0 20px 60px rgba(0,0,0,0.5)" : "0 8px 40px rgba(0,0,0,0.12)",
+          border: theme !== "light" ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)",
         }}>
           {/* Month / year nav */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
             <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))}
-              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "8px", cursor: "pointer", padding: "3px 10px", color: "var(--text-secondary)", fontSize: "15px", lineHeight: 1 }}>‹</button>
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>{MONTHS[month]} {year}</span>
+              style={{ width: 36, height: 36, borderRadius: "50%", background: theme !== "light" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", border: "none", cursor: "pointer", color: theme !== "light" ? "#94a3b8" : "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+            <span style={{ fontSize: "15px", fontWeight: 700, color: theme !== "light" ? "#f8fafc" : "#07111f", letterSpacing: "-0.01em" }}>{MONTHS[month]} {year}</span>
             <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))}
-              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: "8px", cursor: "pointer", padding: "3px 10px", color: "var(--text-secondary)", fontSize: "15px", lineHeight: 1 }}>›</button>
+              style={{ width: 36, height: 36, borderRadius: "50%", background: theme !== "light" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", border: "none", cursor: "pointer", color: theme !== "light" ? "#94a3b8" : "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
           </div>
 
           {/* Weekday headers */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: "6px" }}>
             {DAY_LABELS.map((d, i) => (
-              <div key={i} style={{ textAlign: "center", fontSize: "10px", fontWeight: 700, color: "var(--text-muted)", padding: "2px 0", letterSpacing: "0.03em" }}>{d}</div>
+              <div key={i} style={{ textAlign: "center", fontSize: "12px", fontWeight: 600, color: theme !== "light" ? "#64748b" : "#94a3b8", padding: "4px 0" }}>{d}</div>
             ))}
           </div>
 
           {/* Day grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px 0" }}>
             {cells.map((cell, i) => (
               <button key={i} type="button" onClick={() => cell.current && selectDate(cell.day)}
                 style={{
-                  textAlign: "center", fontSize: "12px", padding: "7px 0", borderRadius: "8px", border: "none",
-                  background: cell.current && isSelected(cell.day) ? "var(--accent)"
-                    : cell.current && isToday(cell.day) ? "var(--accent-light)" : "transparent",
-                  color: !cell.current ? "var(--text-muted)"
+                  height: 38, width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "14px", borderRadius: "50%", border: cell.current && isToday(cell.day) && !isSelected(cell.day) ? "1.5px solid #1677ff" : "none",
+                  background: cell.current && isSelected(cell.day) ? "#1677ff" : "transparent",
+                  color: !cell.current ? "transparent"
                     : isSelected(cell.day) ? "#fff"
-                    : isToday(cell.day) ? "var(--accent)" : "var(--text-primary)",
+                    : theme !== "light" ? "#f8fafc" : "#07111f",
                   cursor: cell.current ? "pointer" : "default",
-                  opacity: cell.current ? 1 : 0.3,
-                  fontFamily: "inherit", fontWeight: isSelected(cell.day) || isToday(cell.day) ? 600 : 400,
-                  transition: "background 0.1s",
+                  fontFamily: "inherit", fontWeight: isSelected(cell.day) || isToday(cell.day) ? 700 : 400,
+                  transition: "background 0.12s",
                 }}
-                onMouseEnter={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = "var(--bg-subtle)"; }}
-                onMouseLeave={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = isToday(cell.day) ? "var(--accent-light)" : "transparent"; }}
+                onMouseEnter={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = theme !== "light" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"; }}
+                onMouseLeave={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
               >
-                {cell.day}
+                {cell.current ? cell.day : ""}
               </button>
             ))}
-          </div>
-
-          {/* Footer */}
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid var(--border)" }}>
-            <button type="button" onClick={() => { onChange(""); setOpen(false); }}
-              style={{ fontSize: "12px", color: "var(--accent)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "2px 4px", borderRadius: "6px" }}>
-              Clear
-            </button>
-            <button type="button" onClick={() => { setViewDate(new Date()); selectDate(today.getDate()); }}
-              style={{ fontSize: "12px", color: "var(--accent)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "2px 4px", borderRadius: "6px" }}>
-              Today
-            </button>
           </div>
         </div>
       )}

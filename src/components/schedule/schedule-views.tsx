@@ -52,11 +52,26 @@ export function sessionOverlapsSlot(session: Session, slot: { start: number; end
   return h < slot.end && eh > slot.start;
 }
 
+// ── Theme hook ────────────────────────────────────────────────────────────────
+
+function useTheme() {
+  const [theme, setTheme] = useState("dark");
+  useEffect(() => {
+    const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
+    update();
+    const obs = new MutationObserver(update);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+  return theme;
+}
+
 // ── DayDatePicker ─────────────────────────────────────────────────────────────
 
 export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; setGridDate: (d: string) => void }) {
   const [open, setOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => parseISO(gridDate));
+  const theme = useTheme();
   const ref = useRef<HTMLDivElement>(null);
 
   const d = parseISO(gridDate);
@@ -72,77 +87,68 @@ export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; set
     return () => document.removeEventListener("mousedown", onOutside);
   }, [open]);
 
-  const monthStart = startOfMonth(pickerMonth);
-  const monthEnd   = endOfMonth(pickerMonth);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-  const weeks: (Date | null)[][] = [];
-  let week: (Date | null)[] = [];
-  const firstDow = (getDay(monthStart) + 6) % 7;
-  for (let i = 0; i < firstDow; i++) week.push(null);
-  for (const day of days) { week.push(day); if (week.length === 7) { weeks.push(week); week = []; } }
-  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
-
+  const days = eachDayOfInterval({ start: startOfMonth(pickerMonth), end: endOfMonth(pickerMonth) });
+  const firstDow = (getDay(startOfMonth(pickerMonth)) + 6) % 7;
   const dowLabels = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+
+  const isDark = theme !== "light";
+  const dropBg    = isDark ? "rgba(13,27,48,0.98)" : "#ffffff";
+  const navBg     = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const navColor  = isDark ? "#94a3b8" : "#475569";
+  const headColor = isDark ? "#f8fafc" : "#07111f";
+  const mutedCol  = isDark ? "#64748b" : "#94a3b8";
+  const dayCol    = isDark ? "#f8fafc" : "#07111f";
+  const hoverBg   = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)";
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => { setOpen(v => !v); setPickerMonth(parseISO(gridDate)); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-        style={{
-          borderColor: open ? "var(--accent)" : "var(--border)",
-          background: "var(--panel-header-bg)",
-          color: "var(--text-primary)",
-        }}
+        style={{ borderColor: open ? "var(--accent)" : "var(--border)", background: "var(--panel-header-bg)", color: "var(--text-primary)" }}
       >
         {label}
         <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-50 p-4"
-          data-theme={typeof document !== "undefined" ? (document.documentElement.getAttribute("data-theme") ?? "dark") : "dark"}
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius)", boxShadow: "0 16px 48px rgba(0,0,0,0.32)", width: 280, color: "var(--text-primary)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <button onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-              <ChevronLeft size={14} />
+        <div className="absolute top-full left-0 mt-2 z-50"
+          data-theme={theme}
+          style={{ background: dropBg, borderRadius: 20, boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.5)" : "0 8px 40px rgba(0,0,0,0.12)", width: 320, padding: "20px 20px 16px", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)" }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <button type="button" onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ChevronLeft size={16} />
             </button>
-            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{format(pickerMonth, "MMMM yyyy")}</span>
-            <button onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-              <ChevronRight size={14} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: headColor, letterSpacing: "-0.01em" }}>{format(pickerMonth, "MMMM yyyy")}</span>
+            <button type="button" onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ChevronRight size={16} />
             </button>
           </div>
-          <div className="grid grid-cols-7 mb-1">
+          {/* Day labels */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6 }}>
             {dowLabels.map(l => (
-              <div key={l} className="text-center text-[10px] font-semibold py-1" style={{ color: "var(--text-muted)" }}>{l}</div>
+              <div key={l} style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: mutedCol, padding: "4px 0" }}>{l}</div>
             ))}
           </div>
-          <div className="space-y-0.5">
-            {weeks.map((wk, wi) => (
-              <div key={wi} className="grid grid-cols-7 gap-0.5">
-                {wk.map((day, di) => {
-                  if (!day) return <div key={di} />;
-                  const dateStr = format(day, "yyyy-MM-dd");
-                  const isActive = dateStr === gridDate;
-                  const isToday  = dateStr === todayStr;
-                  return (
-                    <button key={di}
-                      onClick={() => { setGridDate(dateStr); setOpen(false); }}
-                      className="flex items-center justify-center rounded-lg text-xs cursor-pointer transition-all"
-                      style={{
-                        height: 32, fontWeight: isActive || isToday ? 700 : 500,
-                        background: isActive ? "var(--accent)" : isToday ? "var(--accent-light)" : "transparent",
-                        color: isActive ? "#fff" : isToday ? "var(--accent)" : "var(--text-secondary)",
-                      }}>
-                      {format(day, "d")}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+          {/* Days */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px 0" }}>
+            {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
+            {days.map(day => {
+              const ds = format(day, "yyyy-MM-dd");
+              const isActive = ds === gridDate;
+              const isTod = ds === todayStr;
+              return (
+                <button key={ds} type="button"
+                  onClick={() => { setGridDate(ds); setOpen(false); }}
+                  style={{ height: 38, width: "100%", borderRadius: "50%", border: isTod && !isActive ? "1.5px solid #1677ff" : "none", background: isActive ? "#1677ff" : "transparent", color: isActive ? "#fff" : dayCol, fontSize: 14, fontWeight: isActive || isTod ? 700 : 400, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.12s" }}
+                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = hoverBg; }}
+                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                  {format(day, "d")}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -155,12 +161,19 @@ export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; set
 export function MonthDatePicker({ gridDate, setGridDate }: { gridDate: string; setGridDate: (d: string) => void }) {
   const [open, setOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date(gridDate).getFullYear());
+  const theme = useTheme();
   const ref = useRef<HTMLDivElement>(null);
 
   const d = parseISO(gridDate);
   const label = format(d, "MMMM yyyy");
   const activeMonth = d.getMonth();
   const activeYear  = d.getFullYear();
+
+  const isDark = theme !== "light";
+  const dropBg    = isDark ? "rgba(13,27,48,0.98)" : "#ffffff";
+  const navBg     = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const navColor  = isDark ? "#94a3b8" : "#475569";
+  const headColor = isDark ? "#f8fafc" : "#07111f";
 
   useEffect(() => {
     if (!open) return;
@@ -186,34 +199,27 @@ export function MonthDatePicker({ gridDate, setGridDate }: { gridDate: string; s
         <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-50 p-4 w-64"
-          data-theme={typeof document !== "undefined" ? (document.documentElement.getAttribute("data-theme") ?? "dark") : "dark"}
-          style={{ background: "var(--bg-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius)", boxShadow: "0 16px 48px rgba(0,0,0,0.32)", color: "var(--text-primary)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <button onClick={() => setPickerYear(y => y - 1)}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-              <ChevronLeft size={14} />
+        <div className="absolute top-full left-0 mt-2 z-50"
+          data-theme={theme}
+          style={{ background: dropBg, borderRadius: 20, boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.5)" : "0 8px 40px rgba(0,0,0,0.12)", width: 280, padding: "20px", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <button type="button" onClick={() => setPickerYear(y => y - 1)}
+              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ChevronLeft size={16} />
             </button>
-            <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{pickerYear}</span>
-            <button onClick={() => setPickerYear(y => y + 1)}
-              className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-              <ChevronRight size={14} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: headColor, letterSpacing: "-0.01em" }}>{pickerYear}</span>
+            <button type="button" onClick={() => setPickerYear(y => y + 1)}
+              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ChevronRight size={16} />
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {MONTHS_SHORT.map((m, i) => {
               const isActive = activeMonth === i && activeYear === pickerYear;
               return (
-                <button key={m}
+                <button key={m} type="button"
                   onClick={() => { setGridDate(format(new Date(pickerYear, i, 1), "yyyy-MM-dd")); setOpen(false); }}
-                  className="py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-                  style={{
-                    background: isActive ? "var(--accent)" : "var(--bg-subtle)",
-                    color: isActive ? "#fff" : "var(--text-secondary)",
-                    border: isActive ? "none" : "1px solid var(--border)",
-                  }}>
+                  style={{ padding: "8px 0", borderRadius: 12, border: isActive ? "none" : `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`, background: isActive ? "#1677ff" : navBg, color: isActive ? "#fff" : isDark ? "#94a3b8" : "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "background 0.12s" }}>
                   {m}
                 </button>
               );
