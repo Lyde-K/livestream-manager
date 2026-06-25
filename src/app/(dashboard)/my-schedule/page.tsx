@@ -8,11 +8,12 @@ import { Modal } from "@/components/ui/modal";
 import { PlatformBadge } from "@/components/ui/platform-badge";
 import { formatCurrency } from "@/lib/utils";
 import {
-  Session, DailyGridView, DailyListView, ScheduleViewToggle,
+  Session, Room, DailyGridView, DailyListView, ScheduleViewToggle,
 } from "@/components/schedule/schedule-views";
 
 export default function MySchedulePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [detail, setDetail] = useState<Session | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "dailyList">("grid");
   const [gridDate, setGridDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
@@ -24,6 +25,11 @@ export default function MySchedulePage() {
       end: format(new Date(d.getFullYear(), d.getMonth() + 1, 0), "yyyy-MM-dd") + "T23:59:59+08:00",
     };
   }
+
+  // Load rooms once on mount
+  useEffect(() => {
+    fetch("/api/rooms").then(r => r.ok ? r.json() : []).then(d => setRooms(Array.isArray(d) ? d : []));
+  }, []);
 
   const load = useCallback(async (dateStr: string) => {
     const { start, end } = getGridRange(dateStr);
@@ -70,7 +76,7 @@ export default function MySchedulePage() {
       {viewMode === "grid" ? (
         <DailyGridView
           sessions={sessions}
-          rooms={[]}
+          rooms={rooms}
           hosts={[]}
           gridDate={gridDate}
           setGridDate={setGridDate}
