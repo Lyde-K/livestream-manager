@@ -9,25 +9,29 @@ import {
   LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
   UserCheck, Sun, Moon, ChevronDown, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench, UsersRound, Sparkles,
-  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell, UmbrellaOff,
+  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell, UmbrellaOff, Clapperboard,
 } from "lucide-react";
 
 type NavGroup = "LIVESTREAM" | "AFFILIATE" | "MANAGEMENT";
-interface NavItem { label: string; href: string; icon: React.ElementType; roles: string[]; group: NavGroup; }
+interface NavItem {
+  label: string; href: string; icon: React.ElementType; roles: string[]; group: NavGroup;
+  permission?: string; // if set, only shown when hostPermissions[permission] === true
+}
 
 const navItems: NavItem[] = [
   // LIVESTREAM
   { label: "Dashboard",         href: "/",                          icon: LayoutDashboard, roles: ["ADMIN","LIVE_HOST","CLIENT"], group: "LIVESTREAM" },
   { label: "Schedule",          href: "/schedule",                  icon: Calendar,        roles: ["ADMIN"],     group: "LIVESTREAM" },
-  { label: "My Schedule",       href: "/my-schedule",               icon: Calendar,        roles: ["LIVE_HOST"], group: "LIVESTREAM" },
+  { label: "Studio Schedule",   href: "/studio-schedule",           icon: Clapperboard,    roles: ["LIVE_HOST"], group: "LIVESTREAM" },
+  { label: "My Schedule",       href: "/my-schedule",               icon: Calendar,        roles: ["LIVE_HOST"], group: "LIVESTREAM", permission: "viewMySchedule" },
   { label: "Brand Schedule",    href: "/client-brand",              icon: Calendar,        roles: ["CLIENT"],    group: "LIVESTREAM" },
   { label: "Performance",       href: "/performance",               icon: BarChart3,       roles: ["ADMIN"],     group: "LIVESTREAM" },
-  { label: "My Performance",    href: "/my-performance",            icon: TrendingUp,      roles: ["LIVE_HOST"], group: "LIVESTREAM" },
+  { label: "My Performance",    href: "/my-performance",            icon: TrendingUp,      roles: ["LIVE_HOST"], group: "LIVESTREAM", permission: "viewPerformance" },
   { label: "AI Analysis",       href: "/intelligence",              icon: Sparkles,        roles: ["ADMIN"],     group: "LIVESTREAM" },
-  { label: "My AI Analysis",    href: "/my-intelligence",           icon: Sparkles,        roles: ["LIVE_HOST"], group: "LIVESTREAM" },
+  { label: "My AI Analysis",    href: "/my-intelligence",           icon: Sparkles,        roles: ["LIVE_HOST"], group: "LIVESTREAM", permission: "viewAIAnalysis" },
   { label: "Brand AI Analysis", href: "/client-brand/intelligence", icon: Sparkles,        roles: ["CLIENT"],    group: "LIVESTREAM" },
-  { label: "Leaderboard",       href: "/leaderboard",               icon: Trophy,          roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM" },
-  { label: "Leave",             href: "/leave",                     icon: UmbrellaOff,     roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM" },
+  { label: "Leaderboard",       href: "/leaderboard",               icon: Trophy,          roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeaderboard" },
+  { label: "Leave",             href: "/leave",                     icon: UmbrellaOff,     roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeave" },
   // AFFILIATE
   { label: "Overview",          href: "/affiliate",                 icon: LayoutDashboard, roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Creators",          href: "/affiliate/creators",        icon: Users,           roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
@@ -57,7 +61,12 @@ const GROUP_META: Record<NavGroup, { label: string; icon: React.ElementType; acc
   MANAGEMENT:  { label: "Management",  icon: Settings,   accent: "#A78BFA" },
 };
 
-interface SidebarProps { role: string; userName: string; }
+interface SidebarProps {
+  role: string;
+  userName: string;
+  hostType?: string;
+  hostPermissions?: Record<string, boolean>;
+}
 
 function NavLink({ item, active, accent }: { item: NavItem; active: boolean; accent: string }) {
   return (
@@ -139,7 +148,7 @@ function NavSection({ group, items, activeCheck, defaultOpen = true }: SectionPr
   );
 }
 
-export function Sidebar({ role, userName }: SidebarProps) {
+export function Sidebar({ role, userName, hostType, hostPermissions = {} }: SidebarProps) {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const [open, setOpen] = useState(false);
@@ -175,7 +184,12 @@ export function Sidebar({ role, userName }: SidebarProps) {
       .catch(() => setHasAffiliate(false));
   }, [role]);
 
-  const allItems = navItems.filter((i) => i.roles.includes(role));
+  const allItems = navItems.filter((i) => {
+    if (!i.roles.includes(role)) return false;
+    // For LIVE_HOST nav items that have a permission ticker, check the resolved value
+    if (i.permission && role === "LIVE_HOST") return !!hostPermissions[i.permission];
+    return true;
+  });
   const livestreamItems = allItems.filter((i) => i.group === "LIVESTREAM").map(item =>
     item.href === "/leave" ? { ...item, label: role === "ADMIN" ? "Host Leaves" : "My Leave" } : item
   );

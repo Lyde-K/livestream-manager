@@ -50,6 +50,9 @@ model LiveHost {
   bankName    String?
   bankAccount String?
 
+  // Per-account permission overrides (merged on top of type defaults)
+  permissions Json    @default("{}")
+
   sessions    Session[]
   kpiConfigs  KPIConfig[]
   preferences HostPreference?

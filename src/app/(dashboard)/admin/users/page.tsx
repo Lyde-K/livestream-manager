@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import {
   UserPlus, Pencil, Trash2, ShieldCheck, User, Building2,
-  KeyRound, Eye, EyeOff, RefreshCw,
+  KeyRound, Eye, EyeOff, RefreshCw, SlidersHorizontal, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { PERMISSION_KEYS, PERMISSION_LABELS, resolvePermissions } from "@/lib/permissions";
+import type { HostPermissions } from "@/lib/permissions";
 
 interface StaffUser {
   id: string;
@@ -71,6 +73,98 @@ function Initials({ name }: { name: string }) {
   );
 }
 
+// ── Permissions panel ─────────────────────────────────────────────────────────
+
+function PermissionsPanel({ userId }: { userId: string }) {
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [hostType, setHostType] = useState("FULL_TIME");
+  const [overrides, setOverrides] = useState<Partial<HostPermissions>>({});
+  const resolved = resolvePermissions(hostType, overrides);
+
+  useEffect(() => {
+    fetch(`/api/admin/users/${userId}/permissions`)
+      .then(r => r.json())
+      .then(d => {
+        setHostType(d.type ?? "FULL_TIME");
+        setOverrides((d.permissions as Partial<HostPermissions>) ?? {});
+      })
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  async function save() {
+    setSaving(true);
+    await fetch(`/api/admin/users/${userId}/permissions`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ permissions: overrides }),
+    });
+    setSaving(false);
+  }
+
+  function toggle(key: keyof HostPermissions) {
+    setOverrides(prev => {
+      const next = { ...prev };
+      // If current value matches the type default, we're storing an explicit override
+      next[key] = !resolved[key];
+      return next;
+    });
+  }
+
+  if (loading) return (
+    <div className="px-3 py-2 text-xs" style={{ color: "var(--text-muted)" }}>
+      <RefreshCw size={11} className="inline mr-1 animate-spin" />Loading permissions…
+    </div>
+  );
+
+  return (
+    <div className="px-4 pb-4 pt-1">
+      <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+            Access Tickers — {hostType === "PART_TIME" ? "Part-Time" : "Full-Time"}
+          </span>
+          <Button size="sm" variant="secondary" onClick={save} loading={saving} style={{ fontSize: 11, padding: "2px 10px" }}>
+            Save
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {PERMISSION_KEYS.map(key => {
+            const on = resolved[key];
+            return (
+              <button
+                key={key}
+                onClick={() => toggle(key)}
+                className="flex items-center justify-between px-3 py-2 rounded-lg transition-all text-left"
+                style={{
+                  background: on ? "rgba(16,185,129,0.08)" : "var(--bg-card, var(--bg-subtle))",
+                  border: `1px solid ${on ? "rgba(16,185,129,0.3)" : "var(--border)"}`,
+                }}
+              >
+                <span className="text-xs font-medium" style={{ color: on ? "#10b981" : "var(--text-muted)" }}>
+                  {PERMISSION_LABELS[key]}
+                </span>
+                <span
+                  className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{
+                    background: on ? "rgba(16,185,129,0.15)" : "rgba(148,163,184,0.1)",
+                    color: on ? "#10b981" : "#64748b",
+                  }}
+                >
+                  {on ? "ON" : "OFF"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] pt-1" style={{ color: "var(--text-muted)" }}>
+          Toggles override the defaults for this host&apos;s type. Changes take effect on their next page load.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function UsersPage() {
   const [users, setUsers]         = useState<StaffUser[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -79,6 +173,7 @@ export default function UsersPage() {
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState("");
   const [showPass, setShowPass]   = useState(false);
+  const [expandedPerms, setExpandedPerms] = useState<Set<string>>(new Set());
 
   // Create form
   const [form, setForm] = useState({
@@ -229,62 +324,88 @@ export default function UsersPage() {
                   <th>Role</th>
                   <th>Profile</th>
                   <th>Joined</th>
-                  <th className="w-20 text-right">Actions</th>
+                  <th className="w-28 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map(u => (
-                  <tr key={u.id}>
-                    <td>
-                      <div className="flex items-center gap-2.5">
-                        <Initials name={u.name} />
-                        <span className="font-medium" style={{ color: "var(--text-primary)" }}>{u.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ color: "var(--text-secondary)" }}>{u.email}</td>
-                    <td><RoleBadge role={u.role} /></td>
-                    <td>
-                      {u.role === "LIVE_HOST" && u.liveHost && (
-                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                          {u.liveHost.displayName}
-                          {!u.liveHost.isActive && (
-                            <span className="ml-1.5 px-1 py-0.5 rounded text-[10px]"
-                              style={{ background: "rgba(239,68,68,0.1)", color: "var(--danger)" }}>inactive</span>
+                {users.map(u => {
+                  const permExpanded = expandedPerms.has(u.id);
+                  return (
+                    <>
+                      <tr key={u.id}>
+                        <td>
+                          <div className="flex items-center gap-2.5">
+                            <Initials name={u.name} />
+                            <span className="font-medium" style={{ color: "var(--text-primary)" }}>{u.name}</span>
+                          </div>
+                        </td>
+                        <td style={{ color: "var(--text-secondary)" }}>{u.email}</td>
+                        <td><RoleBadge role={u.role} /></td>
+                        <td>
+                          {u.role === "LIVE_HOST" && u.liveHost && (
+                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                              {u.liveHost.displayName}
+                              {!u.liveHost.isActive && (
+                                <span className="ml-1.5 px-1 py-0.5 rounded text-[10px]"
+                                  style={{ background: "rgba(239,68,68,0.1)", color: "var(--danger)" }}>inactive</span>
+                              )}
+                            </span>
                           )}
-                        </span>
+                          {u.role === "CLIENT" && u.client && (
+                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>Client account</span>
+                          )}
+                          {u.role === "ADMIN" && (
+                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>—</span>
+                          )}
+                        </td>
+                        <td className="text-xs" style={{ color: "var(--text-muted)" }}>
+                          {format(new Date(u.createdAt), "d MMM yyyy")}
+                        </td>
+                        <td>
+                          <div className="flex items-center justify-end gap-1">
+                            {u.role === "LIVE_HOST" && u.liveHost && (
+                              <button
+                                onClick={() => setExpandedPerms(prev => {
+                                  const next = new Set(prev);
+                                  next.has(u.id) ? next.delete(u.id) : next.add(u.id);
+                                  return next;
+                                })}
+                                className="p-1.5 rounded-lg transition-colors"
+                                style={{ color: permExpanded ? "var(--accent)" : "var(--text-muted)" }}
+                                title="Manage permissions"
+                              >
+                                {permExpanded ? <ChevronUp size={13} /> : <SlidersHorizontal size={13} />}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => openEdit(u)}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ color: "var(--text-muted)" }}
+                              title="Edit account"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => deleteUser(u)}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ color: "var(--text-muted)" }}
+                              title="Delete account"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {permExpanded && u.role === "LIVE_HOST" && u.liveHost && (
+                        <tr key={`perm-${u.id}`}>
+                          <td colSpan={6} style={{ padding: 0 }}>
+                            <PermissionsPanel userId={u.id} />
+                          </td>
+                        </tr>
                       )}
-                      {u.role === "CLIENT" && u.client && (
-                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>Client account</span>
-                      )}
-                      {u.role === "ADMIN" && (
-                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>—</span>
-                      )}
-                    </td>
-                    <td className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {format(new Date(u.createdAt), "d MMM yyyy")}
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(u)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: "var(--text-muted)" }}
-                          title="Edit account"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => deleteUser(u)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: "var(--text-muted)" }}
-                          title="Delete account"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>

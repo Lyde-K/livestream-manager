@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { resolvePermissions } from "@/lib/permissions";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
@@ -32,6 +33,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (user) {
         token.role = (user as { role: string }).role;
         token.id = user.id;
+        if ((user as { role: string }).role === "LIVE_HOST") {
+          const liveHost = await prisma.liveHost.findUnique({
+            where: { userId: user.id as string },
+            select: { type: true, permissions: true },
+          });
+          if (liveHost) {
+            token.hostType = liveHost.type;
+            token.hostPermissions = resolvePermissions(
+              liveHost.type,
+              (liveHost.permissions as Record<string, boolean>) ?? {}
+            );
+          }
+        }
       }
       return token;
     },
@@ -41,6 +55,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (session.user as any).role = token.role as string;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (session.user as any).id = token.id as string;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (session.user as any).hostType = token.hostType as string | undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (session.user as any).hostPermissions = token.hostPermissions;
       }
       return session;
     },

@@ -170,6 +170,12 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "Task_isPersonal_idx" ON "Task"("isPersonal")`,
     ],
   },
+  {
+    name: "010_add_livehosts_permissions",
+    statements: [
+      `ALTER TABLE "LiveHost" ADD COLUMN IF NOT EXISTS "permissions" JSONB NOT NULL DEFAULT '{}'`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {
