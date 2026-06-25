@@ -176,7 +176,9 @@ export function Sidebar({ role, userName }: SidebarProps) {
   }, [role]);
 
   const allItems = navItems.filter((i) => i.roles.includes(role));
-  const livestreamItems = allItems.filter((i) => i.group === "LIVESTREAM");
+  const livestreamItems = allItems.filter((i) => i.group === "LIVESTREAM").map(item =>
+    item.href === "/leave" ? { ...item, label: role === "ADMIN" ? "Host Leaves" : "My Leave" } : item
+  );
   const affiliateItems = hasAffiliate ? allItems.filter((i) => i.group === "AFFILIATE") : [];
   const managementItems = role === "ADMIN" ? allItems.filter((i) => i.group === "MANAGEMENT") : [];
 

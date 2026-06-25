@@ -138,6 +138,31 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "RLApp_leaveDate_idx" ON "RLApplication"("leaveDate")`,
     ],
   },
+  {
+    name: "008_rl_enhancements",
+    statements: [
+      `ALTER TABLE "RLApplication" ADD COLUMN IF NOT EXISTS "halfDay"  TEXT`,
+      `ALTER TABLE "RLApplication" ADD COLUMN IF NOT EXISTS "category" TEXT`,
+      `CREATE TABLE IF NOT EXISTS "RLBlackoutDate" (
+        "id"        TEXT PRIMARY KEY,
+        "date"      TEXT NOT NULL,
+        "reason"    TEXT NOT NULL,
+        "createdBy" TEXT NOT NULL,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS "RLBlackout_date_idx" ON "RLBlackoutDate"("date")`,
+      `CREATE TABLE IF NOT EXISTS "RLAuditLog" (
+        "id"          TEXT PRIMARY KEY,
+        "liveHostId"  TEXT,
+        "action"      TEXT NOT NULL,
+        "detail"      TEXT NOT NULL,
+        "performedBy" TEXT NOT NULL,
+        "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS "RLAudit_hostId_idx"    ON "RLAuditLog"("liveHostId")`,
+      `CREATE INDEX IF NOT EXISTS "RLAudit_createdAt_idx" ON "RLAuditLog"("createdAt")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {

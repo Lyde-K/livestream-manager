@@ -1,10 +1,12 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { format, parseISO, addDays } from "date-fns";
 import {
   CalendarOff, CheckCircle2, XCircle, Clock, Plus, ChevronDown, ChevronUp,
   Info, TrendingUp, Hourglass, CircleCheck, Sparkles, Users, AlertCircle,
+  Download, Shield, Calendar, ChevronLeft, ChevronRight, Ban, History,
+  BarChart3, Target, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -16,10 +18,25 @@ import type { RLContribution, RLUnit, RLSummary } from "@/app/api/replacement-le
 function mytToday(): string {
   return new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
 }
-
+function mytMinDate(): string {
+  return new Date(Date.now() + 8 * 3600_000 + 3 * 86400_000).toISOString().slice(0, 10);
+}
 function fmtDate(d: string) {
   return format(parseISO(d), "d MMM yyyy");
 }
+
+const CATEGORIES = [
+  { value: "PERSONAL",  label: "Personal",  color: "#6366f1" },
+  { value: "MEDICAL",   label: "Medical",   color: "#ef4444" },
+  { value: "FAMILY",    label: "Family",    color: "#f97316" },
+  { value: "OTHER",     label: "Other",     color: "#94a3b8" },
+];
+
+const HALF_DAY_OPTIONS = [
+  { value: "",          label: "Full Day" },
+  { value: "MORNING",   label: "Morning (AM)" },
+  { value: "AFTERNOON", label: "Afternoon (PM)" },
+];
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { label: string; bg: string; color: string }> = {
@@ -30,9 +47,7 @@ function StatusPill({ status }: { status: string }) {
   const s = map[status] ?? { label: status, bg: "var(--bg-subtle)", color: "var(--text-muted)" };
   return (
     <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold"
-      style={{ background: s.bg, color: s.color }}>
-      {s.label}
-    </span>
+      style={{ background: s.bg, color: s.color }}>{s.label}</span>
   );
 }
 
@@ -48,6 +63,172 @@ function ReasonPill({ reason }: { reason: string }) {
   );
 }
 
+function CategoryPill({ category }: { category?: string | null }) {
+  const cat = CATEGORIES.find(c => c.value === category);
+  if (!cat) return null;
+  return (
+    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+      style={{ background: cat.color + "20", color: cat.color }}>{cat.label}</span>
+  );
+}
+
+function HalfDayPill({ halfDay }: { halfDay?: string | null }) {
+  if (!halfDay) return null;
+  return (
+    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+      style={{ background: "#0ea5e920", color: "#0ea5e9" }}>
+      {halfDay === "MORNING" ? "AM" : "PM"}
+    </span>
+  );
+}
+
+// ── Accrual Progress Bar ──────────────────────────────────────────────────────
+
+function AccrualProgressBar({ summary }: { summary: RLSummary }) {
+  const needed = summary.hoursToNextUnit;
+  const accumulated = 6 - needed;
+  const pct = Math.round((accumulated / 6) * 100);
+
+  return (
+    <div className="section-card p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Target size={14} style={{ color: "var(--accent)" }} />
+          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+            Progress to Next RL Unit
+          </span>
+        </div>
+        <span className="text-xs font-medium tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {accumulated.toFixed(1)}h / 6h
+        </span>
+      </div>
+      <div className="w-full h-3 rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, background: pct === 100 ? "#22c55e" : "linear-gradient(90deg, var(--accent), #f97316)" }}
+        />
+      </div>
+      <div className="flex justify-between mt-1.5 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <span>{pct}% complete</span>
+        <span>{pct < 100 ? `${needed.toFixed(1)}h to go` : "Ready to unlock!"}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Leave Calendar (Admin) ────────────────────────────────────────────────────
+
+interface CalendarApp {
+  id: string;
+  liveHostId: string;
+  leaveDate: string;
+  halfDay?: string | null;
+  status: string;
+  liveHost: { id: string; displayName: string };
+}
+
+function LeaveCalendar({ apps }: { apps: CalendarApp[] }) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [month, setMonth] = useState(() => new Date().getMonth());
+
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = mytToday();
+
+  function prevMonth() {
+    if (month === 0) { setMonth(11); setYear(y => y - 1); }
+    else setMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (month === 11) { setMonth(0); setYear(y => y + 1); }
+    else setMonth(m => m + 1);
+  }
+
+  const appsByDate = useMemo(() => {
+    const map: Record<string, CalendarApp[]> = {};
+    const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+    for (const a of apps) {
+      if (a.leaveDate.startsWith(prefix)) {
+        if (!map[a.leaveDate]) map[a.leaveDate] = [];
+        map[a.leaveDate].push(a);
+      }
+    }
+    return map;
+  }, [apps, year, month]);
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  return (
+    <div className="section-card p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Calendar size={14} style={{ color: "var(--accent)" }} />
+          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Leave Calendar</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="p-1 rounded cursor-pointer" style={{ color: "var(--text-muted)" }}><ChevronLeft size={16} /></button>
+          <span className="text-sm font-medium w-24 text-center" style={{ color: "var(--text-primary)" }}>{MONTHS[month]} {year}</span>
+          <button onClick={nextMonth} className="p-1 rounded cursor-pointer" style={{ color: "var(--text-muted)" }}><ChevronRight size={16} /></button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-0.5">
+        {DAYS_OF_WEEK.map(d => (
+          <div key={d} className="text-center text-[10px] font-bold pb-1 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>{d}</div>
+        ))}
+        {cells.map((day, idx) => {
+          if (!day) return <div key={`e-${idx}`} />;
+          const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+          const dayApps = appsByDate[dateStr] ?? [];
+          const isToday = dateStr === today;
+          const pendingCount = dayApps.filter(a => a.status === "PENDING").length;
+          const approvedCount = dayApps.filter(a => a.status === "APPROVED").length;
+
+          return (
+            <div key={dateStr}
+              className="rounded-lg p-1 min-h-[52px] text-center flex flex-col gap-0.5"
+              style={{
+                background: isToday ? "var(--accent)15" : dayApps.length > 0 ? "var(--bg-subtle)" : "transparent",
+                border: isToday ? "1px solid var(--accent)40" : "1px solid transparent",
+              }}>
+              <span className="text-[11px] font-medium" style={{ color: isToday ? "var(--accent)" : "var(--text-muted)" }}>{day}</span>
+              {approvedCount > 0 && (
+                <span className="text-[9px] font-bold px-1 rounded" style={{ background: "#22c55e20", color: "#22c55e" }}>
+                  {approvedCount} approved
+                </span>
+              )}
+              {pendingCount > 0 && (
+                <span className="text-[9px] font-bold px-1 rounded" style={{ background: "#f59e0b20", color: "#f59e0b" }}>
+                  {pendingCount} pending
+                </span>
+              )}
+              {dayApps.slice(0, 2).map(a => (
+                <span key={a.id} className="text-[9px] truncate px-0.5 rounded"
+                  style={{ background: a.status === "APPROVED" ? "#22c55e10" : "#f59e0b10", color: a.status === "APPROVED" ? "#22c55e" : "#f59e0b" }}>
+                  {a.liveHost.displayName.split(" ")[0]}
+                </span>
+              ))}
+              {dayApps.length > 2 && (
+                <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>+{dayApps.length - 2}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-3 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "#22c55e" }} />Approved</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{ background: "#f59e0b" }} />Pending</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Apply Leave Modal ─────────────────────────────────────────────────────────
 
 function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
@@ -55,8 +236,10 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
   onClose: () => void;
   onSubmitted: () => void;
 }) {
-  const today = mytToday();
+  const minDate = mytMinDate();
   const [selectedDate, setSelectedDate] = useState("");
+  const [halfDay, setHalfDay] = useState("");
+  const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -65,12 +248,13 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
 
   async function submit() {
     if (!selectedDate) { setError("Please select a date."); return; }
+    if (!category) { setError("Please select a leave category."); return; }
     setSaving(true);
     setError("");
     const res = await fetch("/api/replacement-leave", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leaveDate: selectedDate, notes }),
+      body: JSON.stringify({ leaveDate: selectedDate, notes, halfDay: halfDay || null, category }),
     });
     setSaving(false);
     if (res.ok) { onSubmitted(); }
@@ -109,38 +293,56 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
           </div>
         ) : (
           <>
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
-                Select Leave Date *
-              </label>
-              <input
-                type="date"
-                value={selectedDate}
-                min={today}
-                onChange={e => { setSelectedDate(e.target.value); setError(""); }}
-                className="w-full px-3 py-2 rounded-lg text-sm"
-                style={{
-                  background: "var(--bg-subtle)", border: "1px solid var(--border)",
-                  color: "var(--text-primary)", colorScheme: "dark",
-                }}
-              />
-              <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-                Your scheduled sessions on this day will be removed upon admin approval.
-              </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
+                  Select Leave Date * <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>(min. 3 days notice)</span>
+                </label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  min={minDate}
+                  onChange={e => { setSelectedDate(e.target.value); setError(""); }}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", colorScheme: "dark" }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Category *</label>
+                <select value={category} onChange={e => setCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                  <option value="">Select…</option>
+                  {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Duration</label>
+                <select value={halfDay} onChange={e => setHalfDay(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+                  {HALF_DAY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
-                Notes (optional)
-              </label>
+              <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Notes (optional)</label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                rows={3}
+                rows={2}
                 placeholder="Any additional context for the admin…"
                 className="w-full px-3 py-2 rounded-lg text-sm resize-none"
                 style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
               />
+            </div>
+
+            <div className="flex items-start gap-2 p-2.5 rounded-lg text-xs" style={{ background: "#f59e0b10", color: "#f59e0b" }}>
+              <Info size={13} className="mt-0.5 flex-shrink-0" />
+              <span>Your scheduled sessions on this day{halfDay === "MORNING" ? " (AM)" : halfDay === "AFTERNOON" ? " (PM)" : ""} will be removed upon admin approval.</span>
             </div>
 
             {error && (
@@ -152,7 +354,7 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           {summary.unitsAvailable > 0 && (
-            <Button onClick={submit} loading={saving} disabled={!selectedDate}>
+            <Button onClick={submit} loading={saving} disabled={!selectedDate || !category}>
               <CheckCircle2 size={14} /> Submit Application
             </Button>
           )}
@@ -166,7 +368,7 @@ function ApplyLeaveModal({ summary, onClose, onSubmitted }: {
 
 interface HostApplication {
   id: string; leaveDate: string; status: string; notes?: string | null;
-  adminNote?: string | null; createdAt: string;
+  adminNote?: string | null; createdAt: string; halfDay?: string | null; category?: string | null;
 }
 
 function HostView() {
@@ -205,7 +407,7 @@ function HostView() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Replacement Leave</h1>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>My Leave</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
             Track and apply for your replacement leave entitlements
           </p>
@@ -221,7 +423,7 @@ function HostView() {
           { icon: CircleCheck,  label: "Available",       value: summary.unitsAvailable,      color: "#22c55e", hint: "Ready to use now" },
           { icon: Hourglass,    label: "Pending Unlock",  value: summary.unitsPendingUnlock,  color: "#f59e0b", hint: "Within 15-day wait" },
           { icon: Clock,        label: "Awaiting Approval",value: summary.unitsPendingApproval,color: "#6366f1", hint: "Applications pending" },
-          { icon: TrendingUp,   label: "Used This Year",  value: summary.unitsUsed,           color: "var(--text-muted)", hint: "Approved leaves taken" },
+          { icon: TrendingUp,   label: "Used",            value: summary.unitsUsed,           color: "var(--text-muted)", hint: "Approved leaves taken" },
         ].map(({ icon: Icon, label, value, color, hint }) => (
           <div key={label} className="section-card p-4 flex flex-col gap-1">
             <div className="flex items-center gap-2 mb-1">
@@ -234,25 +436,27 @@ function HostView() {
         ))}
       </div>
 
+      {/* Accrual Progress Bar */}
+      <AccrualProgressBar summary={summary} />
+
       {/* How it works */}
       <div className="section-card p-4">
         <div className="flex items-center gap-2 mb-3">
           <Info size={14} style={{ color: "var(--accent)" }} />
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>How Replacement Leave Works</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
-          <div className="flex flex-col gap-1 p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
-            <span className="font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>How you earn RL</span>
-            <span>Working on your scheduled <strong>off-days</strong> during campaigns, or working <strong>extra hours</strong> beyond 6h standard.</span>
-          </div>
-          <div className="flex flex-col gap-1 p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
-            <span className="font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>Accumulation</span>
-            <span>Every <strong>6 excess hours</strong> earned = 1 Replacement Leave day. Hours stack across multiple sessions.</span>
-          </div>
-          <div className="flex flex-col gap-1 p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
-            <span className="font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>15-Day Rule</span>
-            <span>Each RL unit is locked for <strong>15 days</strong> from the day it was earned before you can use it.</span>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+          {[
+            { title: "How you earn RL", body: "Working on your scheduled off-days during campaigns, or working extra hours beyond 6h standard." },
+            { title: "Accumulation", body: "Every 6 excess hours = 1 Replacement Leave day. Hours stack across multiple sessions." },
+            { title: "15-Day Lock", body: "Each RL unit is locked for 15 days from when it was earned before you can use it." },
+            { title: "15-Day Validity", body: "After unlocking, you have 15 days to use the unit before it expires. Apply early!" },
+          ].map(({ title, body }) => (
+            <div key={title} className="flex flex-col gap-1 p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
+              <span className="font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>{title}</span>
+              <span>{body}</span>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -268,15 +472,16 @@ function HostView() {
             {summary.units.map((u, i) => {
               const usedUnit = i < summary.unitsUsed;
               const pendingUnit = !usedUnit && i >= summary.unitsUsed && i < summary.unitsUsed + summary.unitsPendingApproval;
-              const available = !usedUnit && !pendingUnit && u.isUnlocked;
+              const available = !usedUnit && !pendingUnit && u.isUnlocked && !u.isExpired;
               const locked = !usedUnit && !pendingUnit && !u.isUnlocked;
+              const expired = !usedUnit && !pendingUnit && u.isExpired;
               return (
                 <div key={u.unitNumber} className="flex items-center gap-3 px-3 py-2 rounded-lg"
-                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", opacity: usedUnit ? 0.55 : 1 }}>
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", opacity: usedUnit || expired ? 0.55 : 1 }}>
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                     style={{
-                      background: usedUnit ? "var(--bg-card)" : available ? "#22c55e20" : locked ? "#f59e0b20" : "#6366f120",
-                      color: usedUnit ? "var(--text-muted)" : available ? "#22c55e" : locked ? "#f59e0b" : "#6366f1",
+                      background: expired ? "#94a3b820" : usedUnit ? "var(--bg-card)" : available ? "#22c55e20" : locked ? "#f59e0b20" : "#6366f120",
+                      color: expired ? "#94a3b8" : usedUnit ? "var(--text-muted)" : available ? "#22c55e" : locked ? "#f59e0b" : "#6366f1",
                     }}>
                     {u.unitNumber}
                   </div>
@@ -285,14 +490,19 @@ function HostView() {
                       Earned {fmtDate(u.triggeredDate)}
                     </div>
                     <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      {locked ? `Unlocks ${fmtDate(u.unlockDate)}` : `Unlocked ${fmtDate(u.unlockDate)}`}
+                      {locked && `Unlocks ${fmtDate(u.unlockDate)}`}
+                      {available && `Expires ${fmtDate(u.expiresAt)}`}
+                      {expired && `Expired ${fmtDate(u.expiresAt)}`}
+                      {usedUnit && `Unlocked ${fmtDate(u.unlockDate)}`}
+                      {pendingUnit && `Unlocked ${fmtDate(u.unlockDate)}`}
                     </div>
                   </div>
                   <div>
-                    {usedUnit && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#94a3b815", color: "#94a3b8" }}>Used</span>}
+                    {usedUnit    && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#94a3b815", color: "#94a3b8" }}>Used</span>}
                     {pendingUnit && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#6366f120", color: "#6366f1" }}>Pending Approval</span>}
-                    {available && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#22c55e20", color: "#22c55e" }}>Available</span>}
-                    {locked && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Locked</span>}
+                    {available   && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#22c55e20", color: "#22c55e" }}>Available</span>}
+                    {locked      && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Locked</span>}
+                    {expired     && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#94a3b815", color: "#94a3b8" }}>Expired</span>}
                   </div>
                 </div>
               );
@@ -301,7 +511,7 @@ function HostView() {
         </div>
       )}
 
-      {/* Hour Contributions (expandable) */}
+      {/* Hour Contributions */}
       {summary.contributions.length > 0 && (
         <div className="section-card overflow-hidden">
           <button
@@ -310,9 +520,7 @@ function HostView() {
             style={{ borderBottom: showContribs ? "1px solid var(--border)" : "none" }}>
             <div className="flex items-center gap-2">
               <TrendingUp size={14} style={{ color: "var(--accent)" }} />
-              <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                Hours Contribution History
-              </span>
+              <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Hours Contribution History</span>
               <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                 {summary.totalHours.toFixed(1)}h total · {summary.contributions.length} entry(s)
               </span>
@@ -329,9 +537,7 @@ function HostView() {
                   <div className="text-xs font-medium tabular-nums flex-shrink-0" style={{ color: c.hours >= 0 ? "#22c55e" : "#ef4444" }}>
                     {c.hours >= 0 ? "+" : ""}{c.hours.toFixed(1)}h
                   </div>
-                  <div className="w-16 text-right text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-                    ∑ {c.runningTotal.toFixed(1)}h
-                  </div>
+                  <div className="w-16 text-right text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>∑ {c.runningTotal.toFixed(1)}h</div>
                 </div>
               ))}
             </div>
@@ -362,10 +568,10 @@ function HostView() {
                 style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
-                      {fmtDate(a.leaveDate)}
-                    </span>
+                    <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{fmtDate(a.leaveDate)}</span>
                     <StatusPill status={a.status} />
+                    <HalfDayPill halfDay={a.halfDay} />
+                    <CategoryPill category={a.category} />
                     {a.leaveDate < today && a.status === "PENDING" && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "#f59e0b15", color: "#f59e0b" }}>Past date</span>
                     )}
@@ -375,14 +581,11 @@ function HostView() {
                     {a.notes && <> · "{a.notes}"</>}
                   </div>
                   {a.adminNote && (
-                    <div className="text-xs mt-0.5 italic" style={{ color: "var(--text-secondary)" }}>
-                      Admin: {a.adminNote}
-                    </div>
+                    <div className="text-xs mt-0.5 italic" style={{ color: "var(--text-secondary)" }}>Admin: {a.adminNote}</div>
                   )}
                 </div>
                 {a.status === "PENDING" && (
-                  <button
-                    onClick={() => setCancelId(a.id)}
+                  <button onClick={() => setCancelId(a.id)}
                     className="text-xs px-2 py-1 rounded cursor-pointer flex-shrink-0"
                     style={{ color: "#ef4444", background: "#ef444415" }}>
                     Cancel
@@ -406,7 +609,7 @@ function HostView() {
         <Modal open onClose={() => setCancelId(null)} title="Cancel Application">
           <div className="space-y-4">
             <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-              Are you sure you want to cancel this leave application? This cannot be undone.
+              Are you sure you want to cancel this leave application?
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setCancelId(null)}>Keep It</Button>
@@ -428,13 +631,21 @@ interface AdminHostSummary {
 
 interface PendingApp {
   id: string; leaveDate: string; status: string; notes?: string | null; createdAt: string;
+  halfDay?: string | null; category?: string | null;
   liveHost: { id: string; displayName: string; user: { name: string } };
 }
 
+interface ReviewedApp {
+  id: string; leaveDate: string; status: string; halfDay?: string | null; category?: string | null;
+  createdAt: string; reviewedAt?: string | null; adminNote?: string | null;
+  liveHost: { id: string; displayName: string };
+}
+
+interface BlackoutDate { id: string; date: string; reason: string; createdAt: string; }
+interface AuditLog { id: string; liveHostId?: string | null; action: string; detail: string; performedBy: string; createdAt: string; performerName: string; hostName?: string | null; }
+
 function ApproveModal({ app, onClose, onDone }: {
-  app: PendingApp;
-  onClose: () => void;
-  onDone: () => void;
+  app: PendingApp; onClose: () => void; onDone: () => void;
 }) {
   const [adminNote, setAdminNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -479,9 +690,7 @@ function ApproveModal({ app, onClose, onDone }: {
           ) : (
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>No pending sessions were found on {fmtDate(app.leaveDate)}.</p>
           )}
-          <div className="flex justify-end">
-            <Button onClick={() => { onClose(); onDone(); }}>Done</Button>
-          </div>
+          <div className="flex justify-end"><Button onClick={() => { onClose(); onDone(); }}>Done</Button></div>
         </div>
       </Modal>
     );
@@ -497,11 +706,14 @@ function ApproveModal({ app, onClose, onDone }: {
           </div>
           <div className="p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
             <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>Leave Date</div>
-            <div className="font-medium" style={{ color: "var(--text-primary)" }}>{fmtDate(app.leaveDate)}</div>
+            <div className="font-medium flex items-center gap-1.5" style={{ color: "var(--text-primary)" }}>
+              {fmtDate(app.leaveDate)}
+              <HalfDayPill halfDay={app.halfDay} />
+            </div>
           </div>
           <div className="p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
-            <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>Applied On</div>
-            <div className="font-medium" style={{ color: "var(--text-primary)" }}>{format(new Date(app.createdAt), "d MMM yyyy")}</div>
+            <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>Category</div>
+            <div className="font-medium" style={{ color: "var(--text-primary)" }}><CategoryPill category={app.category} /></div>
           </div>
           {app.notes && (
             <div className="p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
@@ -511,7 +723,7 @@ function ApproveModal({ app, onClose, onDone }: {
           )}
         </div>
         <div className="p-3 rounded-lg text-xs" style={{ background: "#f59e0b10", border: "1px solid #f59e0b30", color: "#f59e0b" }}>
-          <strong>On Approve:</strong> All pending sessions for {app.liveHost.displayName} on {fmtDate(app.leaveDate)} will be automatically removed from the schedule.
+          <strong>On Approve:</strong> All pending sessions for {app.liveHost.displayName} on {fmtDate(app.leaveDate)}{app.halfDay === "MORNING" ? " (AM)" : app.halfDay === "AFTERNOON" ? " (PM)" : ""} will be automatically removed.
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>Admin Note (optional)</label>
@@ -522,12 +734,8 @@ function ApproveModal({ app, onClose, onDone }: {
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={() => act("REJECT")} loading={saving}>
-            <XCircle size={14} /> Reject
-          </Button>
-          <Button onClick={() => act("APPROVE")} loading={saving}>
-            <CheckCircle2 size={14} /> Approve
-          </Button>
+          <Button variant="destructive" onClick={() => act("REJECT")} loading={saving}><XCircle size={14} /> Reject</Button>
+          <Button onClick={() => act("APPROVE")} loading={saving}><CheckCircle2 size={14} /> Approve</Button>
         </div>
       </div>
     </Modal>
@@ -535,9 +743,7 @@ function ApproveModal({ app, onClose, onDone }: {
 }
 
 function AddCreditModal({ hosts, onClose, onDone }: {
-  hosts: { id: string; displayName: string }[];
-  onClose: () => void;
-  onDone: () => void;
+  hosts: { id: string; displayName: string }[]; onClose: () => void; onDone: () => void;
 }) {
   const [liveHostId, setLiveHostId] = useState("");
   const [date, setDate] = useState(mytToday());
@@ -577,7 +783,7 @@ function AddCreditModal({ hosts, onClose, onDone }: {
               style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Hours (positive = add, negative = deduct)</label>
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Hours (+add / -deduct)</label>
             <input type="number" value={hours} onChange={e => setHours(e.target.value)} step="0.5"
               className="w-full px-3 py-2 rounded-lg text-sm"
               style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
@@ -599,21 +805,198 @@ function AddCreditModal({ hosts, onClose, onDone }: {
   );
 }
 
+function SetBalanceModal({ hosts, onClose, onDone }: {
+  hosts: { id: string; displayName: string }[]; onClose: () => void; onDone: () => void;
+}) {
+  const [liveHostId, setLiveHostId] = useState("");
+  const [targetUnits, setTargetUnits] = useState("1");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!liveHostId || !reason) return;
+    setSaving(true);
+    await fetch("/api/replacement-leave/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "SET_BALANCE", liveHostId, targetUnits: parseInt(targetUnits), reason }),
+    });
+    setSaving(false);
+    onDone();
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Override RL Balance" size="lg">
+      <div className="space-y-4">
+        <div className="p-3 rounded-lg text-xs" style={{ background: "#6366f110", border: "1px solid #6366f130", color: "#6366f1" }}>
+          <strong>Override:</strong> This sets a host's effective balance to a specific number of units by adding a manual hours adjustment. Use sparingly for corrections or migration from old system.
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Host *</label>
+            <select value={liveHostId} onChange={e => setLiveHostId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg text-sm"
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+              <option value="">Select host…</option>
+              {hosts.map(h => <option key={h.id} value={h.id}>{h.displayName}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Target Balance (units)</label>
+            <input type="number" min="0" value={targetUnits} onChange={e => setTargetUnits(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg text-sm"
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Reason *</label>
+            <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+              placeholder="e.g. Migration from old system, correction…"
+              className="w-full px-3 py-2 rounded-lg text-sm"
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} loading={saving} disabled={!liveHostId || !reason}>Override Balance</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function BlackoutModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [date, setDate] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    if (!date || !reason) return;
+    setSaving(true);
+    const res = await fetch("/api/replacement-leave/blackout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, reason }),
+    });
+    setSaving(false);
+    if (res.ok) { onDone(); }
+    else { const d = await res.json(); setError(d.error ?? "Failed"); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Add Blackout Date">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Date *</label>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg text-sm"
+            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", colorScheme: "dark" }} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Reason *</label>
+          <input type="text" value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="e.g. Year-end campaign, major product launch…"
+            className="w-full px-3 py-2 rounded-lg text-sm"
+            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+        </div>
+        {error && <div className="text-sm p-2 rounded-lg" style={{ background: "#ef444410", color: "#ef4444" }}>{error}</div>}
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} loading={saving} disabled={!date || !reason}>Add Blackout</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkActionBar({ selectedIds, onAction, loading }: {
+  selectedIds: string[]; onAction: (action: "APPROVE" | "REJECT", note: string) => void; loading: boolean;
+}) {
+  const [note, setNote] = useState("");
+  if (selectedIds.length === 0) return null;
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "var(--bg-card)", border: "1px solid var(--accent)40" }}>
+      <span className="text-xs font-semibold" style={{ color: "var(--accent)" }}>{selectedIds.length} selected</span>
+      <input value={note} onChange={e => setNote(e.target.value)} placeholder="Optional admin note…"
+        className="flex-1 px-2 py-1.5 rounded-lg text-xs"
+        style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+      <Button variant="destructive" onClick={() => onAction("REJECT", note)} loading={loading} className="text-xs py-1.5">
+        <XCircle size={13} /> Reject All
+      </Button>
+      <Button onClick={() => onAction("APPROVE", note)} loading={loading} className="text-xs py-1.5">
+        <CheckCircle2 size={13} /> Approve All
+      </Button>
+    </div>
+  );
+}
+
 function AdminView() {
-  const [data, setData] = useState<{ summaries: AdminHostSummary[]; pendingApps: PendingApp[] } | null>(null);
+  const [data, setData] = useState<{ summaries: AdminHostSummary[]; pendingApps: PendingApp[]; recentApprovedApps: ReviewedApp[] } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [blackouts, setBlackouts] = useState<BlackoutDate[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [reviewApp, setReviewApp] = useState<PendingApp | null>(null);
   const [expandedHost, setExpandedHost] = useState<string | null>(null);
   const [addCreditOpen, setAddCreditOpen] = useState(false);
+  const [setBalanceOpen, setSetBalanceOpen] = useState(false);
+  const [blackoutOpen, setBlackoutOpen] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [showBlackouts, setShowBlackouts] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/replacement-leave/admin");
-    if (res.ok) setData(await res.json());
+    const [adminRes, blackoutRes, auditRes] = await Promise.all([
+      fetch("/api/replacement-leave/admin"),
+      fetch("/api/replacement-leave/blackout"),
+      fetch("/api/replacement-leave/audit"),
+    ]);
+    if (adminRes.ok) setData(await adminRes.json());
+    if (blackoutRes.ok) setBlackouts((await blackoutRes.json()).blackouts ?? []);
+    if (auditRes.ok) setAuditLogs((await auditRes.json()).logs ?? []);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleBulkAction(action: "APPROVE" | "REJECT", note: string) {
+    setBulkLoading(true);
+    await fetch("/api/replacement-leave/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: selectedIds, action, adminNote: note }),
+    });
+    setBulkLoading(false);
+    setSelectedIds([]);
+    load();
+  }
+
+  async function removeBlackout(id: string) {
+    await fetch("/api/replacement-leave/blackout", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    load();
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    const res = await fetch("/api/replacement-leave/export");
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `replacement-leave-${mytToday()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    setExporting(false);
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -621,21 +1004,101 @@ function AdminView() {
     </div>
   );
 
-  const { summaries, pendingApps } = data!;
+  const { summaries, pendingApps, recentApprovedApps } = data!;
+
+  // Analytics
+  const totalHosts = summaries.length;
+  const hostsWithRL = summaries.filter(s => s.summary.unitsEarned > 0).length;
+  const totalUnitsEarned = summaries.reduce((sum, s) => sum + s.summary.unitsEarned, 0);
+  const totalUnitsUsed = summaries.reduce((sum, s) => sum + s.summary.unitsUsed, 0);
+  const totalExpired = summaries.reduce((sum, s) => sum + s.summary.unitsExpired, 0);
+  const approvedAppsWithTime = recentApprovedApps.filter(a => a.reviewedAt);
+  const avgApprovalHrs = approvedAppsWithTime.length > 0
+    ? approvedAppsWithTime.reduce((sum, a) => sum + (new Date(a.reviewedAt!).getTime() - new Date(a.createdAt).getTime()) / 3600000, 0) / approvedAppsWithTime.length
+    : null;
+
+  // Calendar apps (pending + approved/rejected from recent)
+  const calendarApps: CalendarApp[] = [
+    ...pendingApps.map(a => ({ id: a.id, liveHostId: a.liveHost.id, leaveDate: a.leaveDate, halfDay: a.halfDay, status: "PENDING", liveHost: { id: a.liveHost.id, displayName: a.liveHost.displayName } })),
+    ...recentApprovedApps.filter(a => a.status === "APPROVED").map(a => ({ id: a.id, liveHostId: a.liveHost.id, leaveDate: a.leaveDate, halfDay: a.halfDay, status: "APPROVED", liveHost: { id: a.liveHost.id, displayName: a.liveHost.displayName } })),
+  ];
+
+  const ACTION_LABELS: Record<string, { label: string; color: string }> = {
+    APPLY:            { label: "Applied",         color: "#6366f1" },
+    APPROVE:          { label: "Approved",         color: "#22c55e" },
+    REJECT:           { label: "Rejected",         color: "#ef4444" },
+    CANCEL:           { label: "Cancelled",        color: "#94a3b8" },
+    MANUAL_CREDIT:    { label: "Manual Credit",    color: "#f97316" },
+    REMOVE_CREDIT:    { label: "Credit Removed",   color: "#ef4444" },
+    BLACKOUT_ADD:     { label: "Blackout Added",   color: "#f59e0b" },
+    BLACKOUT_REMOVE:  { label: "Blackout Removed", color: "#94a3b8" },
+    BALANCE_OVERRIDE: { label: "Balance Override", color: "#8b5cf6" },
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Replacement Leave</h1>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Host Leaves</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-            Manage host replacement leave balances and applications
+            Manage replacement leave balances and applications
           </p>
         </div>
-        <Button variant="outline" onClick={() => setAddCreditOpen(true)}>
-          <Plus size={14} /> Manual Credit
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" onClick={handleExport} loading={exporting}>
+            <Download size={14} /> Export CSV
+          </Button>
+          <Button variant="outline" onClick={() => setSetBalanceOpen(true)}>
+            <Zap size={14} /> Set Balance
+          </Button>
+          <Button variant="outline" onClick={() => setAddCreditOpen(true)}>
+            <Plus size={14} /> Manual Credit
+          </Button>
+        </div>
+      </div>
+
+      {/* Analytics Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { icon: Users,       label: "Hosts with RL",     value: `${hostsWithRL}/${totalHosts}`,        color: "#6366f1", hint: "Have earned RL" },
+          { icon: Sparkles,    label: "Total Units Earned", value: totalUnitsEarned,                      color: "var(--accent)", hint: "Across all hosts" },
+          { icon: CheckCircle2,label: "Total Used",         value: totalUnitsUsed,                        color: "#22c55e", hint: "Approved leaves" },
+          { icon: BarChart3,   label: "Avg Approval Time",  value: avgApprovalHrs != null ? `${avgApprovalHrs.toFixed(1)}h` : "—", color: "#0ea5e9", hint: "Application to decision" },
+        ].map(({ icon: Icon, label, value, color, hint }) => (
+          <div key={label} className="section-card p-4 flex flex-col gap-1">
+            <div className="flex items-center gap-2 mb-1">
+              <Icon size={14} style={{ color }} />
+              <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>{label}</span>
+            </div>
+            <div className="text-2xl font-bold" style={{ color }}>{value}</div>
+            <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>{hint}</div>
+          </div>
+        ))}
+      </div>
+      {totalExpired > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: "#94a3b810", border: "1px solid #94a3b830", color: "#94a3b8" }}>
+          <AlertCircle size={13} /> {totalExpired} RL unit(s) have expired without being used across all hosts.
+        </div>
+      )}
+
+      {/* Leave Calendar */}
+      <div className="section-card overflow-hidden">
+        <button
+          onClick={() => setShowCalendar(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer"
+          style={{ borderBottom: showCalendar ? "1px solid var(--border)" : "none" }}>
+          <div className="flex items-center gap-2">
+            <Calendar size={14} style={{ color: "var(--accent)" }} />
+            <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Leave Calendar</span>
+          </div>
+          {showCalendar ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+        </button>
+        {showCalendar && (
+          <div className="p-4">
+            <LeaveCalendar apps={calendarApps} />
+          </div>
+        )}
       </div>
 
       {/* Pending Approvals */}
@@ -647,7 +1110,18 @@ function AdminView() {
             <span className="ml-1 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold"
               style={{ background: "#f59e0b", color: "#000" }}>{pendingApps.length}</span>
           )}
+          {pendingApps.length > 1 && (
+            <button
+              onClick={() => setSelectedIds(selectedIds.length === pendingApps.length ? [] : pendingApps.map(a => a.id))}
+              className="ml-auto text-xs px-2 py-1 rounded cursor-pointer"
+              style={{ color: "var(--accent)", background: "var(--accent)10" }}>
+              {selectedIds.length === pendingApps.length ? "Deselect All" : "Select All"}
+            </button>
+          )}
         </div>
+
+        <BulkActionBar selectedIds={selectedIds} onAction={handleBulkAction} loading={bulkLoading} />
+
         {pendingApps.length === 0 ? (
           <div className="flex items-center gap-2 py-4 text-sm" style={{ color: "var(--text-muted)" }}>
             <CheckCircle2 size={16} />
@@ -658,6 +1132,12 @@ function AdminView() {
             {pendingApps.map(app => (
               <div key={app.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
                 style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(app.id)}
+                  onChange={e => setSelectedIds(prev => e.target.checked ? [...prev, app.id] : prev.filter(i => i !== app.id))}
+                  className="flex-shrink-0"
+                />
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                   style={{ background: "var(--accent)20", color: "var(--accent)" }}>
                   {app.liveHost.displayName.slice(0, 1).toUpperCase()}
@@ -666,6 +1146,8 @@ function AdminView() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{app.liveHost.displayName}</span>
                     <span className="text-sm" style={{ color: "var(--text-secondary)" }}>→ {fmtDate(app.leaveDate)}</span>
+                    <HalfDayPill halfDay={app.halfDay} />
+                    <CategoryPill category={app.category} />
                   </div>
                   <div className="text-xs" style={{ color: "var(--text-muted)" }}>
                     Applied {format(new Date(app.createdAt), "d MMM yyyy")}
@@ -674,7 +1156,7 @@ function AdminView() {
                 </div>
                 <button
                   onClick={() => setReviewApp(app)}
-                  className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all"
+                  className="flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
                   style={{ background: "var(--accent)", color: "#fff" }}>
                   Review
                 </button>
@@ -684,33 +1166,83 @@ function AdminView() {
         )}
       </div>
 
+      {/* Blackout Dates */}
+      <div className="section-card overflow-hidden">
+        <button
+          onClick={() => setShowBlackouts(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer"
+          style={{ borderBottom: showBlackouts ? "1px solid var(--border)" : "none" }}>
+          <div className="flex items-center gap-2">
+            <Ban size={14} style={{ color: "#ef4444" }} />
+            <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Blackout Dates</span>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {blackouts.length > 0 ? `${blackouts.length} active` : "None set"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={e => { e.stopPropagation(); setBlackoutOpen(true); }}
+              className="text-xs px-2 py-1 rounded cursor-pointer"
+              style={{ background: "var(--accent)20", color: "var(--accent)" }}>
+              + Add
+            </button>
+            {showBlackouts ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+          </div>
+        </button>
+        {showBlackouts && (
+          <div className="p-4 space-y-2">
+            {blackouts.length === 0 ? (
+              <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>
+                No blackout dates. Add dates when leave applications should be blocked (e.g. major campaigns).
+              </p>
+            ) : (
+              blackouts.map(b => (
+                <div key={b.id} className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                  <Ban size={12} style={{ color: "#ef4444", flexShrink: 0 }} />
+                  <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{fmtDate(b.date)}</span>
+                  <span className="flex-1 text-xs truncate" style={{ color: "var(--text-secondary)" }}>{b.reason}</span>
+                  <button onClick={() => removeBlackout(b.id)}
+                    className="text-xs px-2 py-1 rounded cursor-pointer flex-shrink-0"
+                    style={{ color: "#ef4444", background: "#ef444415" }}>
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* All Hosts RL Balance */}
       <div className="section-card overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
           <Users size={14} style={{ color: "var(--accent)" }} />
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>All Hosts — RL Balance</span>
+          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>All Hosts — RL Balance & Forecast</span>
         </div>
         <div className="divide-y" style={{ borderColor: "var(--border)" }}>
           {summaries.map(({ host, summary: s }) => (
             <div key={host.id}>
               <button
                 onClick={() => setExpandedHost(expandedHost === host.id ? null : host.id)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer"
                 style={{ background: expandedHost === host.id ? "var(--bg-subtle)" : "transparent" }}>
-                {/* Avatar */}
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                   style={{ background: "var(--accent)20", color: "var(--accent)" }}>
                   {host.displayName.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{host.displayName}</span>
+                  {s.unitsEarned > 0 && (
+                    <div className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      Next unit in {s.hoursToNextUnit.toFixed(1)}h · {s.totalHours.toFixed(1)}h accumulated
+                    </div>
+                  )}
                 </div>
-                {/* Balance chips */}
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {s.unitsAvailable > 0 && (
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{ background: "#22c55e20", color: "#22c55e" }}>
-                      <CircleCheck size={10} /> {s.unitsAvailable} available
+                      <CircleCheck size={10} /> {s.unitsAvailable} avail.
                     </div>
                   )}
                   {s.unitsPendingUnlock > 0 && (
@@ -736,13 +1268,13 @@ function AdminView() {
 
               {expandedHost === host.id && (
                 <div className="px-4 pb-4 space-y-3" style={{ background: "var(--bg-subtle)" }}>
-                  {/* Stats row */}
-                  <div className="grid grid-cols-4 gap-2 pt-2">
+                  <div className="grid grid-cols-5 gap-2 pt-2">
                     {[
                       { label: "Available", value: s.unitsAvailable, color: "#22c55e" },
-                      { label: "Locked", value: s.unitsPendingUnlock, color: "#f59e0b" },
-                      { label: "Pending", value: s.unitsPendingApproval, color: "#6366f1" },
-                      { label: "Used", value: s.unitsUsed, color: "var(--text-muted)" },
+                      { label: "Locked",    value: s.unitsPendingUnlock, color: "#f59e0b" },
+                      { label: "Pending",   value: s.unitsPendingApproval, color: "#6366f1" },
+                      { label: "Used",      value: s.unitsUsed, color: "var(--text-muted)" },
+                      { label: "Expired",   value: s.unitsExpired, color: "#94a3b8" },
                     ].map(({ label, value, color }) => (
                       <div key={label} className="text-center p-2 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
                         <div className="text-lg font-bold" style={{ color }}>{value}</div>
@@ -750,8 +1282,6 @@ function AdminView() {
                       </div>
                     ))}
                   </div>
-
-                  {/* Contributions list */}
                   {s.contributions.length > 0 ? (
                     <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
                       <div className="grid grid-cols-[80px_80px_1fr_50px_60px] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide"
@@ -767,9 +1297,7 @@ function AdminView() {
                             <div className="text-[11px] text-right font-medium" style={{ color: c.hours >= 0 ? "#22c55e" : "#ef4444" }}>
                               {c.hours >= 0 ? "+" : ""}{c.hours.toFixed(1)}h
                             </div>
-                            <div className="text-[11px] text-right" style={{ color: "var(--text-muted)" }}>
-                              {c.runningTotal.toFixed(1)}h
-                            </div>
+                            <div className="text-[11px] text-right" style={{ color: "var(--text-muted)" }}>{c.runningTotal.toFixed(1)}h</div>
                           </div>
                         ))}
                       </div>
@@ -782,6 +1310,47 @@ function AdminView() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Audit Log */}
+      <div className="section-card overflow-hidden">
+        <button
+          onClick={() => setShowAudit(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer"
+          style={{ borderBottom: showAudit ? "1px solid var(--border)" : "none" }}>
+          <div className="flex items-center gap-2">
+            <History size={14} style={{ color: "var(--accent)" }} />
+            <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Audit Log</span>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{auditLogs.length} entries</span>
+          </div>
+          {showAudit ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+        </button>
+        {showAudit && (
+          <div className="divide-y max-h-96 overflow-y-auto" style={{ borderColor: "var(--border)" }}>
+            {auditLogs.length === 0 ? (
+              <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No audit entries yet.</p>
+            ) : (
+              auditLogs.map(log => {
+                const meta = ACTION_LABELS[log.action] ?? { label: log.action, color: "var(--text-muted)" };
+                return (
+                  <div key={log.id} className="flex items-start gap-3 px-4 py-2.5">
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 mt-0.5"
+                      style={{ background: meta.color + "20", color: meta.color }}>{meta.label}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                        {log.hostName && <span className="font-medium">{log.hostName} — </span>}
+                        {log.detail}
+                      </div>
+                      <div className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                        {log.performerName} · {format(new Date(log.createdAt), "d MMM yyyy, HH:mm")}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -797,6 +1366,19 @@ function AdminView() {
           hosts={summaries.map(s => ({ id: s.host.id, displayName: s.host.displayName }))}
           onClose={() => setAddCreditOpen(false)}
           onDone={() => { setAddCreditOpen(false); load(); }}
+        />
+      )}
+      {setBalanceOpen && (
+        <SetBalanceModal
+          hosts={summaries.map(s => ({ id: s.host.id, displayName: s.host.displayName }))}
+          onClose={() => setSetBalanceOpen(false)}
+          onDone={() => { setSetBalanceOpen(false); load(); }}
+        />
+      )}
+      {blackoutOpen && (
+        <BlackoutModal
+          onClose={() => setBlackoutOpen(false)}
+          onDone={() => { setBlackoutOpen(false); load(); }}
         />
       )}
     </div>

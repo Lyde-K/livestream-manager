@@ -598,6 +598,8 @@ model RLApplication {
   liveHostId String
   liveHost   LiveHost  @relation(fields: [liveHostId], references: [id], onDelete: Cascade)
   leaveDate  String    // "YYYY-MM-DD" — the date being requested off
+  halfDay    String?   // MORNING | AFTERNOON | null = full day
+  category   String?   // PERSONAL | MEDICAL | FAMILY | OTHER
   status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
   notes      String?   // host note
   adminNote  String?   // admin review note
@@ -609,4 +611,24 @@ model RLApplication {
   @@index([liveHostId])
   @@index([status])
   @@index([leaveDate])
+}
+
+model RLBlackoutDate {
+  id        String   @id @default(cuid())
+  date      String   // "YYYY-MM-DD"
+  reason    String
+  createdBy String   // admin userId
+  createdAt DateTime @default(now())
+  @@index([date])
+}
+
+model RLAuditLog {
+  id          String   @id @default(cuid())
+  liveHostId  String?
+  action      String   // APPLY | APPROVE | REJECT | CANCEL | MANUAL_CREDIT | REMOVE_CREDIT | BLACKOUT_ADD | BLACKOUT_REMOVE | BALANCE_OVERRIDE
+  detail      String
+  performedBy String
+  createdAt   DateTime @default(now())
+  @@index([liveHostId])
+  @@index([createdAt])
 }
