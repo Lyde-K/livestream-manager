@@ -279,6 +279,8 @@ export default function SchedulePage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importResult, setImportResult] = useState<{ summary: { created: number; updated: number; skipped: number }; } | null>(null);
+  type ImportPreviewRow = { row: number; sessionId: string; date: string; startMyt: string; endMyt: string; hostId: string; brandId: string; action: string; error?: string };
+  const [importPreview, setImportPreview] = useState<ImportPreviewRow[] | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -549,6 +551,19 @@ export default function SchedulePage() {
     URL.revokeObjectURL(url);
   }
 
+  async function previewImportExcel() {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportPreview(null);
+    const fd = new FormData();
+    fd.append("file", importFile);
+    const res = await fetch("/api/import/sessions/preview", { method: "POST", body: fd });
+    const data = await res.json();
+    setImportLoading(false);
+    if (data.ok) setImportPreview(data.rows);
+    else alert(`Preview failed: ${data.error}`);
+  }
+
   async function importSessionsExcel() {
     if (!importFile) return;
     setImportLoading(true);
@@ -560,6 +575,7 @@ export default function SchedulePage() {
     setImportLoading(false);
     if (data.ok) {
       setImportResult(data);
+      setImportPreview(null);
       await reloadCurrentRange();
     } else {
       alert(`Import failed: ${data.error}`);
@@ -960,34 +976,82 @@ export default function SchedulePage() {
       )}
 
       {/* Import Excel Modal */}
-      <Modal open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); }} title="Import Sessions from Excel" size="md">
+      <Modal open={importOpen} onClose={() => { setImportOpen(false); setImportResult(null); setImportPreview(null); setImportFile(null); }} title="Import Sessions from Excel" size="lg">
         <div className="space-y-4">
-          <div className="rounded-lg px-3 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
-            <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>How it works</p>
-            <ol className="list-decimal list-inside space-y-1 text-xs">
-              <li>Click <strong>Export Excel</strong> to download the current view&apos;s sessions.</li>
-              <li>Amend Date, Start/End Times, Host/Brand/Room IDs, Platform, Notes in the file.</li>
-              <li>Save and upload the amended file here to sync changes.</li>
-            </ol>
-            <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>Rows with a Session ID will be <strong>updated</strong>. Rows without an ID will create new sessions.</p>
-          </div>
+          {!importResult && (
+            <>
+              <div className="rounded-lg px-3 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
+                <p className="font-medium mb-1" style={{ color: "var(--text-primary)" }}>How it works</p>
+                <ol className="list-decimal list-inside space-y-1 text-xs">
+                  <li>Click <strong>Export Excel</strong> to download the current view&apos;s sessions.</li>
+                  <li>Amend Date, Start/End Times, Host/Brand/Room IDs, Platform, Notes in the file.</li>
+                  <li>Upload here — <strong>Preview</strong> first to verify MYT times, then confirm.</li>
+                </ol>
+                <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>Rows with a Session ID will be <strong>updated</strong>. Rows without an ID will create new sessions.</p>
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
-              Select Excel File (.xlsx)
-            </label>
-            <input
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); }}
-              className="block w-full text-sm rounded-lg px-3 py-2 cursor-pointer"
-              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-            />
-          </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                  Select Excel File (.xlsx)
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); setImportPreview(null); }}
+                  className="block w-full text-sm rounded-lg px-3 py-2 cursor-pointer"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+                />
+              </div>
+
+              {/* Preview table */}
+              {importPreview && (
+                <div>
+                  <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                    Preview — {importPreview.filter(r => r.action !== "skip").length} row(s) to import. Verify MYT times are correct before confirming.
+                  </p>
+                  <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead style={{ position: "sticky", top: 0, background: "var(--bg-subtle)", zIndex: 1 }}>
+                        <tr>
+                          {["Row","Action","Date","Start (MYT)","End (MYT)","Host ID","Brand ID"].map(h => (
+                            <th key={h} style={{ padding: "4px 8px", textAlign: "left", color: "var(--text-muted)", fontWeight: 600, borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importPreview.map((r, i) => (
+                          <tr key={i} style={{ background: r.error ? "#ef444415" : i % 2 === 0 ? "transparent" : "var(--bg-subtle)" }}>
+                            <td style={{ padding: "3px 8px", color: "var(--text-muted)" }}>{r.row}</td>
+                            <td style={{ padding: "3px 8px" }}>
+                              <span style={{
+                                padding: "1px 5px", borderRadius: 3, fontSize: 10, fontWeight: 600,
+                                background: r.error ? "#ef444420" : r.action === "create" ? "#22c55e20" : "#3b82f620",
+                                color: r.error ? "#ef4444" : r.action === "create" ? "#22c55e" : "#3b82f6",
+                              }}>{r.error ? "SKIP" : r.action.toUpperCase()}</span>
+                            </td>
+                            <td style={{ padding: "3px 8px", color: "var(--text-primary)" }}>{r.date}</td>
+                            <td style={{ padding: "3px 8px", color: "var(--text-primary)", fontWeight: 600 }}>{r.startMyt}</td>
+                            <td style={{ padding: "3px 8px", color: "var(--text-secondary)" }}>{r.endMyt}</td>
+                            <td style={{ padding: "3px 8px", color: "var(--text-muted)", fontFamily: "monospace", fontSize: 9 }}>{r.hostId.slice(0,12)}…</td>
+                            <td style={{ padding: "3px 8px", color: "var(--text-muted)", fontFamily: "monospace", fontSize: 9 }}>{r.brandId.slice(0,12)}…</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {importPreview.some(r => r.error) && (
+                    <p className="text-xs mt-1.5" style={{ color: "#f59e0b" }}>
+                      ⚠ Rows marked SKIP will be ignored — fix missing fields in the spreadsheet and re-upload.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
 
           {importResult && (
-            <div className="rounded-lg px-3 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-success, #86efac)" }}>
-              <p className="font-semibold mb-1" style={{ color: "var(--accent)" }}>✓ Import complete</p>
+            <div className="rounded-lg px-3 py-2.5 text-sm" style={{ background: "var(--bg-subtle)", border: "1px solid #86efac" }}>
+              <p className="font-semibold mb-1" style={{ color: "#22c55e" }}>✓ Import complete</p>
               <div className="flex gap-4 text-xs">
                 <span><strong style={{ color: "#22c55e" }}>{importResult.summary.created}</strong> created</span>
                 <span><strong style={{ color: "var(--accent)" }}>{importResult.summary.updated}</strong> updated</span>
@@ -997,10 +1061,20 @@ export default function SchedulePage() {
           )}
 
           <div className="flex justify-end gap-2 pt-1" style={{ borderTop: "1px solid var(--border)" }}>
-            <Button variant="secondary" onClick={() => { setImportOpen(false); setImportResult(null); }}>Close</Button>
-            <Button onClick={importSessionsExcel} loading={importLoading} disabled={!importFile}>
-              <Upload size={14} /> Upload &amp; Sync
-            </Button>
+            <Button variant="secondary" onClick={() => { setImportOpen(false); setImportResult(null); setImportPreview(null); setImportFile(null); }}>Close</Button>
+            {!importResult && !importPreview && (
+              <Button onClick={previewImportExcel} loading={importLoading} disabled={!importFile}>
+                Preview
+              </Button>
+            )}
+            {importPreview && !importResult && (
+              <>
+                <Button variant="secondary" onClick={() => setImportPreview(null)}>← Back</Button>
+                <Button onClick={importSessionsExcel} loading={importLoading}>
+                  <Upload size={14} /> Confirm &amp; Import
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </Modal>
