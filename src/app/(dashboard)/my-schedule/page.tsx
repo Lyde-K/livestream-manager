@@ -65,7 +65,7 @@ export default function MySchedulePage() {
     setLoading(true);
     const { start, end } = getMonthRange(dateStr);
     try {
-      const res = await fetch(`/api/sessions?start=${start}&end=${end}`);
+      const res = await fetch(`/api/sessions?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
       if (res.ok) setSessions(await res.json());
     } finally {
       setLoading(false);
@@ -99,7 +99,7 @@ export default function MySchedulePage() {
 
   async function exportICS() {
     const { start, end } = getMonthRange(currentDate);
-    const res = await fetch(`/api/export/ics?start=${start}&end=${end}`);
+    const res = await fetch(`/api/export/ics?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
     if (!res.ok) return alert("Export failed");
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
