@@ -6,6 +6,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import listPlugin from "@fullcalendar/list";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Download, FileSpreadsheet, Clock, Layers } from "lucide-react";
 import { format } from "date-fns";
 
@@ -178,15 +179,11 @@ function ExportModal({ onClose }: { onClose: () => void }) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>From</div>
-                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm"
-                  style={{ ...selectStyle(), appearance: "none" as React.CSSProperties["appearance"] }} />
+                <DatePicker value={customStart} onChange={setCustomStart} placeholder="From" />
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>To</div>
-                <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm"
-                  style={{ ...selectStyle(), appearance: "none" as React.CSSProperties["appearance"], borderColor: customRangeInvalid ? "#ef4444" : undefined }} />
+                <DatePicker value={customEnd} onChange={setCustomEnd} min={customStart || undefined} placeholder="To" />
               </div>
               {customRangeInvalid && (
                 <p style={{ gridColumn: "1/-1", margin: 0, fontSize: 11, color: "#ef4444" }}>End date must be on or after start date.</p>

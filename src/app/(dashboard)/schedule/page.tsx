@@ -132,7 +132,6 @@ function AdminExportModal({ brands, onClose }: { brands: { id: string; name: str
     onClose();
   }
 
-  const selStyle: React.CSSProperties = { background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", fontFamily: "inherit" };
   const rangeLabel = mode === "month"
     ? ADMIN_MONTH_OPTIONS.find(m => m.value === month)?.label
     : (customStart && customEnd ? `${format(new Date(customStart + "T00:00:00"), "d MMM")} – ${format(new Date(customEnd + "T00:00:00"), "d MMM yyyy")}` : null);
@@ -180,14 +179,11 @@ function AdminExportModal({ brands, onClose }: { brands: { id: string; name: str
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>From</div>
-                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm" style={{ ...selStyle, appearance: "none" as React.CSSProperties["appearance"] }} />
+                <DatePicker value={customStart} onChange={setCustomStart} placeholder="From" />
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>To</div>
-                <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg text-sm"
-                  style={{ ...selStyle, appearance: "none" as React.CSSProperties["appearance"], borderColor: customRangeInvalid ? "#ef4444" : undefined }} />
+                <DatePicker value={customEnd} onChange={setCustomEnd} min={customStart || undefined} placeholder="To" />
               </div>
               {customRangeInvalid && (
                 <p style={{ gridColumn: "1/-1", margin: 0, fontSize: 11, color: "#ef4444" }}>End date must be on or after start date.</p>
