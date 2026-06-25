@@ -23,14 +23,23 @@ export async function GET(req: NextRequest) {
   if (!session) return new Response("Unauthorized", { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const start = searchParams.get("start");
-  const end   = searchParams.get("end");
+  const start   = searchParams.get("start");
+  const end     = searchParams.get("end");
+  const brandId = searchParams.get("brandId"); // explicit brand filter from export modal
 
   const user = session.user as { id: string; role: string };
   const where: Record<string, unknown> = {};
   if (start && end) where.scheduledStart = { gte: new Date(start), lte: new Date(end) };
 
-  if (user.role === "CLIENT") {
+  if (brandId) {
+    // Explicit brand selected — verify CLIENT owns it
+    if (user.role === "CLIENT") {
+      const client = await prisma.client.findUnique({ where: { userId: user.id }, include: { brands: true } });
+      const owns = client?.brands.some(b => b.id === brandId);
+      if (!owns) return new Response("Forbidden", { status: 403 });
+    }
+    where.brandId = brandId;
+  } else if (user.role === "CLIENT") {
     const client = await prisma.client.findUnique({ where: { userId: user.id }, include: { brands: true } });
     if (client) where.brandId = { in: client.brands.map((b) => b.id) };
   }
