@@ -860,14 +860,24 @@ export default function SchedulePage() {
             setDetailSession(null);
             setOpen(true);
           }}
-          onPasteSlot={async (roomId, start, end, cb) => {
+          onPasteSlot={async (roomId, start, end, brand, host) => {
             await fetch("/api/sessions", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                roomId, liveHostId: cb.liveHostId ?? "", brandId: cb.brandId,
-                platform: cb.platform, isCampaignDay: cb.isCampaignDay,
+                roomId, brandId: brand.brandId, liveHostId: host.liveHostId ?? "",
+                platform: brand.platform, isCampaignDay: brand.isCampaignDay,
                 scheduledStart: toMYT(start), scheduledEnd: toMYT(end), notes: "",
               }),
+            });
+            await reloadCurrentRange();
+          }}
+          onUpdateSlot={async (sessionId, brand, host) => {
+            const body: Record<string, unknown> = {};
+            if (brand) { body.brandId = brand.brandId; body.platform = brand.platform; body.isCampaignDay = brand.isCampaignDay; }
+            if (host)  { body.liveHostId = host.liveHostId; }
+            await fetch(`/api/sessions/${sessionId}`, {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
             });
             await reloadCurrentRange();
           }}
