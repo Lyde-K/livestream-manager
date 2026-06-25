@@ -67,13 +67,13 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Parse datetime
-    const scheduledStart = new Date(`${dateStr}T${startTimeStr}:00`);
-    const scheduledEnd = new Date(`${dateStr}T${endTimeStr}:00`);
+    // Parse datetime as MYT (UTC+8) — append +08:00 so JS doesn't treat as local/UTC
+    const scheduledStart = new Date(`${dateStr}T${startTimeStr}:00+08:00`);
+    const scheduledEnd   = new Date(`${dateStr}T${endTimeStr}:00+08:00`);
 
-    // Handle sessions ending past midnight (e.g., 01:00 end < 10:00 start → next day)
-    if (scheduledEnd < scheduledStart) {
-      scheduledEnd.setDate(scheduledEnd.getDate() + 1);
+    // Handle sessions ending past midnight MYT (e.g., 01:00 end < 10:00 start → next day)
+    if (scheduledEnd <= scheduledStart) {
+      scheduledEnd.setTime(scheduledEnd.getTime() + 24 * 3_600_000);
     }
 
     if (isNaN(scheduledStart.getTime()) || isNaN(scheduledEnd.getTime())) {
