@@ -36,6 +36,38 @@ export async function GET(req: NextRequest) {
   return Response.json(campaigns, { headers: { "Cache-Control": "no-store" } });
 }
 
+// Backfill blackout dates for all existing campaigns
+export async function PATCH(req: NextRequest) {
+  const session = await auth();
+  if (!session || (session.user as { role: string }).role !== "ADMIN")
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  const user = session.user as { id: string };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const campaigns = await (prisma as any).campaign.findMany({ select: { id: true, name: true, startDate: true } });
+
+  let created = 0;
+  for (const campaign of campaigns) {
+    const days = campaignBlackoutDays(new Date(campaign.startDate));
+    for (let i = 0; i < days.length; i++) {
+      const date = days[i];
+      const id = `bl_camp_${campaign.id}_d${i + 1}`;
+      const existing = await prisma.rLBlackoutDate.findFirst({ where: { id } });
+      if (!existing) {
+        const dateConflict = await prisma.rLBlackoutDate.findFirst({ where: { date } });
+        if (!dateConflict) {
+          await prisma.rLBlackoutDate.create({
+            data: { id, date, reason: `Campaign: ${campaign.name} (Day ${i + 1})`, createdBy: user.id },
+          });
+          created++;
+        }
+      }
+    }
+  }
+
+  return Response.json({ ok: true, created, total: campaigns.length });
+}
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session || (session.user as { role: string }).role !== "ADMIN")

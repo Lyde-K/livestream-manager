@@ -1009,6 +1009,14 @@ function AdminView() {
     load();
   }
 
+  const [syncing, setSyncing] = useState(false);
+  async function syncCampaignBlackouts() {
+    setSyncing(true);
+    const res = await fetch("/api/campaigns", { method: "PATCH" });
+    setSyncing(false);
+    if (res.ok) load();
+  }
+
   async function removeBlackout(id: string) {
     await fetch("/api/replacement-leave/blackout", {
       method: "DELETE",
@@ -1215,6 +1223,12 @@ function AdminView() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={e => { e.stopPropagation(); syncCampaignBlackouts(); }}
+              disabled={syncing}
+              className="text-xs px-2 py-1 rounded cursor-pointer"
+              style={{ background: "#6366f120", color: "#6366f1", opacity: syncing ? 0.6 : 1 }}>
+              {syncing ? "Syncing…" : "↻ Sync Campaigns"}
+            </button>
             <button onClick={e => { e.stopPropagation(); setBlackoutOpen(true); }}
               className="text-xs px-2 py-1 rounded cursor-pointer"
               style={{ background: "var(--accent)20", color: "var(--accent)" }}>
