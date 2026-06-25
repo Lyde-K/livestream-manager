@@ -132,6 +132,7 @@ function AdminExportModal({ brands, onClose }: { brands: { id: string; name: str
     onClose();
   }
 
+  const selStyle: React.CSSProperties = { background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", fontFamily: "inherit" };
   const rangeLabel = mode === "month"
     ? ADMIN_MONTH_OPTIONS.find(m => m.value === month)?.label
     : (customStart && customEnd ? `${format(new Date(customStart + "T00:00:00"), "d MMM")} – ${format(new Date(customEnd + "T00:00:00"), "d MMM yyyy")}` : null);
