@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
       c.month === monthIndex + 1 &&
       c.year === year
     );
-    return match?.name ?? "";
+    return match?.name ?? "BAU";
   }
 
   const wb = new ExcelJS.Workbook();
