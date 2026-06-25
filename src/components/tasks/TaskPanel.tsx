@@ -1429,6 +1429,35 @@ export function TaskPanel({ userId, userRole }: Props) {
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const openCount    = tasks.filter((t) => t.status !== "done").length;
+
+  // ── Active view: In Progress only, dynamic priority, sorted ──────────────────
+  function computeDynamicPriority(task: Task): string {
+    if (!task.dueDate) return task.priority; // fallback to manual
+    const daysLeft = (new Date(task.dueDate).getTime() - Date.now()) / 86_400_000;
+    if (daysLeft <= 1)  return "urgent";
+    if (daysLeft <= 3)  return "high";
+    if (daysLeft <= 7)  return "medium";
+    return "low";
+  }
+
+  const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+  const activeListTasks = (tab === "mine" || tab === "all")
+    ? tasks
+        .filter(t => t.status === "in_progress")
+        .map(t => ({ ...t, _dynPriority: computeDynamicPriority(t) }))
+        .sort((a, b) => {
+          const aHas = !!a.dueDate, bHas = !!b.dueDate;
+          if (aHas && bHas) {
+            const dateDiff = new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime();
+            if (dateDiff !== 0) return dateDiff; // soonest first
+            return (PRIORITY_RANK[a._dynPriority] ?? 3) - (PRIORITY_RANK[b._dynPriority] ?? 3);
+          }
+          if (aHas) return -1; // tasks with deadline float up
+          if (bHas) return 1;
+          return (PRIORITY_RANK[a._dynPriority] ?? 3) - (PRIORITY_RANK[b._dynPriority] ?? 3);
+        })
+    : null;
   const panelWidth   = expanded || tab === "board" ? "680px" : "420px";
 
   const TABS: { key: TabKey; label: string }[] = [
@@ -1602,6 +1631,21 @@ export function TaskPanel({ userId, userRole }: Props) {
                   onSelect={(id) => setSelectedId((prev) => prev === id ? null : id)}
                   selectedId={selectedId}
                 />
+              ) : activeListTasks !== null ? (
+                activeListTasks.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--text-muted)", fontSize: "13px" }}>
+                    No in-progress tasks — all clear!
+                  </div>
+                ) : (
+                  activeListTasks.map((task) => (
+                    <TaskCard
+                      key={task.id} task={{ ...task, priority: task._dynPriority }} currentUserId={userId} teams={teams}
+                      onStatusChange={handleStatusChange} onDelete={handleDelete}
+                      onSelect={(id) => setSelectedId((prev) => prev === id ? null : id)}
+                      selected={selectedId === task.id}
+                    />
+                  ))
+                )
               ) : (
                 tasks.map((task) => (
                   <TaskCard
