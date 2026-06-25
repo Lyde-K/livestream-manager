@@ -1203,11 +1203,10 @@ function AdminView() {
 
       {/* Blackout Dates */}
       <div className="section-card overflow-hidden">
-        <button
-          onClick={() => setShowBlackouts(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer"
+        <div
+          className="w-full flex items-center justify-between px-4 py-3"
           style={{ borderBottom: showBlackouts ? "1px solid var(--border)" : "none" }}>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1 cursor-pointer" onClick={() => setShowBlackouts(v => !v)}>
             <Ban size={14} style={{ color: "#ef4444" }} />
             <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Blackout Dates</span>
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
@@ -1215,20 +1214,22 @@ function AdminView() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={e => { e.stopPropagation(); syncCampaignBlackouts(); }}
+            <button onClick={syncCampaignBlackouts}
               disabled={syncing}
               className="text-xs px-2 py-1 rounded cursor-pointer"
               style={{ background: "#6366f120", color: "#6366f1", opacity: syncing ? 0.6 : 1 }}>
               {syncing ? "Syncing…" : "↻ Sync Campaigns"}
             </button>
-            <button onClick={e => { e.stopPropagation(); setBlackoutOpen(true); }}
+            <button onClick={() => setBlackoutOpen(true)}
               className="text-xs px-2 py-1 rounded cursor-pointer"
               style={{ background: "var(--accent)20", color: "var(--accent)" }}>
               + Add
             </button>
-            {showBlackouts ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+            <div className="cursor-pointer" onClick={() => setShowBlackouts(v => !v)}>
+              {showBlackouts ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+            </div>
           </div>
-        </button>
+        </div>
         {showBlackouts && (
           <div className="p-4 space-y-2">
             {blackouts.length === 0 ? (
