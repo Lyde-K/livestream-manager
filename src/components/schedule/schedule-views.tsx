@@ -423,11 +423,16 @@ export function DailyGridView({
   filterBrand = "", filterRoom = "", filterType = "", filterHost = "",
   onSessionClick, onAddSlot, onPasteSlot,
 }: DailyGridViewProps) {
-  // Copy-paste state
-  const [selectedKey, setSelectedKey]   = useState<string | null>(null); // "roomId|slotIdx"
+  const [editMode, setEditMode]         = useState(false);
+  const [selectedKey, setSelectedKey]   = useState<string | null>(null);
   const [clipboard, setClipboard]       = useState<ClipboardSession | null>(null);
-  const [copied, setCopied]             = useState(false);   // true = marching-ants active
-  const [pasteKey, setPasteKey]         = useState<string | null>(null); // target slot key
+  const [copied, setCopied]             = useState(false);
+  const [pasteKey, setPasteKey]         = useState<string | null>(null);
+
+  function exitEditMode() {
+    setEditMode(false);
+    setSelectedKey(null); setClipboard(null); setCopied(false); setPasteKey(null);
+  }
 
   function slotDatetime(h: number): string {
     const extra = h >= 24 ? 1 : 0;
@@ -489,16 +494,14 @@ export function DailyGridView({
     return map;
   }, [daySessions, activeSlots]);
 
-  // Clear copy state when day changes
-  useEffect(() => { setSelectedKey(null); setClipboard(null); setCopied(false); setPasteKey(null); }, [gridDate]);
+  // Reset copy state when day changes or edit mode is turned off
+  useEffect(() => { setSelectedKey(null); setClipboard(null); setCopied(false); setPasteKey(null); }, [gridDate, editMode]);
 
-  // Keyboard: Ctrl+C copies selected session, Ctrl+V pastes to target slot, Escape clears
+  // Keyboard shortcuts — only active in edit mode
   useEffect(() => {
+    if (!editMode) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setSelectedKey(null); setClipboard(null); setCopied(false); setPasteKey(null);
-        return;
-      }
+      if (e.key === "Escape") { exitEditMode(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedKey) {
         const session = roomSlotMap.get(selectedKey);
         if (!session) return;
@@ -511,11 +514,9 @@ export function DailyGridView({
         e.preventDefault();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard && pasteKey && onPasteSlot) {
-        // Parse pasteKey back to roomId + slot index
         const [roomId, siStr] = pasteKey.split("|");
-        const si = Number(siStr);
-        const slot = activeSlots[si];
-        if (!slot || roomSlotMap.has(pasteKey)) return; // slot already occupied
+        const slot = activeSlots[Number(siStr)];
+        if (!slot || roomSlotMap.has(pasteKey)) return;
         onPasteSlot(roomId, slotDatetime(slot.start), slotDatetime(slot.end), clipboard);
         setPasteKey(null);
         e.preventDefault();
@@ -523,7 +524,8 @@ export function DailyGridView({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedKey, clipboard, pasteKey, roomSlotMap, activeSlots, onPasteSlot]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, selectedKey, clipboard, pasteKey, roomSlotMap, activeSlots, onPasteSlot]);
 
   const colWidth = 120;
   const labelWidth = 140;
@@ -549,22 +551,37 @@ export function DailyGridView({
             <ChevronRight size={15} />
           </button>
         </div>
+        {/* Edit Mode toggle */}
+        <button
+          onClick={() => editMode ? exitEditMode() : setEditMode(true)}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer"
+          style={{
+            borderColor: editMode ? "var(--accent)" : "var(--border)",
+            background: editMode ? "var(--accent)" : "var(--bg-card)",
+            color: editMode ? "#fff" : "var(--text-secondary)",
+            marginLeft: "auto",
+          }}>
+          {editMode ? "✓ Exit Edit Mode" : "⎘ Edit Mode"}
+        </button>
       </div>
 
-      {/* Copy-paste status bar */}
-      {(clipboard || selectedKey) && (
+      {/* Edit mode banner */}
+      {editMode && (
         <div style={{
           display: "flex", alignItems: "center", gap: 10, padding: "6px 12px",
           borderRadius: "var(--radius-sm)", background: "var(--accent-light)",
           border: "1px solid var(--accent)", fontSize: 11, color: "var(--accent)",
         }}>
           {copied && clipboard ? (
-            <><span style={{ fontWeight: 700 }}>⎘ Copied:</span> <span>{clipboard.brandName} · {clipboard.hostName || "No host"}</span>
-            <span style={{ color: "var(--text-muted)" }}>— Click an empty slot to target, then Ctrl+V to paste · Esc to cancel</span></>
+            <><span style={{ fontWeight: 700 }}>⎘ Copied:</span>
+            <span>{clipboard.brandName} · {clipboard.hostName || "No host"}</span>
+            <span style={{ color: "var(--text-muted)" }}>— Click an empty slot, then Ctrl+V to paste</span></>
           ) : selectedKey ? (
             <><span style={{ fontWeight: 700 }}>Selected</span>
-            <span style={{ color: "var(--text-muted)" }}>— Press Ctrl+C to copy · Esc to deselect</span></>
-          ) : null}
+            <span style={{ color: "var(--text-muted)" }}>— Ctrl+C to copy · click elsewhere to deselect</span></>
+          ) : (
+            <span style={{ color: "var(--text-muted)" }}>Click a session to select it · Ctrl+C to copy · Ctrl+V to paste · Esc or "Exit Edit Mode" to finish</span>
+          )}
         </div>
       )}
 
@@ -626,18 +643,18 @@ export function DailyGridView({
                       const isCopied = copied && isSelected;
 
                       if (!session) {
-                        const canPaste = !!clipboard;
+                        const canPaste = editMode && !!clipboard;
                         return (
                           <td key={si}
-                            title={canPaste ? "Click to target, then Ctrl+V to paste" : onAddSlot ? "Click to add session" : undefined}
+                            title={canPaste ? "Click to target, then Ctrl+V to paste" : onAddSlot && !editMode ? "Click to add session" : undefined}
                             onClick={() => {
                               if (canPaste) { setPasteKey(cellKey); }
-                              else if (onAddSlot) { onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end)); }
+                              else if (onAddSlot && !editMode) { onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end)); }
                             }}
                             style={{
                               border: isPasteTarget ? "2px dashed var(--accent)" : "1px solid var(--border)",
                               background: isPasteTarget ? "var(--accent-light)" : "var(--bg-card)",
-                              cursor: canPaste || onAddSlot ? "pointer" : "default",
+                              cursor: canPaste || (!editMode && onAddSlot) ? "pointer" : "default",
                               textAlign: "center", verticalAlign: "middle",
                               transition: "background 0.15s",
                             }}>
@@ -647,7 +664,7 @@ export function DailyGridView({
                               </div>
                             ) : canPaste ? (
                               <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
-                            ) : onAddSlot ? (
+                            ) : !editMode && onAddSlot ? (
                               <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span>
                             ) : null}
                           </td>
@@ -657,10 +674,10 @@ export function DailyGridView({
                       const bg = session.brand.color || "#888";
                       return (
                         <td key={si}
-                          title="Click to open · Ctrl+Click to select for copy"
-                          onClick={(e) => {
-                            if (e.ctrlKey || e.metaKey) { setSelectedKey(isSelected ? null : cellKey); }
-                            else { setSelectedKey(null); onSessionClick(session); }
+                          title={editMode ? "Click to select · Ctrl+C to copy" : "Click to open"}
+                          onClick={() => {
+                            if (editMode) { setSelectedKey(isSelected ? null : cellKey); }
+                            else { onSessionClick(session); }
                           }}
                           style={{
                             border: isCopied ? "2.5px dashed rgba(255,255,255,0.9)"
@@ -687,17 +704,17 @@ export function DailyGridView({
                       const isCopied = copied && isSelected;
 
                       if (!session) {
-                        const canPaste = !!clipboard;
+                        const canPaste = editMode && !!clipboard;
                         return (
                           <td key={si}
                             onClick={() => {
                               if (canPaste) { setPasteKey(cellKey); }
-                              else if (onAddSlot) { onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end)); }
+                              else if (onAddSlot && !editMode) { onAddSlot(room.id, slotDatetime(slot.start), slotDatetime(slot.end)); }
                             }}
                             style={{
                               border: isPasteTarget ? "2px dashed var(--accent)" : "1px solid var(--border)",
                               background: isPasteTarget ? "var(--accent-light)" : "var(--bg-card)",
-                              cursor: canPaste || onAddSlot ? "pointer" : "default",
+                              cursor: canPaste || (!editMode && onAddSlot) ? "pointer" : "default",
                               textAlign: "center", verticalAlign: "middle",
                             }}>
                             {isPasteTarget && clipboard ? (
@@ -706,7 +723,7 @@ export function DailyGridView({
                               </div>
                             ) : canPaste ? (
                               <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
-                            ) : onAddSlot ? (
+                            ) : !editMode && onAddSlot ? (
                               <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span>
                             ) : null}
                           </td>
@@ -715,9 +732,9 @@ export function DailyGridView({
 
                       return (
                         <td key={si}
-                          onClick={(e) => {
-                            if (e.ctrlKey || e.metaKey) { setSelectedKey(isSelected ? null : cellKey); }
-                            else { setSelectedKey(null); onSessionClick(session); }
+                          onClick={() => {
+                            if (editMode) { setSelectedKey(isSelected ? null : cellKey); }
+                            else { onSessionClick(session); }
                           }}
                           style={{
                             border: isCopied ? "2.5px dashed rgba(255,255,255,0.9)"
