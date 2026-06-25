@@ -399,13 +399,9 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
   const [open, setOpen]         = useState(false);
   const [viewDate, setViewDate] = useState(() => value ? new Date(value + "T00:00:00") : new Date());
   const [theme, setTheme]       = useState("dark");
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  const [pos, setPos]           = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const dropRef    = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
@@ -414,6 +410,31 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => obs.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function reposition() {
+      if (!triggerRef.current) return;
+      const r = triggerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUp = spaceBelow < 380 && r.top > spaceBelow;
+      setPos({ top: openUp ? r.top - 380 - 8 : r.bottom + 8, left: Math.max(8, Math.min(r.left, window.innerWidth - 308)) });
+    }
+    function onClose(e: MouseEvent) {
+      if (triggerRef.current?.contains(e.target as Node)) return;
+      if (dropRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    }
+    reposition();
+    window.addEventListener("mousedown", onClose);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("mousedown", onClose);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open]);
 
   const year  = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -445,7 +466,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
     : "Set due date";
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <div ref={triggerRef} style={{ position: "relative" }}>
       <button type="button" onClick={() => setOpen((v) => !v)}
         style={{
           display: "flex", alignItems: "center", gap: "7px", width: "100%",
@@ -458,16 +479,16 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
         {displayLabel}
       </button>
 
-      {open && (
-        <div data-theme={theme}
+      {typeof document !== "undefined" && createPortal(open ? (
+        <div ref={dropRef} data-theme={theme} onMouseDown={e => e.stopPropagation()}
           style={{
-          position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 100,
-          background: theme !== "light" ? "rgba(13,27,48,0.98)" : "#ffffff",
+          position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
+          background: theme !== "light" ? "rgba(13,27,48,0.99)" : "#ffffff",
           borderRadius: 20,
           padding: "20px 20px 16px",
           width: 300,
-          boxShadow: theme !== "light" ? "0 20px 60px rgba(0,0,0,0.5)" : "0 8px 40px rgba(0,0,0,0.12)",
-          border: theme !== "light" ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)",
+          boxShadow: theme !== "light" ? "0 20px 60px rgba(0,0,0,0.6)" : "0 8px 40px rgba(0,0,0,0.14)",
+          border: theme !== "light" ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(0,0,0,0.08)",
         }}>
           {/* Month / year nav */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
@@ -508,7 +529,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
             ))}
           </div>
         </div>
-      )}
+      ) : null, document.body)}
     </div>
   );
 }

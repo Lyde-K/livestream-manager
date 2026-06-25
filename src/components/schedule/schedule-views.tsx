@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Calendar } from "lucide-react";
 
@@ -66,13 +67,43 @@ function useTheme() {
   return theme;
 }
 
+// ── Portal position hook ──────────────────────────────────────────────────────
+
+function usePortalPos(open: boolean, triggerRef: React.RefObject<HTMLElement | null>, dropH = 380) {
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const reposition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom;
+    const openUp = spaceBelow < dropH + 16 && r.top > spaceBelow;
+    const top = openUp ? r.top - dropH - 8 : r.bottom + 8;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - 320 - 8));
+    setPos({ top, left });
+  }, [triggerRef, dropH]);
+
+  useEffect(() => {
+    if (!open) return;
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, reposition]);
+
+  return pos;
+}
+
 // ── DayDatePicker ─────────────────────────────────────────────────────────────
 
 export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; setGridDate: (d: string) => void }) {
   const [open, setOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => parseISO(gridDate));
   const theme = useTheme();
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const pos = usePortalPos(open, triggerRef);
 
   const d = parseISO(gridDate);
   const label = format(d, "d/M/yyyy EEEE");
@@ -81,7 +112,9 @@ export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; set
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (triggerRef.current?.contains(e.target as Node)) return;
+      if (dropRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onOutside);
     return () => document.removeEventListener("mousedown", onOutside);
@@ -89,69 +122,63 @@ export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; set
 
   const days = eachDayOfInterval({ start: startOfMonth(pickerMonth), end: endOfMonth(pickerMonth) });
   const firstDow = (getDay(startOfMonth(pickerMonth)) + 6) % 7;
-  const dowLabels = ["Mo","Tu","We","Th","Fr","Sa","Su"];
 
   const isDark = theme !== "light";
-  const dropBg    = isDark ? "rgba(13,27,48,0.98)" : "#ffffff";
-  const navBg     = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-  const navColor  = isDark ? "#94a3b8" : "#475569";
+  const dropBg   = isDark ? "rgba(13,27,48,0.99)" : "#ffffff";
+  const navBg    = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const navColor = isDark ? "#94a3b8" : "#475569";
   const headColor = isDark ? "#f8fafc" : "#07111f";
   const mutedCol  = isDark ? "#64748b" : "#94a3b8";
   const dayCol    = isDark ? "#f8fafc" : "#07111f";
   const hoverBg   = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)";
 
+  const dropdown = open ? (
+    <div ref={dropRef} data-theme={theme} onMouseDown={e => e.stopPropagation()}
+      style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, width: 320, background: dropBg, borderRadius: 20, padding: "20px 20px 16px", boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.6)" : "0 8px 40px rgba(0,0,0,0.14)", border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(0,0,0,0.08)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <button type="button" onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+          style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <ChevronLeft size={16} />
+        </button>
+        <span style={{ fontSize: 16, fontWeight: 700, color: headColor }}>{format(pickerMonth, "MMMM yyyy")}</span>
+        <button type="button" onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+          style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6 }}>
+        {["Mo","Tu","We","Th","Fr","Sa","Su"].map(l => (
+          <div key={l} style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: mutedCol, padding: "4px 0" }}>{l}</div>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px 0" }}>
+        {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
+        {days.map(day => {
+          const ds = format(day, "yyyy-MM-dd");
+          const isActive = ds === gridDate;
+          const isTod = ds === todayStr;
+          return (
+            <button key={ds} type="button" onClick={() => { setGridDate(ds); setOpen(false); }}
+              style={{ height: 38, width: "100%", borderRadius: "50%", border: isTod && !isActive ? "1.5px solid #1677ff" : "none", background: isActive ? "#1677ff" : "transparent", color: isActive ? "#fff" : dayCol, fontSize: 14, fontWeight: isActive || isTod ? 700 : 400, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.12s" }}
+              onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = hoverBg; }}
+              onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+              {format(day, "d")}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => { setOpen(v => !v); setPickerMonth(parseISO(gridDate)); }}
+    <div className="relative" ref={triggerRef}>
+      <button onClick={() => { setOpen(v => !v); setPickerMonth(parseISO(gridDate)); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-        style={{ borderColor: open ? "var(--accent)" : "var(--border)", background: "var(--panel-header-bg)", color: "var(--text-primary)" }}
-      >
+        style={{ borderColor: open ? "var(--accent)" : "var(--border)", background: "var(--panel-header-bg)", color: "var(--text-primary)" }}>
         {label}
         <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
       </button>
-      {open && (
-        <div className="absolute top-full left-0 mt-2 z-50"
-          data-theme={theme}
-          style={{ background: dropBg, borderRadius: 20, boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.5)" : "0 8px 40px rgba(0,0,0,0.12)", width: 320, padding: "20px 20px 16px", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)" }}>
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <button type="button" onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <ChevronLeft size={16} />
-            </button>
-            <span style={{ fontSize: 16, fontWeight: 700, color: headColor, letterSpacing: "-0.01em" }}>{format(pickerMonth, "MMMM yyyy")}</span>
-            <button type="button" onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <ChevronRight size={16} />
-            </button>
-          </div>
-          {/* Day labels */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: 6 }}>
-            {dowLabels.map(l => (
-              <div key={l} style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: mutedCol, padding: "4px 0" }}>{l}</div>
-            ))}
-          </div>
-          {/* Days */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px 0" }}>
-            {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
-            {days.map(day => {
-              const ds = format(day, "yyyy-MM-dd");
-              const isActive = ds === gridDate;
-              const isTod = ds === todayStr;
-              return (
-                <button key={ds} type="button"
-                  onClick={() => { setGridDate(ds); setOpen(false); }}
-                  style={{ height: 38, width: "100%", borderRadius: "50%", border: isTod && !isActive ? "1.5px solid #1677ff" : "none", background: isActive ? "#1677ff" : "transparent", color: isActive ? "#fff" : dayCol, fontSize: 14, fontWeight: isActive || isTod ? 700 : 400, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.12s" }}
-                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = hoverBg; }}
-                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
-                  {format(day, "d")}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {typeof document !== "undefined" && createPortal(dropdown, document.body)}
     </div>
   );
 }
@@ -162,7 +189,9 @@ export function MonthDatePicker({ gridDate, setGridDate }: { gridDate: string; s
   const [open, setOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => new Date(gridDate).getFullYear());
   const theme = useTheme();
-  const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const pos = usePortalPos(open, triggerRef, 260);
 
   const d = parseISO(gridDate);
   const label = format(d, "MMMM yyyy");
@@ -170,63 +199,60 @@ export function MonthDatePicker({ gridDate, setGridDate }: { gridDate: string; s
   const activeYear  = d.getFullYear();
 
   const isDark = theme !== "light";
-  const dropBg    = isDark ? "rgba(13,27,48,0.98)" : "#ffffff";
-  const navBg     = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-  const navColor  = isDark ? "#94a3b8" : "#475569";
+  const dropBg   = isDark ? "rgba(13,27,48,0.99)" : "#ffffff";
+  const navBg    = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const navColor = isDark ? "#94a3b8" : "#475569";
   const headColor = isDark ? "#f8fafc" : "#07111f";
 
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (triggerRef.current?.contains(e.target as Node)) return;
+      if (dropRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onOutside);
     return () => document.removeEventListener("mousedown", onOutside);
   }, [open]);
 
+  const dropdown = open ? (
+    <div ref={dropRef} data-theme={theme} onMouseDown={e => e.stopPropagation()}
+      style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, width: 280, background: dropBg, borderRadius: 20, padding: "20px", boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.6)" : "0 8px 40px rgba(0,0,0,0.14)", border: isDark ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(0,0,0,0.08)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <button type="button" onClick={() => setPickerYear(y => y - 1)}
+          style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <ChevronLeft size={16} />
+        </button>
+        <span style={{ fontSize: 16, fontWeight: 700, color: headColor }}>{pickerYear}</span>
+        <button type="button" onClick={() => setPickerYear(y => y + 1)}
+          style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <ChevronRight size={16} />
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+        {MONTHS_SHORT.map((m, i) => {
+          const isActive = activeMonth === i && activeYear === pickerYear;
+          return (
+            <button key={m} type="button"
+              onClick={() => { setGridDate(format(new Date(pickerYear, i, 1), "yyyy-MM-dd")); setOpen(false); }}
+              style={{ padding: "8px 0", borderRadius: 12, border: isActive ? "none" : `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`, background: isActive ? "#1677ff" : navBg, color: isActive ? "#fff" : isDark ? "#94a3b8" : "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "background 0.12s" }}>
+              {m}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  ) : null;
+
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => { setOpen(v => !v); setPickerYear(activeYear); }}
+    <div className="relative" ref={triggerRef}>
+      <button onClick={() => { setOpen(v => !v); setPickerYear(activeYear); }}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-        style={{
-          borderColor: open ? "var(--accent)" : "var(--border)",
-          background: "var(--panel-header-bg)",
-          color: "var(--text-primary)",
-        }}
-      >
+        style={{ borderColor: open ? "var(--accent)" : "var(--border)", background: "var(--panel-header-bg)", color: "var(--text-primary)" }}>
         {label}
         <ChevronDown size={13} style={{ transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "none" }} />
       </button>
-      {open && (
-        <div className="absolute top-full left-0 mt-2 z-50"
-          data-theme={theme}
-          style={{ background: dropBg, borderRadius: 20, boxShadow: isDark ? "0 20px 60px rgba(0,0,0,0.5)" : "0 8px 40px rgba(0,0,0,0.12)", width: 280, padding: "20px", border: isDark ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(0,0,0,0.06)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <button type="button" onClick={() => setPickerYear(y => y - 1)}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <ChevronLeft size={16} />
-            </button>
-            <span style={{ fontSize: 16, fontWeight: 700, color: headColor, letterSpacing: "-0.01em" }}>{pickerYear}</span>
-            <button type="button" onClick={() => setPickerYear(y => y + 1)}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: navBg, border: "none", color: navColor, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <ChevronRight size={16} />
-            </button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-            {MONTHS_SHORT.map((m, i) => {
-              const isActive = activeMonth === i && activeYear === pickerYear;
-              return (
-                <button key={m} type="button"
-                  onClick={() => { setGridDate(format(new Date(pickerYear, i, 1), "yyyy-MM-dd")); setOpen(false); }}
-                  style={{ padding: "8px 0", borderRadius: 12, border: isActive ? "none" : `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`, background: isActive ? "#1677ff" : navBg, color: isActive ? "#fff" : isDark ? "#94a3b8" : "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "background 0.12s" }}>
-                  {m}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {typeof document !== "undefined" && createPortal(dropdown, document.body)}
     </div>
   );
 }
