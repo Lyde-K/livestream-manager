@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   const sessions = await prisma.session.findMany({
     where: {
       scheduledStart: { gte: dayStartUtc, lte: dayEndUtc },
+      liveHostId: { not: null }, // exclude unassigned placeholder slots
     },
     select: {
       id: true,
