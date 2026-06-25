@@ -88,8 +88,11 @@ async function getLiveHostStats(userId: string) {
   const now = new Date();
   const monthStart = startOfMonth(now);
   const monthEnd   = endOfMonth(now);
-  const todayStart = startOfDay(now);
-  const todayEnd   = endOfDay(now);
+  // Use MYT (UTC+8) boundaries so dashboard matches the host schedule view
+  const mytNow = new Date(now.getTime() + 8 * 3_600_000);
+  const mytTodayStr = mytNow.toISOString().slice(0, 10);
+  const todayStart = new Date(`${mytTodayStr}T00:00:00+08:00`);
+  const todayEnd   = new Date(`${mytTodayStr}T23:59:59+08:00`);
 
   const [todaySessions, monthSessions] = await Promise.all([
     prisma.session.findMany({

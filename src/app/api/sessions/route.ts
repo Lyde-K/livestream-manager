@@ -15,10 +15,10 @@ export async function GET(req: NextRequest) {
   const user = session.user as { id: string; role: string };
 
   const where: Record<string, unknown> = {};
-  if (start) where.scheduledStart = { gte: new Date(start) };
-  if (end) where.scheduledEnd = { ...(where.scheduledEnd as object || {}), lte: new Date(end) };
+  // Filter by scheduledStart only — avoids excluding sessions that end past the window
   if (start && end) where.scheduledStart = { gte: new Date(start), lte: new Date(end) };
-  if (hostId) where.liveHostId = hostId;
+  else if (start)   where.scheduledStart = { gte: new Date(start) };
+  if (hostId)  where.liveHostId = hostId;
   if (brandId) where.brandId = brandId;
 
   // Scope by role
