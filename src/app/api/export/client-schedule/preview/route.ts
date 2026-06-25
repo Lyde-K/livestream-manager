@@ -7,14 +7,24 @@ export async function GET(req: NextRequest) {
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const brandId = searchParams.get("brandId");
-  const month   = searchParams.get("month"); // "YYYY-MM"
-  if (!brandId || !month) return Response.json({ error: "brandId and month required" }, { status: 400 });
+  const brandId   = searchParams.get("brandId");
+  const month     = searchParams.get("month");  // "YYYY-MM" — used for monthly mode
+  const startParam = searchParams.get("start"); // ISO — used for custom range mode
+  const endParam   = searchParams.get("end");   // ISO — used for custom range mode
 
-  const [year, mo] = month.split("-").map(Number);
-  // MYT month boundaries (UTC+8): start = first day 00:00 MYT, end = last day 23:59 MYT
-  const startMYT = new Date(Date.UTC(year, mo - 1, 1, -8, 0, 0));   // 1st 00:00 MYT = prev day 16:00 UTC
-  const endMYT   = new Date(Date.UTC(year, mo,     1, -8, 0, 0));    // 1st of next month 00:00 MYT
+  if (!brandId) return Response.json({ error: "brandId required" }, { status: 400 });
+
+  let startMYT: Date, endMYT: Date;
+  if (startParam && endParam) {
+    startMYT = new Date(startParam);
+    endMYT   = new Date(endParam);
+  } else if (month) {
+    const [year, mo] = month.split("-").map(Number);
+    startMYT = new Date(Date.UTC(year, mo - 1, 1, -8, 0, 0));
+    endMYT   = new Date(Date.UTC(year, mo,     1, -8, 0, 0));
+  } else {
+    return Response.json({ error: "month or start+end required" }, { status: 400 });
+  }
 
   const user = session.user as { id: string; role: string };
 

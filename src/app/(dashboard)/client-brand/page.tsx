@@ -41,15 +41,31 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type RangeMode = "month" | "custom";
+
+function selectStyle(): React.CSSProperties {
+  return { background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", fontFamily: "inherit" };
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+      {children}
+    </label>
+  );
+}
+
 function ExportModal({ onClose }: { onClose: () => void }) {
   const [brands, setBrands]         = useState<Brand[]>([]);
   const [brandId, setBrandId]       = useState("");
+  const [mode, setMode]             = useState<RangeMode>("month");
   const [month, setMonth]           = useState(CURRENT_MONTH);
+  const [customStart, setCustomStart] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [customEnd, setCustomEnd]     = useState(format(new Date(), "yyyy-MM-dd"));
   const [preview, setPreview]       = useState<{ sessions: number; hours: number; estimatedBytes: number } | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [exporting, setExporting]   = useState(false);
 
-  // Load brands on mount
   useEffect(() => {
     fetch("/api/brands")
       .then(r => r.json())
@@ -59,29 +75,45 @@ function ExportModal({ onClose }: { onClose: () => void }) {
       });
   }, []);
 
-  // Fetch preview whenever brand or month changes
+  // Derive UTC boundaries for current selection
+  function getBoundaries(): { start: Date; end: Date } | null {
+    if (mode === "month") {
+      const [year, mo] = month.split("-").map(Number);
+      return {
+        start: new Date(Date.UTC(year, mo - 1, 1, -8, 0, 0)),
+        end:   new Date(Date.UTC(year, mo,     1, -8, 0, 0)),
+      };
+    }
+    if (!customStart || !customEnd) return null;
+    // Custom: treat user-entered dates as MYT (start of day / end of day)
+    const [sy, sm, sd] = customStart.split("-").map(Number);
+    const [ey, em, ed] = customEnd.split("-").map(Number);
+    return {
+      start: new Date(Date.UTC(sy, sm - 1, sd,  -8,  0, 0)),  // 00:00 MYT
+      end:   new Date(Date.UTC(ey, em - 1, ed,  16,  0, 0)),  // 23:59:59 MYT ≈ next day 00:00 UTC-8+24h
+    };
+  }
+
   useEffect(() => {
-    if (!brandId || !month) { setPreview(null); return; }
+    if (!brandId) { setPreview(null); return; }
+    const bounds = getBoundaries();
+    if (!bounds) { setPreview(null); return; }
+    if (mode === "custom" && new Date(customEnd) < new Date(customStart)) { setPreview(null); return; }
     setPreviewing(true);
     setPreview(null);
-    fetch(`/api/export/client-schedule/preview?brandId=${brandId}&month=${month}`)
+    const params = new URLSearchParams({ brandId, start: bounds.start.toISOString(), end: bounds.end.toISOString() });
+    fetch(`/api/export/client-schedule/preview?${params}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { setPreview(d); setPreviewing(false); })
       .catch(() => setPreviewing(false));
-  }, [brandId, month]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandId, mode, month, customStart, customEnd]);
 
   async function doExport() {
-    if (!brandId || !month) return;
+    const bounds = getBoundaries();
+    if (!brandId || !bounds) return;
     setExporting(true);
-    const [year, mo] = month.split("-").map(Number);
-    // MYT month boundaries
-    const startMYT = new Date(Date.UTC(year, mo - 1, 1, -8, 0, 0));
-    const endMYT   = new Date(Date.UTC(year, mo,     1, -8, 0, 0));
-    const params   = new URLSearchParams({
-      brandId,
-      start: startMYT.toISOString(),
-      end:   endMYT.toISOString(),
-    });
+    const params = new URLSearchParams({ brandId, start: bounds.start.toISOString(), end: bounds.end.toISOString() });
     const res = await fetch(`/api/export/client-schedule?${params}`);
     setExporting(false);
     if (!res.ok) { alert("Export failed. Please try again."); return; }
@@ -89,66 +121,89 @@ function ExportModal({ onClose }: { onClose: () => void }) {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
     const brandName = brands.find(b => b.id === brandId)?.name ?? "brand";
-    const monthLabel = MONTH_OPTIONS.find(m => m.value === month)?.label ?? month;
+    const rangeLabel = mode === "month"
+      ? (MONTH_OPTIONS.find(m => m.value === month)?.label ?? month)
+      : `${customStart}_${customEnd}`;
     a.href = url;
-    a.download = `schedule-${brandName}-${monthLabel}.xlsx`;
+    a.download = `schedule-${brandName}-${rangeLabel}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
     onClose();
   }
 
   const selectedBrand = brands.find(b => b.id === brandId);
+  const rangeLabel = mode === "month"
+    ? MONTH_OPTIONS.find(m => m.value === month)?.label
+    : (customStart && customEnd ? `${format(new Date(customStart + "T00:00:00"), "d MMM")} – ${format(new Date(customEnd + "T00:00:00"), "d MMM yyyy")}` : null);
+  const customRangeInvalid = mode === "custom" && customEnd < customStart;
+  const canExport = !!brandId && !exporting && !customRangeInvalid && (preview?.sessions ?? 0) > 0;
 
   return (
     <Modal open onClose={onClose} title="Export Schedule" size="md">
       <div className="space-y-5">
 
-        {/* Brand selector */}
+        {/* Brand */}
         <div>
-          <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            Brand
-          </label>
-          <select
-            value={brandId}
-            onChange={e => setBrandId(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-lg text-sm"
-            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", fontFamily: "inherit" }}
-          >
+          <Label>Brand</Label>
+          <select value={brandId} onChange={e => setBrandId(e.target.value)}
+            className="w-full px-3 py-2.5 rounded-lg text-sm" style={selectStyle()}>
             <option value="">Select brand…</option>
-            {brands.map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
+            {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </div>
 
-        {/* Month selector */}
+        {/* Range mode toggle */}
         <div>
-          <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            Month
-          </label>
-          <select
-            value={month}
-            onChange={e => setMonth(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-lg text-sm"
-            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", fontFamily: "inherit" }}
-          >
-            {MONTH_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+          <Label>Date Range</Label>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {(["month", "custom"] as RangeMode[]).map(m => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding: "5px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit",
+                background: mode === m ? "var(--accent)" : "var(--bg-subtle)",
+                color: mode === m ? "#fff" : "var(--text-secondary)",
+                transition: "all 0.15s",
+              }}>
+                {m === "month" ? "By Month" : "Custom Range"}
+              </button>
             ))}
-          </select>
+          </div>
+
+          {mode === "month" ? (
+            <select value={month} onChange={e => setMonth(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg text-sm" style={selectStyle()}>
+              {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>From</div>
+                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ ...selectStyle(), appearance: "none" as React.CSSProperties["appearance"] }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>To</div>
+                <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ ...selectStyle(), appearance: "none" as React.CSSProperties["appearance"], borderColor: customRangeInvalid ? "#ef4444" : undefined }} />
+              </div>
+              {customRangeInvalid && (
+                <p style={{ gridColumn: "1/-1", margin: 0, fontSize: 11, color: "#ef4444" }}>End date must be on or after start date.</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Preview panel */}
-        <div style={{
-          borderRadius: 12,
-          border: "1px solid var(--border)",
-          background: "var(--bg-subtle)",
-          overflow: "hidden",
-          minHeight: 90,
-        }}>
+        <div style={{ borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-subtle)", overflow: "hidden", minHeight: 90 }}>
           {!brandId ? (
             <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
               Select a brand to see export details
+            </div>
+          ) : customRangeInvalid ? (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+              Fix the date range above
             </div>
           ) : previewing ? (
             <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
@@ -160,23 +215,17 @@ function ExportModal({ onClose }: { onClose: () => void }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: selectedBrand.color, flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{selectedBrand.name}</span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>·</span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{MONTH_OPTIONS.find(m => m.value === month)?.label}</span>
+                  {rangeLabel && <><span style={{ fontSize: 12, color: "var(--text-muted)" }}>·</span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{rangeLabel}</span></>}
                 </div>
               )}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
                 {[
-                  { icon: Layers, label: "Sessions",  value: preview.sessions.toString(),         color: "#6366f1" },
-                  { icon: Clock,  label: "Hours",     value: `${preview.hours}h`,                color: "#F97316" },
-                  { icon: FileSpreadsheet, label: "Est. Size", value: formatBytes(preview.estimatedBytes), color: "#22c55e" },
+                  { icon: Layers,          label: "Sessions", value: preview.sessions.toString(),          color: "#6366f1" },
+                  { icon: Clock,           label: "Hours",    value: `${preview.hours}h`,                 color: "#F97316" },
+                  { icon: FileSpreadsheet, label: "Est. Size",value: formatBytes(preview.estimatedBytes), color: "#22c55e" },
                 ].map(({ icon: Icon, label, value, color }) => (
-                  <div key={label} style={{
-                    borderRadius: 10,
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border)",
-                    padding: "12px 10px",
-                    textAlign: "center",
-                  }}>
+                  <div key={label} style={{ borderRadius: 10, background: "var(--bg-card)", border: "1px solid var(--border)", padding: "12px 10px", textAlign: "center" }}>
                     <Icon size={16} style={{ color, margin: "0 auto 6px" }} />
                     <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{value}</div>
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
@@ -185,7 +234,7 @@ function ExportModal({ onClose }: { onClose: () => void }) {
               </div>
               {preview.sessions === 0 && (
                 <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>
-                  No sessions found for this brand and month.
+                  No sessions found for this selection.
                 </p>
               )}
             </div>
@@ -199,11 +248,7 @@ function ExportModal({ onClose }: { onClose: () => void }) {
         {/* Actions */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={doExport}
-            disabled={!brandId || !month || exporting || (preview?.sessions === 0)}
-            loading={exporting}
-          >
+          <Button onClick={doExport} disabled={!canExport} loading={exporting}>
             <Download size={14} />
             {exporting ? "Exporting…" : "Export"}
           </Button>
