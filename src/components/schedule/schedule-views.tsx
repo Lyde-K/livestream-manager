@@ -732,9 +732,10 @@ export function DailyGridView({
                       const bg = session.brand.color || "#888";
                       return (
                         <td key={si}
-                          title={editMode ? "Click to select brand · Ctrl+C to copy" : "Click to open"}
+                          title={editMode && clipboard ? "Click to set paste target, then Ctrl+V" : editMode ? "Click to select brand · Ctrl+C to copy" : "Click to open"}
                           onClick={() => {
-                            if (editMode) setSelBrandKey(isBrandSel ? null : cellKey);
+                            if (editMode && clipboard) setPasteKey(isPasteTarget ? null : cellKey);
+                            else if (editMode) setSelBrandKey(isBrandSel ? null : cellKey);
                             else onSessionClick(session);
                           }}
                           style={{
@@ -786,9 +787,10 @@ export function DailyGridView({
 
                       return (
                         <td key={si}
-                          title={editMode ? "Click to select host · Ctrl+C to copy" : "Click to open"}
+                          title={editMode && clipboard ? "Click to set paste target, then Ctrl+V" : editMode ? "Click to select host · Ctrl+C to copy" : "Click to open"}
                           onClick={() => {
-                            if (editMode) setSelHostKey(isHostSel ? null : cellKey);
+                            if (editMode && clipboard) setPasteKey(isPasteTarget ? null : cellKey);
+                            else if (editMode) setSelHostKey(isHostSel ? null : cellKey);
                             else onSessionClick(session);
                           }}
                           style={{
