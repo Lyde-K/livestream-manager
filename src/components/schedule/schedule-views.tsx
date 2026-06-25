@@ -100,17 +100,18 @@ export function DayDatePicker({ gridDate, setGridDate }: { gridDate: string; set
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1.5 z-50 p-4"
-          style={{ background: "var(--panel-bg)", border: "1px solid var(--border)", borderRadius: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.18)", width: 280 }}>
+          data-theme={typeof document !== "undefined" ? (document.documentElement.getAttribute("data-theme") ?? "dark") : "dark"}
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius)", boxShadow: "0 16px 48px rgba(0,0,0,0.32)", width: 280, color: "var(--text-primary)" }}>
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
               className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
+              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
               <ChevronLeft size={14} />
             </button>
             <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{format(pickerMonth, "MMMM yyyy")}</span>
             <button onClick={() => setPickerMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
               className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
+              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
               <ChevronRight size={14} />
             </button>
           </div>
@@ -186,17 +187,18 @@ export function MonthDatePicker({ gridDate, setGridDate }: { gridDate: string; s
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1.5 z-50 p-4 w-64"
-          style={{ background: "var(--panel-bg)", border: "1px solid var(--border)", borderRadius: 16, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
+          data-theme={typeof document !== "undefined" ? (document.documentElement.getAttribute("data-theme") ?? "dark") : "dark"}
+          style={{ background: "var(--bg-card)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius)", boxShadow: "0 16px 48px rgba(0,0,0,0.32)", color: "var(--text-primary)" }}>
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => setPickerYear(y => y - 1)}
               className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
+              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
               <ChevronLeft size={14} />
             </button>
             <span className="text-sm font-bold" style={{ color: "var(--text-primary)" }}>{pickerYear}</span>
             <button onClick={() => setPickerYear(y => y + 1)}
               className="p-1.5 rounded-lg cursor-pointer transition-all"
-              style={{ color: "var(--text-secondary)", background: "var(--panel-card-bg)" }}>
+              style={{ color: "var(--text-secondary)", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
               <ChevronRight size={14} />
             </button>
           </div>
@@ -208,7 +210,7 @@ export function MonthDatePicker({ gridDate, setGridDate }: { gridDate: string; s
                   onClick={() => { setGridDate(format(new Date(pickerYear, i, 1), "yyyy-MM-dd")); setOpen(false); }}
                   className="py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer"
                   style={{
-                    background: isActive ? "var(--accent)" : "var(--panel-card-bg)",
+                    background: isActive ? "var(--accent)" : "var(--bg-subtle)",
                     color: isActive ? "#fff" : "var(--text-secondary)",
                     border: isActive ? "none" : "1px solid var(--border)",
                   }}>

@@ -398,12 +398,21 @@ const DAY_LABELS = ["Mo","Tu","We","Th","Fr","Sa","Su"];
 function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
   const [open, setOpen]         = useState(false);
   const [viewDate, setViewDate] = useState(() => value ? new Date(value + "T00:00:00") : new Date());
+  const [theme, setTheme]       = useState("dark");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
+    update();
+    const obs = new MutationObserver(update);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
   }, []);
 
   const year  = viewDate.getFullYear();
@@ -450,11 +459,12 @@ function DatePicker({ value, onChange }: { value: string; onChange: (date: strin
       </button>
 
       {open && (
-        <div style={{
+        <div data-theme={theme}
+          style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
-          background: "var(--panel-header-bg)", border: "1px solid var(--border)",
-          borderRadius: "14px", padding: "14px 14px 12px", minWidth: "248px",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.3)",
+          background: "var(--bg-card)", border: "1px solid var(--border-strong)",
+          borderRadius: "var(--radius)", padding: "14px 14px 12px", minWidth: "248px",
+          boxShadow: "0 16px 48px rgba(0,0,0,0.32)", color: "var(--text-primary)",
         }}>
           {/* Month / year nav */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
