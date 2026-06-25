@@ -78,7 +78,7 @@ export default function MySchedulePage() {
   const byDay = useMemo(() => {
     const map = new Map<string, Session[]>();
     for (const s of sessions) {
-      const dateStr = format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000), "yyyy-MM-dd");
+      const dateStr = new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000).toISOString().slice(0, 10);
       const arr = map.get(dateStr) ?? [];
       arr.push(s);
       map.set(dateStr, arr);
@@ -109,7 +109,7 @@ export default function MySchedulePage() {
   }
 
   const totalThisMonth = sessions.filter(s =>
-    format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000), "yyyy-MM") === monthStr
+    new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000).toISOString().slice(0, 7) === monthStr
   ).length;
 
   return (
