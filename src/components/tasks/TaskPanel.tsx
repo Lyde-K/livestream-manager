@@ -1373,7 +1373,10 @@ export function TaskPanel({ userId, userRole }: Props) {
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const openCount    = tasks.filter((t) => t.status !== "done").length;
 
-  // ── Active view: In Progress only, dynamic priority, sorted ──────────────────
+  // ── List view (My Tasks / All): all statuses, dynamic priority, sorted ────────
+  // IMPORTANT: this must include ALL non-done statuses (todo, in_progress, in_review).
+  // Done tasks go to the bottom, greyed out. Never filter by status here — use the
+  // Board tab for per-column filtering.
   function computeDynamicPriority(task: Task): string {
     if (!task.dueDate) return task.priority; // fallback to manual
     const daysLeft = (new Date(task.dueDate).getTime() - Date.now()) / 86_400_000;
@@ -1387,8 +1390,9 @@ export function TaskPanel({ userId, userRole }: Props) {
 
   const activeListTasks = (tab === "mine" || tab === "all")
     ? (() => {
-        const inProgress = tasks
-          .filter(t => t.status === "in_progress")
+        // All active statuses: todo, in_progress, in_review
+        const active = tasks
+          .filter(t => t.status !== "done")
           .map(t => ({ ...t, _dynPriority: computeDynamicPriority(t) }))
           .sort((a, b) => {
             const aHas = !!a.dueDate, bHas = !!b.dueDate;
@@ -1401,11 +1405,12 @@ export function TaskPanel({ userId, userRole }: Props) {
             if (bHas) return 1;
             return (PRIORITY_RANK[a._dynPriority] ?? 3) - (PRIORITY_RANK[b._dynPriority] ?? 3);
           });
+        // Done tasks greyed out, sorted to bottom by priority
         const done = tasks
           .filter(t => t.status === "done")
           .map(t => ({ ...t, _dynPriority: t.priority }))
           .sort((a, b) => (PRIORITY_RANK[a.priority] ?? 3) - (PRIORITY_RANK[b.priority] ?? 3));
-        return [...inProgress, ...done];
+        return [...active, ...done];
       })()
     : null;
   const panelWidth   = expanded || tab === "board" ? "680px" : "420px";
