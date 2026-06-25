@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
     return new Response("Forbidden", { status: 403 });
 
   const { searchParams } = new URL(req.url);
-  const start = searchParams.get("start");
-  const end = searchParams.get("end");
+  const start   = searchParams.get("start");
+  const end     = searchParams.get("end");
+  const brandId = searchParams.get("brandId"); // optional filter
 
   const where: Record<string, unknown> = {};
   if (start && end) {
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   } else if (start) {
     where.scheduledStart = { gte: new Date(start) };
   }
+  if (brandId) where.brandId = brandId;
 
   const sessions = await prisma.session.findMany({
     where,

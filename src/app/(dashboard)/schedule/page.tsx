@@ -46,6 +46,210 @@ const PUNCTUALITY_COLORS: Record<string, string> = {
   EARLY: "#6366f1", ON_TIME: "#22c55e", LATE: "#f59e0b", default: "#94a3b8",
 };
 
+// ─── Admin Export Modal ───────────────────────────────────────────────────────
+
+type AdminRangeMode = "month" | "custom";
+
+function buildAdminMonthOptions() {
+  const opts: { label: string; value: string }[] = [];
+  const now = new Date();
+  for (let i = -6; i <= 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    opts.push({ label: format(d, "MMMM yyyy"), value: format(d, "yyyy-MM") });
+  }
+  return opts;
+}
+const ADMIN_MONTH_OPTIONS = buildAdminMonthOptions();
+const ADMIN_CURRENT_MONTH = format(new Date(), "yyyy-MM");
+
+function formatAdminBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function AdminExportModal({ brands, onClose }: { brands: { id: string; name: string; color: string }[]; onClose: () => void }) {
+  const [mode, setMode]               = useState<AdminRangeMode>("month");
+  const [brandId, setBrandId]         = useState("");
+  const [month, setMonth]             = useState(ADMIN_CURRENT_MONTH);
+  const [customStart, setCustomStart] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [customEnd, setCustomEnd]     = useState(format(new Date(), "yyyy-MM-dd"));
+  const [preview, setPreview]         = useState<{ sessions: number; hours: number; estimatedBytes: number } | null>(null);
+  const [previewing, setPreviewing]   = useState(false);
+  const [exporting, setExporting]     = useState(false);
+
+  function getBoundaries(): { start: string; end: string } | null {
+    if (mode === "month") {
+      const [y, m] = month.split("-").map(Number);
+      return {
+        start: format(new Date(y, m - 1, 1), "yyyy-MM-dd") + "T00:00:00+08:00",
+        end:   format(new Date(y, m, 0),     "yyyy-MM-dd") + "T23:59:59+08:00",
+      };
+    }
+    if (!customStart || !customEnd) return null;
+    return {
+      start: customStart + "T00:00:00+08:00",
+      end:   customEnd   + "T23:59:59+08:00",
+    };
+  }
+
+  const customRangeInvalid = mode === "custom" && customEnd < customStart;
+
+  useEffect(() => {
+    const bounds = getBoundaries();
+    if (!bounds || customRangeInvalid) { setPreview(null); return; }
+    setPreviewing(true);
+    setPreview(null);
+    const params = new URLSearchParams({ start: bounds.start, end: bounds.end });
+    if (brandId) params.set("brandId", brandId);
+    fetch(`/api/export/sessions/preview?${params}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { setPreview(d); setPreviewing(false); })
+      .catch(() => setPreviewing(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, month, customStart, customEnd, brandId]);
+
+  async function doExport() {
+    const bounds = getBoundaries();
+    if (!bounds) return;
+    setExporting(true);
+    const params = new URLSearchParams({ start: bounds.start, end: bounds.end });
+    if (brandId) params.set("brandId", brandId);
+    const res = await fetch(`/api/export/sessions?${params}`);
+    setExporting(false);
+    if (!res.ok) { alert("Export failed. Please try again."); return; }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    const brandLabel = brandId ? (brands.find(b => b.id === brandId)?.name ?? "brand") : "all-brands";
+    const rangeLabel = mode === "month"
+      ? (ADMIN_MONTH_OPTIONS.find(m => m.value === month)?.label ?? month)
+      : `${customStart}_${customEnd}`;
+    a.href = url;
+    a.download = `sessions-${brandLabel}-${rangeLabel}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onClose();
+  }
+
+  const selStyle: React.CSSProperties = { background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", fontFamily: "inherit" };
+  const rangeLabel = mode === "month"
+    ? ADMIN_MONTH_OPTIONS.find(m => m.value === month)?.label
+    : (customStart && customEnd ? `${format(new Date(customStart + "T00:00:00"), "d MMM")} – ${format(new Date(customEnd + "T00:00:00"), "d MMM yyyy")}` : null);
+  const selectedBrand = brands.find(b => b.id === brandId);
+  const canExport = !exporting && !customRangeInvalid && (preview?.sessions ?? 0) > 0;
+
+  return (
+    <Modal open onClose={onClose} title="Export Sessions" size="md">
+      <div className="space-y-5">
+
+        {/* Optional brand filter */}
+        <div>
+          <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+            Brand <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional — leave blank for all)</span>
+          </label>
+          <select value={brandId} onChange={e => setBrandId(e.target.value)}
+            className="w-full px-3 py-2.5 rounded-lg text-sm" style={selStyle}>
+            <option value="">All brands</option>
+            {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
+
+        {/* Range mode toggle */}
+        <div>
+          <label className="block text-xs font-semibold mb-1.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Date Range</label>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {(["month", "custom"] as AdminRangeMode[]).map(m => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding: "5px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+                border: "1px solid var(--border)", cursor: "pointer", fontFamily: "inherit",
+                background: mode === m ? "var(--accent)" : "var(--bg-subtle)",
+                color: mode === m ? "#fff" : "var(--text-secondary)",
+                transition: "all 0.15s",
+              }}>
+                {m === "month" ? "By Month" : "Custom Range"}
+              </button>
+            ))}
+          </div>
+          {mode === "month" ? (
+            <select value={month} onChange={e => setMonth(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg text-sm" style={selStyle}>
+              {ADMIN_MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>From</div>
+                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm" style={{ ...selStyle, appearance: "none" as React.CSSProperties["appearance"] }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>To</div>
+                <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
+                  style={{ ...selStyle, appearance: "none" as React.CSSProperties["appearance"], borderColor: customRangeInvalid ? "#ef4444" : undefined }} />
+              </div>
+              {customRangeInvalid && (
+                <p style={{ gridColumn: "1/-1", margin: 0, fontSize: 11, color: "#ef4444" }}>End date must be on or after start date.</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Preview panel */}
+        <div style={{ borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg-subtle)", overflow: "hidden", minHeight: 90 }}>
+          {customRangeInvalid ? (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Fix the date range above</div>
+          ) : previewing ? (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Calculating…</div>
+          ) : preview ? (
+            <div style={{ padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                {selectedBrand ? (
+                  <><span style={{ width: 10, height: 10, borderRadius: "50%", background: selectedBrand.color, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{selectedBrand.name}</span></>
+                ) : (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>All brands</span>
+                )}
+                {rangeLabel && <><span style={{ fontSize: 12, color: "var(--text-muted)" }}>·</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{rangeLabel}</span></>}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                {[
+                  { label: "Sessions", value: preview.sessions.toString(),          color: "#6366f1" },
+                  { label: "Hours",    value: `${preview.hours}h`,                 color: "#F97316" },
+                  { label: "Est. Size",value: formatAdminBytes(preview.estimatedBytes), color: "#22c55e" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{ borderRadius: 10, background: "var(--bg-card)", border: "1px solid var(--border)", padding: "12px 10px", textAlign: "center" }}>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{value}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              {preview.sessions === 0 && (
+                <p style={{ margin: "12px 0 0", fontSize: 12, color: "var(--text-muted)", textAlign: "center" }}>No sessions found for this selection.</p>
+              )}
+            </div>
+          ) : (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>Select a date range to preview</div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={doExport} disabled={!canExport} loading={exporting}>
+            <Download size={14} />
+            {exporting ? "Exporting…" : "Export"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function SchedulePage() {
   const { data: authSession } = useSession();
   const isAdmin = (authSession?.user as { role?: string })?.role === "ADMIN";
@@ -89,6 +293,7 @@ export default function SchedulePage() {
   const [hoursLoading, setHoursLoading] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"calendar" | "grid" | "dailyList">("grid");
   const [gridDate, setGridDate] = useState(() => new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10));
 
@@ -402,7 +607,7 @@ export default function SchedulePage() {
             <Clock size={13} />
             {is24h ? "24h" : "12h"}
           </button>
-          <Button variant="outline" onClick={exportSessionsExcel}>
+          <Button variant="outline" onClick={() => setExportModalOpen(true)}>
             <Download size={14} /> Export Excel
           </Button>
           <Button variant="outline" onClick={() => { setImportOpen(true); setImportResult(null); setImportFile(null); }}>
@@ -457,7 +662,7 @@ export default function SchedulePage() {
               <Clock size={13} /> {is24h ? "24h" : "12h"}
             </button>
             <button
-              onClick={exportSessionsExcel}
+              onClick={() => setExportModalOpen(true)}
               className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition-all cursor-pointer"
               style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--bg-card)" }}
             >
@@ -791,6 +996,11 @@ export default function SchedulePage() {
           onClose={() => setAssignOpen(false)}
           onAssigned={() => { setAssignOpen(false); reloadCurrentRange(); }}
         />
+      )}
+
+      {/* Export Modal */}
+      {exportModalOpen && (
+        <AdminExportModal brands={brands} onClose={() => setExportModalOpen(false)} />
       )}
 
       {/* Clear Sessions Modal */}
