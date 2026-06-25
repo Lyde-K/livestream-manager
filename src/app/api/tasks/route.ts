@@ -38,6 +38,13 @@ export async function GET(req: NextRequest) {
           { teamId: { in: userTeamIds } },
         ],
       } : {}),
+      // Exclude other users' personal tasks
+      NOT: {
+        AND: [
+          { isPersonal: true },
+          { createdById: { not: user.id } },
+        ],
+      },
     },
     include: {
       createdBy: { select: { id: true, name: true } },
@@ -68,6 +75,7 @@ export async function POST(req: NextRequest) {
     teamId?: string;
     parentId?: string;
     recurrence?: string | null;
+    isPersonal?: boolean;
   };
 
   if (!body.title?.trim()) return Response.json({ error: "Title required" }, { status: 400 });
@@ -88,6 +96,7 @@ export async function POST(req: NextRequest) {
       parentId: body.parentId || null,
       recurrence: body.recurrence || null,
       nextRecurAt: body.recurrence && body.dueDate ? calcNextDue(new Date(body.dueDate), JSON.parse(body.recurrence)) : null,
+      isPersonal: body.isPersonal ?? false,
       createdById: user.id,
       assignees: assigneeIds.length > 0
         ? { create: assigneeIds.map((uid) => ({ userId: uid })) }

@@ -163,6 +163,13 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "RLAudit_createdAt_idx" ON "RLAuditLog"("createdAt")`,
     ],
   },
+  {
+    name: "009_add_task_is_personal",
+    statements: [
+      `ALTER TABLE "Task" ADD COLUMN IF NOT EXISTS "isPersonal" BOOLEAN NOT NULL DEFAULT false`,
+      `CREATE INDEX IF NOT EXISTS "Task_isPersonal_idx" ON "Task"("isPersonal")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {

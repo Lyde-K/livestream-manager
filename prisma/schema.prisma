@@ -518,6 +518,7 @@ model Task {
   parentId      String?
   parent        Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: SetNull)
   children      Task[]    @relation("TaskSubtasks")
+  isPersonal    Boolean   @default(false)
   teamId        String?
   team          Team?     @relation(fields: [teamId], references: [id], onDelete: SetNull)
   createdById   String?

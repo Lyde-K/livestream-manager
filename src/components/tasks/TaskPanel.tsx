@@ -686,7 +686,7 @@ function RecurrencePicker({ value, onChange }: {
 
 function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   users: TaskUser[]; currentUserId: string; teams: Team[];
-  onAdd: (data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[]; recurrence: string }) => Promise<{ ok: boolean; error?: string }>;
+  onAdd: (data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[]; recurrence: string; isPersonal: boolean }) => Promise<{ ok: boolean; error?: string }>;
   onCancel: () => void;
 }) {
   const [title, setTitle]               = useState("");
@@ -701,8 +701,14 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   const [userSearch, setUserSearch]     = useState("");
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState("");
+  const [isPersonal, setIsPersonal]     = useState(false);
 
   function handleTeamChange(id: string) { setTeamId(id); setAssigneeIds([currentUserId]); setUserSearch(""); }
+  function handlePersonalToggle(personal: boolean) {
+    setIsPersonal(personal);
+    if (personal) { setTeamId(""); setAssigneeIds([]); }
+    else { setAssigneeIds([currentUserId]); }
+  }
 
   const selectedTeam  = teams.find((t) => t.id === teamId);
   const scopedUsers   = selectedTeam ? users.filter((u) => selectedTeam.members.some((m) => m.userId === u.id)) : users;
@@ -715,13 +721,29 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
   async function submit() {
     if (!title.trim() || loading) return;
     setLoading(true); setError("");
-    const result = await onAdd({ title, description, link, priority, dueDate, assigneeIds, teamId, labels, recurrence });
+    const result = await onAdd({ title, description, link, priority, dueDate, assigneeIds, teamId, labels, recurrence, isPersonal });
     setLoading(false);
     if (!result.ok) setError(result.error ?? "Failed to add task.");
   }
 
   return (
     <div style={{ background: "var(--panel-card-bg)", border: "1px solid var(--border)", borderRadius: "12px", padding: "16px", marginBottom: "10px", boxShadow: "var(--shadow-sm)" }}>
+      {/* Personal / Team toggle */}
+      <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
+        {(["personal", "team"] as const).map((mode) => {
+          const active = (mode === "personal") === isPersonal;
+          return (
+            <button key={mode} type="button" onClick={() => handlePersonalToggle(mode === "personal")}
+              style={{ fontSize: "12px", fontWeight: 600, padding: "5px 14px", borderRadius: "20px", border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`, background: active ? "var(--accent-light)" : "transparent", color: active ? "var(--accent)" : "var(--text-muted)", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
+              {mode === "personal" ? "Personal" : "Team"}
+            </button>
+          );
+        })}
+        <span style={{ fontSize: "11px", color: "var(--text-muted)", alignSelf: "center", marginLeft: 4 }}>
+          {isPersonal ? "Only visible to you" : "Visible to team members"}
+        </span>
+      </div>
+
       {/* Title */}
       {FIELD_LABEL("Title")}
       <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to be done?"
@@ -766,7 +788,7 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
       {/* Recurrence */}
       <RecurrencePicker value={recurrence} onChange={setRecurrence} />
 
-      {teams.length > 0 && (
+      {!isPersonal && teams.length > 0 && (
         <div style={{ marginBottom: "10px" }}>
           {FIELD_LABEL("Team")}
           <select value={teamId} onChange={(e) => handleTeamChange(e.target.value)}
@@ -777,7 +799,7 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
         </div>
       )}
 
-      <div style={{ marginBottom: "10px" }}>
+      {!isPersonal && <div style={{ marginBottom: "10px" }}>
         {FIELD_LABEL(`Assign to${selectedTeam ? ` · ${selectedTeam.name}` : ""}`)}
         {assigneeIds.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
@@ -818,7 +840,7 @@ function AddTaskForm({ users, currentUserId, teams, onAdd, onCancel }: {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {error && <p style={{ margin: "0 0 8px", fontSize: "11px", color: "#ef4444" }}>{error}</p>}
       <div style={{ display: "flex", gap: "6px" }}>
@@ -1464,9 +1486,10 @@ export function TaskPanel({ userId, userRole }: Props) {
       body: JSON.stringify({
         title: data.title, description: data.description || null, link: data.link || null,
         priority: data.priority, dueDate: data.dueDate || null,
-        assigneeIds: data.assigneeIds, teamId: data.teamId || null,
+        assigneeIds: data.isPersonal ? [] : data.assigneeIds, teamId: data.isPersonal ? null : (data.teamId || null),
         labels: JSON.stringify(data.labels),
         recurrence: data.recurrence || null,
+        isPersonal: data.isPersonal ?? false,
       }),
     });
     if (res.ok) { setShowAdd(false); fetchTasks(); return { ok: true }; }

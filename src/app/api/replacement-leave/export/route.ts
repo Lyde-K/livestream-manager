@@ -14,35 +14,45 @@ export async function GET() {
     orderBy: { displayName: "asc" },
   });
 
+  // Fetch all data in parallel
+  const [summaries, allApps] = await Promise.all([
+    Promise.all(hosts.map(h => computeRLForHost(h.id))),
+    prisma.rLApplication.findMany({
+      where: { liveHostId: { in: hosts.map(h => h.id) } },
+      orderBy: { leaveDate: "asc" },
+    }),
+  ]);
+
+  const appsByHost = new Map<string, typeof allApps>();
+  for (const a of allApps) {
+    if (!appsByHost.has(a.liveHostId)) appsByHost.set(a.liveHostId, []);
+    appsByHost.get(a.liveHostId)!.push(a);
+  }
+
   const rows: string[] = [
-    "Host,Total Hours,Units Earned,Units Expired,Units Used,Units Available,Hours To Next Unit,Leave Date,Leave Status,Category,Half Day,Applied At,Reviewed At,Admin Note",
+    "Host,Total Hours,Units Earned,Units Expired,Units Used,Units Available,Hours To Next Unit,Leave Date,Status,Category,Half Day,Applied At,Reviewed At,Admin Note",
   ];
 
-  for (const h of hosts) {
-    const summary = await computeRLForHost(h.id);
-    const apps = await prisma.rLApplication.findMany({
-      where: { liveHostId: h.id },
-      orderBy: { leaveDate: "asc" },
-    });
+  for (let i = 0; i < hosts.length; i++) {
+    const h = hosts[i];
+    const s = summaries[i];
+    const apps = appsByHost.get(h.id) ?? [];
+
+    const base = `"${h.displayName}",${s.totalHours.toFixed(1)},${s.unitsEarned},${s.unitsExpired},${s.unitsUsed},${s.unitsAvailable},${s.hoursToNextUnit.toFixed(1)}`;
 
     if (apps.length === 0) {
-      rows.push(
-        `"${h.displayName}",${summary.totalHours.toFixed(1)},${summary.unitsEarned},${summary.unitsExpired},${summary.unitsUsed},${summary.unitsAvailable},${summary.hoursToNextUnit.toFixed(1)},"","","","","","",""`
-      );
+      rows.push(`${base},"","","","","","",""`);
     } else {
       for (const a of apps) {
-        rows.push(
-          `"${h.displayName}",${summary.totalHours.toFixed(1)},${summary.unitsEarned},${summary.unitsExpired},${summary.unitsUsed},${summary.unitsAvailable},${summary.hoursToNextUnit.toFixed(1)},"${a.leaveDate}","${a.status}","${a.category ?? ""}","${a.halfDay ?? "FULL"}","${a.createdAt.toISOString().slice(0, 10)}","${a.reviewedAt ? a.reviewedAt.toISOString().slice(0, 10) : ""}","${(a.adminNote ?? "").replace(/"/g, '""')}"`
-        );
+        rows.push(`${base},"${a.leaveDate}","${a.status}","${a.category ?? ""}","${a.halfDay ?? "Full Day"}","${a.createdAt.toISOString().slice(0, 10)}","${a.reviewedAt ? a.reviewedAt.toISOString().slice(0, 10) : ""}","${(a.adminNote ?? "").replace(/"/g, '""')}"`);
       }
     }
   }
 
-  const csv = rows.join("\n");
-  return new Response(csv, {
+  return new Response(rows.join("\n"), {
     headers: {
       "Content-Type": "text/csv",
-      "Content-Disposition": `attachment; filename="replacement-leave-${new Date().toISOString().slice(0, 10)}.csv"`,
+      "Content-Disposition": `attachment; filename="replacement-leave-${new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)}.csv"`,
     },
   });
 }
