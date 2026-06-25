@@ -360,7 +360,7 @@ export default async function DashboardPage(props: {
             Welcome, {user.name} 👋
           </h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-            {format(new Date(), "EEEE, d MMMM yyyy")}
+            {format(new Date(Date.now() + 8 * 3_600_000), "EEEE, d MMMM yyyy")}
           </p>
         </div>
 
@@ -391,7 +391,7 @@ export default async function DashboardPage(props: {
                       <div className="text-xs" style={{ color: "var(--text-muted)" }}>{s.room?.name ?? "—"} · {s.platform}</div>
                     </div>
                     <div className="text-right text-xs flex-shrink-0" style={{ color: "var(--text-secondary)" }}>
-                      <div className="font-medium">{format(new Date(s.scheduledStart), "HH:mm")} – {format(new Date(s.scheduledEnd), "HH:mm")}</div>
+                      <div className="font-medium">{format(new Date(new Date(s.scheduledStart).getTime() + 8 * 3_600_000), "HH:mm")} – {format(new Date(new Date(s.scheduledEnd).getTime() + 8 * 3_600_000), "HH:mm")}</div>
                     </div>
                     <StatusPill status={s.status} punctuality={s.punctuality} />
                   </div>
@@ -422,7 +422,7 @@ export default async function DashboardPage(props: {
     <div className="space-y-6 animate-in">
       <div>
         <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Welcome, {user.name}</h1>
-        <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>{format(new Date(), "EEEE, d MMMM yyyy")}</p>
+        <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>{format(new Date(Date.now() + 8 * 3_600_000), "EEEE, d MMMM yyyy")}</p>
       </div>
       <div className="section-card p-10 text-center">
         <Calendar size={40} className="mx-auto mb-3" style={{ color: "var(--accent)" }} />
