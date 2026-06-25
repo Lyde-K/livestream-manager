@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { parseISO, format } from "date-fns";
 import { ChevronLeft, ChevronRight, Clapperboard, RefreshCw } from "lucide-react";
 import { formatMYT, mytDateStr } from "@/lib/myt";
+import { sessionOverlapsSlot, TIME_SLOTS } from "@/components/schedule/schedule-views";
 
 interface StudioSession {
   id: string;
@@ -59,6 +60,12 @@ export default function StudioSchedulePage() {
     (acc[name] ??= []).push(s);
     return acc;
   }, {});
+
+  function countSlots(hostSessions: StudioSession[]) {
+    return hostSessions.reduce((total, s) =>
+      total + TIME_SLOTS.filter(slot => sessionOverlapsSlot(s as Parameters<typeof sessionOverlapsSlot>[0], slot)).length
+    , 0);
+  }
 
   const hostNames = Object.keys(byHost).sort((a, b) => {
     if (a === "Unassigned") return 1;
@@ -144,7 +151,7 @@ export default function StudioSchedulePage() {
           <div className="section-card-header">
             <h2 className="flex items-center gap-2">
               <Clapperboard size={13} style={{ color: "#f97316" }} />
-              {sessions.length} session{sessions.length !== 1 ? "s" : ""} — {hostNames.filter(h => h !== "Unassigned").length} host{hostNames.filter(h => h !== "Unassigned").length !== 1 ? "s" : ""}
+              {hostNames.filter(h => h !== "Unassigned").length} host{hostNames.filter(h => h !== "Unassigned").length !== 1 ? "s" : ""} — {sessions.reduce((t, s) => t + TIME_SLOTS.filter(slot => sessionOverlapsSlot(s as Parameters<typeof sessionOverlapsSlot>[0], slot)).length, 0)} slots
             </h2>
           </div>
 
@@ -159,7 +166,7 @@ export default function StudioSchedulePage() {
                   </div>
                   <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>{hostName}</span>
                   <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    · {byHost[hostName].length} session{byHost[hostName].length !== 1 ? "s" : ""}
+                    · {countSlots(byHost[hostName])} slot{countSlots(byHost[hostName]) !== 1 ? "s" : ""}
                   </span>
                 </div>
 
