@@ -420,10 +420,10 @@ function HostView() {
       {/* Balance Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { icon: CircleCheck,  label: "Available",       value: summary.unitsAvailable,      color: "#22c55e", hint: "Ready to use now" },
-          { icon: Hourglass,    label: "Pending Unlock",  value: summary.unitsPendingUnlock,  color: "#f59e0b", hint: "Within 15-day wait" },
-          { icon: Clock,        label: "Awaiting Approval",value: summary.unitsPendingApproval,color: "#6366f1", hint: "Applications pending" },
-          { icon: TrendingUp,   label: "Used",            value: summary.unitsUsed,           color: "var(--text-muted)", hint: "Approved leaves taken" },
+          { icon: CircleCheck,  label: "Available",        value: summary.unitsAvailable,      color: "#22c55e",           hint: "Ready to use now" },
+          { icon: Hourglass,    label: "Expiring Soon",    value: summary.units.filter(u => !u.isExpired && u.isUnlocked && new Date(u.expiresAt) <= new Date(Date.now() + 7 * 86400_000)).length, color: "#f59e0b", hint: "Expire within 7 days" },
+          { icon: Clock,        label: "Awaiting Approval",value: summary.unitsPendingApproval, color: "#6366f1",           hint: "Applications pending" },
+          { icon: TrendingUp,   label: "Used",             value: summary.unitsUsed,            color: "var(--text-muted)", hint: "Approved leaves taken" },
         ].map(({ icon: Icon, label, value, color, hint }) => (
           <div key={label} className="section-card p-4 flex flex-col gap-1">
             <div className="flex items-center gap-2 mb-1">
@@ -445,12 +445,11 @@ function HostView() {
           <Info size={14} style={{ color: "var(--accent)" }} />
           <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>How Replacement Leave Works</span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]" style={{ color: "var(--text-secondary)" }}>
           {[
             { title: "How you earn RL", body: "Working on your scheduled off-days during campaigns, or working extra hours beyond 6h standard." },
             { title: "Accumulation", body: "Every 6 excess hours = 1 Replacement Leave day. Hours stack across multiple sessions." },
-            { title: "15-Day Lock", body: "Each RL unit is locked for 15 days from when it was earned before you can use it." },
-            { title: "15-Day Validity", body: "After unlocking, you have 15 days to use the unit before it expires. Apply early!" },
+            { title: "15-Day Window", body: "Each unit is immediately available once earned. You have 15 days to use it before it expires." },
           ].map(({ title, body }) => (
             <div key={title} className="flex flex-col gap-1 p-3 rounded-lg" style={{ background: "var(--bg-subtle)" }}>
               <span className="font-semibold mb-0.5" style={{ color: "var(--text-primary)" }}>{title}</span>
@@ -472,16 +471,16 @@ function HostView() {
             {summary.units.map((u, i) => {
               const usedUnit = i < summary.unitsUsed;
               const pendingUnit = !usedUnit && i >= summary.unitsUsed && i < summary.unitsUsed + summary.unitsPendingApproval;
-              const available = !usedUnit && !pendingUnit && u.isUnlocked && !u.isExpired;
-              const locked = !usedUnit && !pendingUnit && !u.isUnlocked;
               const expired = !usedUnit && !pendingUnit && u.isExpired;
+              const available = !usedUnit && !pendingUnit && !u.isExpired;
+              const daysLeft = Math.ceil((new Date(u.expiresAt).getTime() - Date.now()) / 86400_000);
               return (
                 <div key={u.unitNumber} className="flex items-center gap-3 px-3 py-2 rounded-lg"
                   style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", opacity: usedUnit || expired ? 0.55 : 1 }}>
                   <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
                     style={{
-                      background: expired ? "#94a3b820" : usedUnit ? "var(--bg-card)" : available ? "#22c55e20" : locked ? "#f59e0b20" : "#6366f120",
-                      color: expired ? "#94a3b8" : usedUnit ? "var(--text-muted)" : available ? "#22c55e" : locked ? "#f59e0b" : "#6366f1",
+                      background: expired ? "#94a3b820" : usedUnit ? "var(--bg-card)" : pendingUnit ? "#6366f120" : "#22c55e20",
+                      color: expired ? "#94a3b8" : usedUnit ? "var(--text-muted)" : pendingUnit ? "#6366f1" : "#22c55e",
                     }}>
                     {u.unitNumber}
                   </div>
@@ -489,19 +488,15 @@ function HostView() {
                     <div className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>
                       Earned {fmtDate(u.triggeredDate)}
                     </div>
-                    <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                      {locked && `Unlocks ${fmtDate(u.unlockDate)}`}
-                      {available && `Expires ${fmtDate(u.expiresAt)}`}
+                    <div className="text-[11px]" style={{ color: expired ? "#ef4444" : available && daysLeft <= 5 ? "#f59e0b" : "var(--text-muted)" }}>
                       {expired && `Expired ${fmtDate(u.expiresAt)}`}
-                      {usedUnit && `Unlocked ${fmtDate(u.unlockDate)}`}
-                      {pendingUnit && `Unlocked ${fmtDate(u.unlockDate)}`}
+                      {!expired && `Expires ${fmtDate(u.expiresAt)}${available && daysLeft > 0 ? ` (${daysLeft}d left)` : ""}`}
                     </div>
                   </div>
                   <div>
                     {usedUnit    && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#94a3b815", color: "#94a3b8" }}>Used</span>}
                     {pendingUnit && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#6366f120", color: "#6366f1" }}>Pending Approval</span>}
                     {available   && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#22c55e20", color: "#22c55e" }}>Available</span>}
-                    {locked      && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Locked</span>}
                     {expired     && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "#94a3b815", color: "#94a3b8" }}>Expired</span>}
                   </div>
                 </div>
@@ -1245,12 +1240,6 @@ function AdminView() {
                       <CircleCheck size={10} /> {s.unitsAvailable} avail.
                     </div>
                   )}
-                  {s.unitsPendingUnlock > 0 && (
-                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                      style={{ background: "#f59e0b20", color: "#f59e0b" }}>
-                      <Hourglass size={10} /> {s.unitsPendingUnlock} locked
-                    </div>
-                  )}
                   {s.unitsPendingApproval > 0 && (
                     <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
                       style={{ background: "#6366f120", color: "#6366f1" }}>
@@ -1268,13 +1257,12 @@ function AdminView() {
 
               {expandedHost === host.id && (
                 <div className="px-4 pb-4 space-y-3" style={{ background: "var(--bg-subtle)" }}>
-                  <div className="grid grid-cols-5 gap-2 pt-2">
+                  <div className="grid grid-cols-4 gap-2 pt-2">
                     {[
-                      { label: "Available", value: s.unitsAvailable, color: "#22c55e" },
-                      { label: "Locked",    value: s.unitsPendingUnlock, color: "#f59e0b" },
+                      { label: "Available", value: s.unitsAvailable,      color: "#22c55e" },
                       { label: "Pending",   value: s.unitsPendingApproval, color: "#6366f1" },
-                      { label: "Used",      value: s.unitsUsed, color: "var(--text-muted)" },
-                      { label: "Expired",   value: s.unitsExpired, color: "#94a3b8" },
+                      { label: "Used",      value: s.unitsUsed,            color: "var(--text-muted)" },
+                      { label: "Expired",   value: s.unitsExpired,         color: "#94a3b8" },
                     ].map(({ label, value, color }) => (
                       <div key={label} className="text-center p-2 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
                         <div className="text-lg font-bold" style={{ color }}>{value}</div>

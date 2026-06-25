@@ -105,10 +105,9 @@ export async function computeRLForHost(liveHostId: string): Promise<RLSummary> {
     const newUnitsEarned = Math.floor(runningHours / 6);
     if (newUnitsEarned > prevUnitsEarned) {
       for (let i = prevUnitsEarned; i < newUnitsEarned; i++) {
-        const d = new Date(c.date + "T00:00:00Z");
-        d.setDate(d.getDate() + 15);
-        const unlockDate = d.toISOString().slice(0, 10);
-        const e = new Date(unlockDate + "T00:00:00Z");
+        // Unit is immediately available; expires 15 days from earn date
+        const unlockDate = c.date;
+        const e = new Date(c.date + "T00:00:00Z");
         e.setDate(e.getDate() + 15);
         const expiresAt = e.toISOString().slice(0, 10);
         units.push({
@@ -116,7 +115,7 @@ export async function computeRLForHost(liveHostId: string): Promise<RLSummary> {
           triggeredDate: c.date,
           unlockDate,
           expiresAt,
-          isUnlocked: unlockDate <= todayStr,
+          isUnlocked: true,
           isExpired: expiresAt <= todayStr,
         });
       }
