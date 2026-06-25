@@ -563,7 +563,7 @@ export function DailyGridView({
             <span style={{ color: "var(--text-muted)" }}>— Click an empty slot to target, then Ctrl+V to paste · Esc to cancel</span></>
           ) : selectedKey ? (
             <><span style={{ fontWeight: 700 }}>Selected</span>
-            <span style={{ color: "var(--text-muted)" }}>— Press Ctrl+C to copy · Double-click to open · Esc to deselect</span></>
+            <span style={{ color: "var(--text-muted)" }}>— Press Ctrl+C to copy · Esc to deselect</span></>
           ) : null}
         </div>
       )}
@@ -657,15 +657,16 @@ export function DailyGridView({
                       const bg = session.brand.color || "#888";
                       return (
                         <td key={si}
-                          title="Click to select · Ctrl+C to copy · Double-click to open"
-                          onClick={() => setSelectedKey(isSelected ? null : cellKey)}
-                          onDoubleClick={() => { setSelectedKey(null); onSessionClick(session); }}
+                          title="Click to open · Ctrl+Click to select for copy"
+                          onClick={(e) => {
+                            if (e.ctrlKey || e.metaKey) { setSelectedKey(isSelected ? null : cellKey); }
+                            else { setSelectedKey(null); onSessionClick(session); }
+                          }}
                           style={{
                             border: isCopied ? "2.5px dashed rgba(255,255,255,0.9)"
                               : isSelected ? "2.5px solid rgba(255,255,255,0.9)"
                               : "1px solid var(--border)",
                             padding: "3px 6px", background: bg, cursor: "pointer", verticalAlign: "middle",
-                            outline: isSelected ? `0 0 0 2px var(--accent)` : undefined,
                             boxShadow: isSelected ? `0 0 0 2px var(--accent)` : undefined,
                             position: "relative",
                           }}>
@@ -714,8 +715,10 @@ export function DailyGridView({
 
                       return (
                         <td key={si}
-                          onClick={() => setSelectedKey(isSelected ? null : cellKey)}
-                          onDoubleClick={() => { setSelectedKey(null); onSessionClick(session); }}
+                          onClick={(e) => {
+                            if (e.ctrlKey || e.metaKey) { setSelectedKey(isSelected ? null : cellKey); }
+                            else { setSelectedKey(null); onSessionClick(session); }
+                          }}
                           style={{
                             border: isCopied ? "2.5px dashed rgba(255,255,255,0.9)"
                               : isSelected ? "2.5px solid rgba(255,255,255,0.9)"
