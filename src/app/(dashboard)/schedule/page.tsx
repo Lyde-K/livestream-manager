@@ -860,21 +860,22 @@ export default function SchedulePage() {
             setDetailSession(null);
             setOpen(true);
           }}
-          onPasteSlot={async (roomId, start, end, brand, host) => {
+          onPasteSlot={async (roomId, start, end, cb) => {
+            if (cb.kind !== "brand") return;
             await fetch("/api/sessions", {
               method: "POST", headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                roomId, brandId: brand.brandId, liveHostId: host.liveHostId ?? "",
-                platform: brand.platform, isCampaignDay: brand.isCampaignDay,
+                roomId, brandId: cb.brandId, liveHostId: "",
+                platform: cb.platform, isCampaignDay: cb.isCampaignDay,
                 scheduledStart: toMYT(start), scheduledEnd: toMYT(end), notes: "",
               }),
             });
             await reloadCurrentRange();
           }}
-          onUpdateSlot={async (sessionId, brand, host) => {
-            const body: Record<string, unknown> = {};
-            if (brand) { body.brandId = brand.brandId; body.platform = brand.platform; body.isCampaignDay = brand.isCampaignDay; }
-            if (host)  { body.liveHostId = host.liveHostId; }
+          onUpdateSlot={async (sessionId, cb) => {
+            const body: Record<string, unknown> = cb.kind === "brand"
+              ? { brandId: cb.brandId, platform: cb.platform, isCampaignDay: cb.isCampaignDay }
+              : { liveHostId: cb.liveHostId };
             await fetch(`/api/sessions/${sessionId}`, {
               method: "PUT", headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),

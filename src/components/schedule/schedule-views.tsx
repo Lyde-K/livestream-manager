@@ -397,8 +397,10 @@ export function DailyListView({
 
 // ── DailyGridView ─────────────────────────────────────────────────────────────
 
-interface ClipBrand { brandId: string; brandName: string; brandColor: string; platform: string; isCampaignDay: boolean; }
-interface ClipHost  { liveHostId: string | null; hostName: string; }
+type Clipboard =
+  | { kind: "brand"; brandId: string; brandName: string; brandColor: string; platform: string; isCampaignDay: boolean }
+  | { kind: "host";  liveHostId: string | null; hostName: string }
+  | null;
 
 interface DailyGridViewProps {
   gridDate: string;
@@ -412,10 +414,8 @@ interface DailyGridViewProps {
   filterHost?: string;
   onSessionClick: (s: Session) => void;
   onAddSlot?: (roomId: string, start: string, end: string) => void;
-  // create new session (needs both brand + host)
-  onPasteSlot?: (roomId: string, start: string, end: string, brand: ClipBrand, host: ClipHost) => void;
-  // update existing session fields
-  onUpdateSlot?: (sessionId: string, brand?: ClipBrand, host?: ClipHost) => void;
+  onPasteSlot?: (roomId: string, start: string, end: string, cb: NonNullable<Clipboard>) => void;
+  onUpdateSlot?: (sessionId: string, cb: NonNullable<Clipboard>) => void;
 }
 
 export function DailyGridView({
@@ -423,22 +423,20 @@ export function DailyGridView({
   filterBrand = "", filterRoom = "", filterType = "", filterHost = "",
   onSessionClick, onAddSlot, onPasteSlot, onUpdateSlot,
 }: DailyGridViewProps) {
-  const [editMode, setEditMode]     = useState(false);
-  // independent selection keys per row type
+  const [editMode, setEditMode]   = useState(false);
+  // one selected row key at a time: either a brand-row or host-row cell
   const [selBrandKey, setSelBrandKey] = useState<string | null>(null);
   const [selHostKey,  setSelHostKey]  = useState<string | null>(null);
-  // independent clipboards
-  const [clipBrand, setClipBrand]   = useState<ClipBrand | null>(null);
-  const [clipHost,  setClipHost]    = useState<ClipHost  | null>(null);
-  const [copied, setCopied]         = useState(false);
-  // paste target (a cell key — paste applies to whichever parts are in clipboard)
-  const [pasteKey, setPasteKey]     = useState<string | null>(null);
+  // single clipboard — last Ctrl+C wins and replaces everything
+  const [clipboard, setClipboard] = useState<Clipboard>(null);
+  const [pasteKey, setPasteKey]   = useState<string | null>(null);
+
+  function clearSel() { setSelBrandKey(null); setSelHostKey(null); }
 
   function exitEditMode() {
     setEditMode(false);
     setSelBrandKey(null); setSelHostKey(null);
-    setClipBrand(null); setClipHost(null);
-    setCopied(false); setPasteKey(null);
+    setClipboard(null); setPasteKey(null);
   }
 
   function slotDatetime(h: number): string {
@@ -504,8 +502,7 @@ export function DailyGridView({
   // Reset when day changes or edit mode exits
   useEffect(() => {
     setSelBrandKey(null); setSelHostKey(null);
-    setClipBrand(null); setClipHost(null);
-    setCopied(false); setPasteKey(null);
+    setClipboard(null); setPasteKey(null);
   }, [gridDate, editMode]);
 
   // Keyboard shortcuts — only active in edit mode
@@ -515,31 +512,29 @@ export function DailyGridView({
       if (e.key === "Escape") { exitEditMode(); return; }
 
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
-        let copied = false;
-        if (selBrandKey) {
-          const s = roomSlotMap.get(selBrandKey);
-          if (s) { setClipBrand({ brandId: s.brandId, brandName: s.brand.name, brandColor: s.brand.color, platform: s.platform, isCampaignDay: s.isCampaignDay }); copied = true; }
-        }
+        // Last selected row type wins — replaces entire clipboard
         if (selHostKey) {
           const s = roomSlotMap.get(selHostKey);
-          if (s) { setClipHost({ liveHostId: s.liveHostId, hostName: s.liveHost?.displayName ?? "" }); copied = true; }
+          if (s) { setClipboard({ kind: "host", liveHostId: s.liveHostId, hostName: s.liveHost?.displayName ?? "" }); clearSel(); e.preventDefault(); }
+        } else if (selBrandKey) {
+          const s = roomSlotMap.get(selBrandKey);
+          if (s) { setClipboard({ kind: "brand", brandId: s.brandId, brandName: s.brand.name, brandColor: s.brand.color, platform: s.platform, isCampaignDay: s.isCampaignDay }); clearSel(); e.preventDefault(); }
         }
-        if (copied) { setCopied(true); e.preventDefault(); }
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.key === "v" && pasteKey && (clipBrand || clipHost)) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "v" && pasteKey && clipboard) {
         const [roomId, siStr] = pasteKey.split("|");
         const slot = activeSlots[Number(siStr)];
         if (!slot) return;
         const existing = roomSlotMap.get(pasteKey);
         if (existing) {
-          // Update existing session — only the parts in clipboard
-          onUpdateSlot?.(existing.id, clipBrand ?? undefined, clipHost ?? undefined);
-        } else if (clipBrand) {
-          // Create new session — host is optional
-          onPasteSlot?.(roomId, slotDatetime(slot.start), slotDatetime(slot.end),
-            clipBrand, clipHost ?? { liveHostId: null, hostName: "" });
+          // Update only the specific field that was copied
+          onUpdateSlot?.(existing.id, clipboard);
+        } else if (clipboard.kind === "brand") {
+          // Create new session with brand (host left empty — can be filled later)
+          onPasteSlot?.(roomId, slotDatetime(slot.start), slotDatetime(slot.end), clipboard);
         }
+        // If clipboard is host-only and slot is empty, nothing to do (no brand to create with)
         setPasteKey(null);
         e.preventDefault();
       }
@@ -547,7 +542,7 @@ export function DailyGridView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editMode, selBrandKey, selHostKey, clipBrand, clipHost, pasteKey, roomSlotMap, activeSlots, onPasteSlot, onUpdateSlot]);
+  }, [editMode, selBrandKey, selHostKey, clipboard, pasteKey, roomSlotMap, activeSlots, onPasteSlot, onUpdateSlot]);
 
   const colWidth = 120;
   const labelWidth = 140;
@@ -594,20 +589,18 @@ export function DailyGridView({
           borderRadius: "var(--radius-sm)", background: "var(--accent-light)",
           border: "1px solid var(--accent)", fontSize: 11, color: "var(--accent)",
         }}>
-          {(clipBrand || clipHost) ? (
+          {clipboard ? (
             <>
               <span style={{ fontWeight: 700 }}>⎘ Clipboard:</span>
-              {clipBrand && <span style={{ background: clipBrand.brandColor, color: "#fff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>{clipBrand.brandName}</span>}
-              {clipHost  && <span style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px" }}>{clipHost.hostName || "No host"}</span>}
-              <span style={{ color: "var(--text-muted)" }}>— Click any cell to set paste target, then Ctrl+V</span>
+              {clipboard.kind === "brand"
+                ? <span style={{ background: clipboard.brandColor, color: "#fff", borderRadius: 4, padding: "1px 6px", fontWeight: 600 }}>{clipboard.brandName}</span>
+                : <span style={{ background: "var(--bg-card)", color: "var(--text-primary)", border: "1px solid var(--border)", borderRadius: 4, padding: "1px 6px" }}>{clipboard.hostName || "No host"}</span>}
+              <span style={{ color: "var(--text-muted)" }}>— Click any cell to set target, then Ctrl+V · Ctrl+C again to replace</span>
             </>
           ) : (selBrandKey || selHostKey) ? (
             <>
               <span style={{ fontWeight: 700 }}>Selected:</span>
-              {selBrandKey && <span style={{ color: "var(--text-muted)" }}>Brand row</span>}
-              {selBrandKey && selHostKey && <span>·</span>}
-              {selHostKey  && <span style={{ color: "var(--text-muted)" }}>Host row</span>}
-              <span style={{ color: "var(--text-muted)" }}>— Ctrl+C to copy</span>
+              <span style={{ color: "var(--text-muted)" }}>{selBrandKey ? "Brand" : "Host"} — Ctrl+C to copy</span>
             </>
           ) : (
             <span style={{ color: "var(--text-muted)" }}>
@@ -675,8 +668,8 @@ export function DailyGridView({
                       const session = roomSlotMap.get(cellKey) ?? null;
                       const isBrandSel = selBrandKey === cellKey;
                       const isPasteTarget = pasteKey === cellKey;
-                      const isBrandCopied = copied && isBrandSel;
-                      const canPaste = editMode && !!(clipBrand || clipHost);
+                      const isBrandCopied = isBrandSel && clipboard?.kind === "brand";
+                      const canPaste = editMode && !!clipboard;
 
                       if (!session) return (
                         <td key={si}
@@ -691,8 +684,8 @@ export function DailyGridView({
                             cursor: canPaste || (!editMode && onAddSlot) ? "pointer" : "default",
                             textAlign: "center", verticalAlign: "middle", transition: "background 0.15s",
                           }}>
-                          {isPasteTarget && clipBrand
-                            ? <div style={{ padding: "2px 4px", opacity: 0.65, fontSize: 9, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clipBrand.brandName}</div>
+                          {isPasteTarget && clipboard?.kind === "brand"
+                            ? <div style={{ padding: "2px 4px", opacity: 0.65, fontSize: 9, fontWeight: 700, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clipboard.brandName}</div>
                             : canPaste ? <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
                             : !editMode && onAddSlot ? <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span>
                             : null}
@@ -731,8 +724,8 @@ export function DailyGridView({
                       const session = roomSlotMap.get(cellKey) ?? null;
                       const isHostSel = selHostKey === cellKey;
                       const isPasteTarget = pasteKey === cellKey;
-                      const isHostCopied = copied && isHostSel;
-                      const canPaste = editMode && !!(clipBrand || clipHost);
+                      const isHostCopied = isHostSel && clipboard?.kind === "host";
+                      const canPaste = editMode && !!clipboard;
 
                       if (!session) return (
                         <td key={si}
@@ -746,8 +739,8 @@ export function DailyGridView({
                             cursor: canPaste || (!editMode && onAddSlot) ? "pointer" : "default",
                             textAlign: "center", verticalAlign: "middle",
                           }}>
-                          {isPasteTarget && clipHost
-                            ? <div style={{ padding: "2px 4px", opacity: 0.65, fontSize: 9, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clipHost.hostName}</div>
+                          {isPasteTarget && clipboard?.kind === "host"
+                            ? <div style={{ padding: "2px 4px", opacity: 0.65, fontSize: 9, color: "var(--accent)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{clipboard.hostName}</div>
                             : canPaste ? <span style={{ fontSize: 11, color: "var(--accent)", opacity: 0.5 }}>⎘</span>
                             : !editMode && onAddSlot ? <span style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.4 }}>+</span>
                             : null}
