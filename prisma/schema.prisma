@@ -53,6 +53,9 @@ model LiveHost {
   sessions    Session[]
   kpiConfigs  KPIConfig[]
   preferences HostPreference?
+
+  rlAdjustments RLCreditAdjustment[]
+  rlApplications RLApplication[]
 }
 
 model Client {
@@ -572,4 +575,38 @@ model Notification {
 
   @@index([userId, read])
   @@index([userId, createdAt])
+}
+
+// ── Replacement Leave ─────────────────────────────────────────────────────────
+
+model RLCreditAdjustment {
+  id         String   @id @default(cuid())
+  liveHostId String
+  liveHost   LiveHost @relation(fields: [liveHostId], references: [id], onDelete: Cascade)
+  date       String   // "YYYY-MM-DD" — date to attribute the hours to
+  hours      Float    // positive = add hours, negative = deduct hours
+  reason     String   // admin-provided description
+  addedBy    String   // admin userId
+  createdAt  DateTime @default(now())
+
+  @@index([liveHostId])
+  @@index([date])
+}
+
+model RLApplication {
+  id         String    @id @default(cuid())
+  liveHostId String
+  liveHost   LiveHost  @relation(fields: [liveHostId], references: [id], onDelete: Cascade)
+  leaveDate  String    // "YYYY-MM-DD" — the date being requested off
+  status     String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  notes      String?   // host note
+  adminNote  String?   // admin review note
+  reviewedBy String?   // admin userId
+  reviewedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([liveHostId])
+  @@index([status])
+  @@index([leaveDate])
 }

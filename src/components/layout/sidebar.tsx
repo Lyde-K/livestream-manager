@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
   UserCheck, Sun, Moon, ChevronDown, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench, UsersRound, Sparkles,
-  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell,
+  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell, UmbrellaOff,
 } from "lucide-react";
 
 type NavGroup = "LIVESTREAM" | "AFFILIATE" | "MANAGEMENT";
@@ -27,6 +27,7 @@ const navItems: NavItem[] = [
   { label: "My AI Analysis",    href: "/my-intelligence",           icon: Sparkles,        roles: ["LIVE_HOST"], group: "LIVESTREAM" },
   { label: "Brand AI Analysis", href: "/client-brand/intelligence", icon: Sparkles,        roles: ["CLIENT"],    group: "LIVESTREAM" },
   { label: "Leaderboard",       href: "/leaderboard",               icon: Trophy,          roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM" },
+  { label: "Leave",             href: "/leave",                     icon: UmbrellaOff,     roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM" },
   // AFFILIATE
   { label: "Overview",          href: "/affiliate",                 icon: LayoutDashboard, roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Creators",          href: "/affiliate/creators",        icon: Users,           roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },

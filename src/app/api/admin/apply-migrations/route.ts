@@ -107,6 +107,37 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "Task_nextRecurAt_idx" ON "Task"("nextRecurAt")`,
     ],
   },
+  {
+    name: "007_replacement_leave",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS "RLCreditAdjustment" (
+        "id"         TEXT PRIMARY KEY,
+        "liveHostId" TEXT NOT NULL REFERENCES "LiveHost"(id) ON DELETE CASCADE,
+        "date"       TEXT NOT NULL,
+        "hours"      DOUBLE PRECISION NOT NULL,
+        "reason"     TEXT NOT NULL,
+        "addedBy"    TEXT NOT NULL,
+        "createdAt"  TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS "RLCreditAdj_hostId_idx" ON "RLCreditAdjustment"("liveHostId")`,
+      `CREATE INDEX IF NOT EXISTS "RLCreditAdj_date_idx"   ON "RLCreditAdjustment"("date")`,
+      `CREATE TABLE IF NOT EXISTS "RLApplication" (
+        "id"         TEXT PRIMARY KEY,
+        "liveHostId" TEXT NOT NULL REFERENCES "LiveHost"(id) ON DELETE CASCADE,
+        "leaveDate"  TEXT NOT NULL,
+        "status"     TEXT NOT NULL DEFAULT 'PENDING',
+        "notes"      TEXT,
+        "adminNote"  TEXT,
+        "reviewedBy" TEXT,
+        "reviewedAt" TIMESTAMPTZ,
+        "createdAt"  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "updatedAt"  TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`,
+      `CREATE INDEX IF NOT EXISTS "RLApp_hostId_idx"    ON "RLApplication"("liveHostId")`,
+      `CREATE INDEX IF NOT EXISTS "RLApp_status_idx"    ON "RLApplication"("status")`,
+      `CREATE INDEX IF NOT EXISTS "RLApp_leaveDate_idx" ON "RLApplication"("leaveDate")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {
