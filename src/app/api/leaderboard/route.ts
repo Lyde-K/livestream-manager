@@ -61,7 +61,7 @@ function getPeriodBounds(period: string, month: number, year: number) {
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (!session || !["ADMIN"].includes((session.user as { role: string }).role))
+  if (!session || !["ADMIN", "LIVE_HOST"].includes((session.user as { role: string }).role))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
