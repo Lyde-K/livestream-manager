@@ -24,7 +24,16 @@ export function DatePicker({
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<Date>(value ? toLocal(value) : new Date());
+  const [theme, setTheme] = useState<string>("dark");
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
+    update();
+    const obs = new MutationObserver(update);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -90,13 +99,15 @@ export function DatePicker({
       {open && (
         <div
           className="absolute z-50 mt-1.5 left-0"
+          data-theme={theme}
           style={{
-            background: "var(--bg-elevated)",
+            background: "var(--bg-card)",
             border: "1px solid var(--border-strong)",
             borderRadius: "var(--radius)",
-            boxShadow: "var(--shadow-lg)",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.32)",
             width: 280,
             padding: "12px",
+            color: "var(--text-primary)",
           }}
         >
           {/* Month nav */}
