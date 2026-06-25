@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { createPortal } from "react-dom";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, Calendar } from "lucide-react";
+import { useTheme } from "@/components/ui/date-picker";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -53,19 +54,6 @@ export function sessionOverlapsSlot(session: Session, slot: { start: number; end
   return h < slot.end && eh > slot.start;
 }
 
-// ── Theme hook ────────────────────────────────────────────────────────────────
-
-function useTheme() {
-  const [theme, setTheme] = useState("dark");
-  useEffect(() => {
-    const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
-    update();
-    const obs = new MutationObserver(update);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => obs.disconnect();
-  }, []);
-  return theme;
-}
 
 // ── Portal position hook ──────────────────────────────────────────────────────
 

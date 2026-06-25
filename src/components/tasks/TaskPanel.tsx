@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   AlertTriangle, Calendar, CheckCircle2, Circle, Clock,
   ExternalLink, Link2, MessageSquare, Plus, RefreshCw,
@@ -26,6 +27,7 @@ interface Task {
   parentId?: string | null;
   recurrence?: string | null;
   nextRecurAt?: string | null;
+  isPersonal?: boolean;
   createdBy?: TaskUser | null;
   assignees: TaskAssignee[];
   team?: { id: string; name: string } | null;
@@ -209,6 +211,7 @@ function TaskCard({
             <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", alignItems: "center" }}>
               {PILL(sm.label, sm.color, sm.bg)}
               {PILL(pm.label, pm.color, `${pm.color}22`)}
+              {task.isPersonal && PILL("Personal", "#64748b", "rgba(100,116,139,.12)")}
               {task.team && PILL(`🏷 ${task.team.name}`, "#8B5CF6", "rgba(139,92,246,.12)")}
               {labels.map((l) => {
                 const c = labelColor(l);
@@ -447,150 +450,6 @@ function LabelInput({ labels, onChange }: { labels: string[]; onChange: (labels:
           style={{ ...INPUT_STYLE, paddingLeft: "26px", fontSize: "11px" }}
         />
       </div>
-    </div>
-  );
-}
-
-// ── DatePicker ────────────────────────────────────────────────────────────────
-
-const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const DAY_LABELS = ["Mo","Tu","We","Th","Fr","Sa","Su"];
-
-function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
-  const [open, setOpen]         = useState(false);
-  const [viewDate, setViewDate] = useState(() => value ? new Date(value + "T00:00:00") : new Date());
-  const [theme, setTheme]       = useState("dark");
-  const [pos, setPos]           = useState({ top: 0, left: 0 });
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const dropRef    = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const update = () => setTheme(document.documentElement.getAttribute("data-theme") ?? "dark");
-    update();
-    const obs = new MutationObserver(update);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => obs.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    function reposition() {
-      if (!triggerRef.current) return;
-      const r = triggerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - r.bottom;
-      const openUp = spaceBelow < 380 && r.top > spaceBelow;
-      setPos({ top: openUp ? r.top - 380 - 8 : r.bottom + 8, left: Math.max(8, Math.min(r.left, window.innerWidth - 308)) });
-    }
-    function onClose(e: MouseEvent) {
-      if (triggerRef.current?.contains(e.target as Node)) return;
-      if (dropRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    }
-    reposition();
-    window.addEventListener("mousedown", onClose);
-    window.addEventListener("scroll", reposition, true);
-    window.addEventListener("resize", reposition);
-    return () => {
-      window.removeEventListener("mousedown", onClose);
-      window.removeEventListener("scroll", reposition, true);
-      window.removeEventListener("resize", reposition);
-    };
-  }, [open]);
-
-  const year  = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const selected = value ? new Date(value + "T00:00:00") : null;
-  const today    = new Date();
-
-  const firstDayOfMonth = new Date(year, month, 1).getDay();
-  const startOffset     = (firstDayOfMonth + 6) % 7; // Mon = 0
-  const daysInMonth     = new Date(year, month + 1, 0).getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-
-  const cells: { day: number; current: boolean }[] = [];
-  for (let i = startOffset - 1; i >= 0; i--) cells.push({ day: daysInPrevMonth - i, current: false });
-  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, current: true });
-  while (cells.length % 7 !== 0) cells.push({ day: cells.length - daysInMonth - startOffset + 1, current: false });
-
-  function selectDate(day: number) {
-    const d   = new Date(year, month, day);
-    const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-    onChange(str);
-    setOpen(false);
-  }
-
-  const isToday    = (d: number) => today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
-  const isSelected = (d: number) => selected?.getFullYear() === year && selected?.getMonth() === month && selected?.getDate() === d;
-
-  const displayLabel = value
-    ? new Date(value + "T00:00:00").toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
-    : "Set due date";
-
-  return (
-    <div ref={triggerRef} style={{ position: "relative" }}>
-      <button type="button" onClick={() => setOpen((v) => !v)}
-        style={{
-          display: "flex", alignItems: "center", gap: "7px", width: "100%",
-          fontSize: "12px", padding: "7px 10px", borderRadius: "8px",
-          border: "1px solid var(--border)", background: "var(--bg-subtle)",
-          color: value ? "var(--text-primary)" : "var(--text-muted)",
-          cursor: "pointer", fontFamily: "inherit", textAlign: "left",
-        }}>
-        <Calendar size={13} style={{ color: value ? "var(--accent)" : "var(--text-muted)", flexShrink: 0 }} />
-        {displayLabel}
-      </button>
-
-      {typeof document !== "undefined" && createPortal(open ? (
-        <div ref={dropRef} data-theme={theme} onMouseDown={e => e.stopPropagation()}
-          style={{
-          position: "fixed", top: pos.top, left: pos.left, zIndex: 9999,
-          background: theme !== "light" ? "rgba(13,27,48,0.99)" : "#ffffff",
-          borderRadius: 20,
-          padding: "20px 20px 16px",
-          width: 300,
-          boxShadow: theme !== "light" ? "0 20px 60px rgba(0,0,0,0.6)" : "0 8px 40px rgba(0,0,0,0.14)",
-          border: theme !== "light" ? "1px solid rgba(255,255,255,0.10)" : "1px solid rgba(0,0,0,0.08)",
-        }}>
-          {/* Month / year nav */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-            <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: theme !== "light" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", border: "none", cursor: "pointer", color: theme !== "light" ? "#94a3b8" : "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
-            <span style={{ fontSize: "15px", fontWeight: 700, color: theme !== "light" ? "#f8fafc" : "#07111f", letterSpacing: "-0.01em" }}>{MONTHS[month]} {year}</span>
-            <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))}
-              style={{ width: 36, height: 36, borderRadius: "50%", background: theme !== "light" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", border: "none", cursor: "pointer", color: theme !== "light" ? "#94a3b8" : "#475569", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
-          </div>
-
-          {/* Weekday headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", marginBottom: "6px" }}>
-            {DAY_LABELS.map((d, i) => (
-              <div key={i} style={{ textAlign: "center", fontSize: "12px", fontWeight: 600, color: theme !== "light" ? "#64748b" : "#94a3b8", padding: "4px 0" }}>{d}</div>
-            ))}
-          </div>
-
-          {/* Day grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px 0" }}>
-            {cells.map((cell, i) => (
-              <button key={i} type="button" onClick={() => cell.current && selectDate(cell.day)}
-                style={{
-                  height: 38, width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "14px", borderRadius: "50%", border: cell.current && isToday(cell.day) && !isSelected(cell.day) ? "1.5px solid #1677ff" : "none",
-                  background: cell.current && isSelected(cell.day) ? "#1677ff" : "transparent",
-                  color: !cell.current ? "transparent"
-                    : isSelected(cell.day) ? "#fff"
-                    : theme !== "light" ? "#f8fafc" : "#07111f",
-                  cursor: cell.current ? "pointer" : "default",
-                  fontFamily: "inherit", fontWeight: isSelected(cell.day) || isToday(cell.day) ? 700 : 400,
-                  transition: "background 0.12s",
-                }}
-                onMouseEnter={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = theme !== "light" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"; }}
-                onMouseLeave={(e) => { if (cell.current && !isSelected(cell.day)) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-              >
-                {cell.current ? cell.day : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null, document.body)}
     </div>
   );
 }
@@ -1480,7 +1339,7 @@ export function TaskPanel({ userId, userRole }: Props) {
     fetch("/api/tasks?status=in_review").then((r) => r.json()).then((d) => setReviewCount((d.tasks ?? []).length));
   }, [open]);
 
-  async function handleAddTask(data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[]; recurrence: string }) {
+  async function handleAddTask(data: { title: string; description: string; link: string; priority: string; dueDate: string; assigneeIds: string[]; teamId: string; labels: string[]; recurrence: string; isPersonal: boolean }) {
     const res = await fetch("/api/tasks", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
