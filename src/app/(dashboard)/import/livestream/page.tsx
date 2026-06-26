@@ -345,7 +345,7 @@ export default function LivestreamImportPage() {
                         <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>{fmtMYT(p.startMYT)}</td>
                         <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>{fmtMYT(p.endMYT)}</td>
                         <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-muted)" }}>
-                          {p.duration ? `${Math.floor(p.duration / 60)}h${String(p.duration % 60).padStart(2, "0")}m` : "—"}
+                          {p.duration ? `${(p.duration / 60).toFixed(2)}h` : "—"}
                           {p.likelyTest && <span className="ml-1 px-1 rounded text-[9px] font-bold" style={{ background: "rgba(245,158,11,.15)", color: "#f59e0b" }}>TEST</span>}
                         </td>
                         <td className="px-3 py-2">
