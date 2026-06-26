@@ -76,7 +76,7 @@ function NavLink({ item, active, accent }: { item: NavItem; active: boolean; acc
     <Link
       href={item.href}
       className={cn(
-        "relative flex items-center gap-2.5 px-3 py-[5px] rounded-lg text-[13px] font-medium transition-all duration-150 group",
+        "relative flex items-center gap-2.5 px-3 py-[8px] rounded-lg text-[13px] font-medium transition-all duration-150 group",
       )}
       style={{
         background: active ? "var(--sidebar-active)" : "transparent",
@@ -228,7 +228,7 @@ export function Sidebar({ role, userName, hostType, hostPermissions = {} }: Side
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-3">
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
         {livestreamItems.length > 0 && (
           <NavSection group="LIVESTREAM" items={livestreamItems} activeCheck={isActive} defaultOpen />
         )}
