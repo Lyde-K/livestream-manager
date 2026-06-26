@@ -33,7 +33,6 @@ const navItems: NavItem[] = [
   { label: "Brand AI Analysis", href: "/client-brand/intelligence", icon: Sparkles,        roles: ["CLIENT"],    group: "LIVESTREAM" },
   { label: "Leaderboard",       href: "/leaderboard",               icon: Trophy,          roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeaderboard" },
   { label: "Leave",             href: "/leave",                     icon: UmbrellaOff,     roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeave" },
-  { label: "Livestream Import", href: "/import/livestream",         icon: Upload,          roles: ["ADMIN"],             group: "LIVESTREAM" },
   // AFFILIATE
   { label: "Overview",          href: "/affiliate",                 icon: LayoutDashboard, roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Creators",          href: "/affiliate/creators",        icon: Users,           roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
@@ -52,6 +51,7 @@ const navItems: NavItem[] = [
   { label: "KPI Settings",      href: "/admin/kpi",                 icon: Award,           roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Intel Config",      href: "/admin/intelligence-config", icon: Sparkles,        roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Payroll",           href: "/admin/payroll",             icon: Wallet,          roles: ["ADMIN"], group: "MANAGEMENT" },
+  { label: "Livestream Import", href: "/import/livestream",         icon: Upload,          roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Sheets Sync",       href: "/admin/sync",                icon: RefreshCw,       roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Sync Errors",       href: "/admin/sync-log",            icon: AlertTriangle,   roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Fix Duplicates",    href: "/admin/fix-duplicates",      icon: Wrench,          roles: ["ADMIN"], group: "MANAGEMENT" },
