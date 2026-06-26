@@ -85,6 +85,12 @@ export async function POST(req: NextRequest) {
 
   const assigneeIds: string[] = body.assigneeIds ?? [];
 
+  // Level 1 prevention: non-personal tasks with no assignees become invisible
+  // in My Tasks for everyone. Auto-assign the creator so it always surfaces.
+  if (!body.isPersonal && assigneeIds.length === 0) {
+    assigneeIds.push(user.id);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const task = await (prisma.task.create as any)({
     data: {

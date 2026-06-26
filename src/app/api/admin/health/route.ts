@@ -6,51 +6,103 @@ export async function GET() {
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  // ── Level 2: Detection checks ────────────────────────────────────────────
+  // ── Schedule checks ──────────────────────────────────────────────────────
 
-  // 1. Ghost sessions: no host AND no room — should be 0 after cleanup
+  // 1. Ghost sessions: no host AND no room
   const ghostSessions = await prisma.session.count({
     where: { liveHostId: null, roomId: null },
   });
 
-  // 2. Suspicious MYT times: sessions starting before 08:00 MYT (UTC+8)
-  //    In UTC terms, that's sessions starting between 16:00–23:59 UTC (prev day)
-  //    We check via raw hour on scheduledStart UTC: hour 16–23 = midnight–07:59 MYT
-  const allSessions = await prisma.session.findMany({
+  // 2. Suspicious MYT times: starting before 08:00 MYT = UTC hour 16–23
+  const recentSessions = await prisma.session.findMany({
     select: { id: true, scheduledStart: true, liveHost: { select: { displayName: true } }, brand: { select: { name: true } } },
-    where: {
-      scheduledStart: { gte: new Date(Date.now() - 90 * 24 * 3600_000) },
-    },
+    where: { scheduledStart: { gte: new Date(Date.now() - 90 * 24 * 3600_000) } },
   });
 
-  const suspiciousMYT = allSessions.filter(s => {
-    const utcHour = new Date(s.scheduledStart).getUTCHours();
-    // UTC 16–23 = MYT 00:00–07:59 (next day)
-    return utcHour >= 16 && utcHour <= 23;
+  const suspiciousMYT = recentSessions.filter(s => {
+    const h = new Date(s.scheduledStart).getUTCHours();
+    return h >= 16 && h <= 23;
   });
 
   // 3. Duplicate sessions: same host + same scheduledStart
   const sessionsByKey = new Map<string, number>();
-  for (const s of allSessions) {
+  for (const s of recentSessions) {
     const key = `${s.liveHost?.displayName ?? "none"}::${new Date(s.scheduledStart).toISOString()}`;
     sessionsByKey.set(key, (sessionsByKey.get(key) ?? 0) + 1);
   }
   const duplicatePairs = [...sessionsByKey.values()].filter(c => c > 1).reduce((sum, c) => sum + (c - 1), 0);
 
-  const status = ghostSessions === 0 && suspiciousMYT.length === 0 && duplicatePairs === 0
-    ? "healthy"
-    : ghostSessions > 0 || duplicatePairs > 5
-    ? "critical"
-    : "warning";
+  // ── Task checks ──────────────────────────────────────────────────────────
+
+  // 4. Invisible tasks: non-personal tasks with NO assignees — they can never
+  //    appear in anyone's "My Tasks" view (created by someone who forgot to assign).
+  const invisibleTasks = await prisma.task.findMany({
+    where: {
+      isPersonal: false,
+      parentId: null,
+      assignees: { none: {} },
+    },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      createdAt: true,
+      createdBy: { select: { name: true } },
+      team: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
+  const invisibleTaskCount = await prisma.task.count({
+    where: {
+      isPersonal: false,
+      parentId: null,
+      assignees: { none: {} },
+    },
+  });
+
+  // 5. Orphaned team tasks: task has a teamId, but none of the assignees are
+  //    members of that team — they see it in "All Tasks" but not "My Tasks".
+  const teamTasks = await prisma.task.findMany({
+    where: { teamId: { not: null }, parentId: null },
+    select: {
+      id: true,
+      title: true,
+      teamId: true,
+      team: { select: { name: true, members: { select: { userId: true } } } },
+      assignees: { select: { userId: true } },
+      createdBy: { select: { name: true } },
+    },
+  });
+
+  const teamMismatchTasks = teamTasks.filter(t => {
+    if (!t.team || t.assignees.length === 0) return false;
+    const memberIds = new Set(t.team.members.map(m => m.userId));
+    // All assignees are outside the team
+    return t.assignees.every(a => !memberIds.has(a.userId));
+  });
+
+  // ── Overall status ───────────────────────────────────────────────────────
+  const scheduleIssues = ghostSessions > 0 || duplicatePairs > 5;
+  const taskIssues = invisibleTaskCount > 0 || teamMismatchTasks.length > 0;
+
+  const status =
+    ghostSessions > 0 || duplicatePairs > 5
+      ? "critical"
+      : invisibleTaskCount > 5 || suspiciousMYT.length > 0 || teamMismatchTasks.length > 0
+      ? "warning"
+      : !scheduleIssues && !taskIssues
+      ? "healthy"
+      : "warning";
 
   return Response.json({
     status,
-    checks: {
+    schedule: {
       ghostSessions: {
         count: ghostSessions,
         ok: ghostSessions === 0,
         label: "Ghost sessions (no host + no room)",
-        fix: ghostSessions > 0 ? "DELETE /api/admin/sessions/orphaned with header x-confirm-delete-orphaned: yes-delete-all-orphaned" : null,
       },
       suspiciousMYT: {
         count: suspiciousMYT.length,
@@ -60,13 +112,40 @@ export async function GET() {
           id: s.id,
           host: s.liveHost?.displayName ?? "Unassigned",
           brand: s.brand?.name ?? "Unknown",
-          startMYT: new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000).toISOString().replace("T", " ").slice(0, 16) + " MYT",
+          startMYT: new Date(new Date(s.scheduledStart).getTime() + 8 * 3600_000)
+            .toISOString().replace("T", " ").slice(0, 16) + " MYT",
         })),
       },
       duplicateSessions: {
         count: duplicatePairs,
         ok: duplicatePairs === 0,
         label: "Duplicate sessions (same host + same start time, last 90 days)",
+      },
+    },
+    tasks: {
+      invisibleTasks: {
+        count: invisibleTaskCount,
+        ok: invisibleTaskCount === 0,
+        label: "Tasks with no assignees (invisible in My Tasks for everyone)",
+        sample: invisibleTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          createdBy: t.createdBy?.name ?? "Unknown",
+          team: t.team?.name ?? null,
+          createdAt: t.createdAt,
+        })),
+      },
+      teamMismatch: {
+        count: teamMismatchTasks.length,
+        ok: teamMismatchTasks.length === 0,
+        label: "Tasks where all assignees are outside the task's team (hidden from My Tasks)",
+        sample: teamMismatchTasks.slice(0, 5).map(t => ({
+          id: t.id,
+          title: t.title,
+          team: t.team?.name ?? "Unknown",
+          createdBy: t.createdBy?.name ?? "Unknown",
+        })),
       },
     },
     checkedAt: new Date().toISOString(),
