@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Upload, FileText, CheckCircle2, AlertCircle, AlertTriangle, Download, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { MonthDatePicker } from "@/components/schedule/schedule-views";
 
 interface Brand { id: string; name: string; color: string; platform: string; }
 
@@ -479,9 +480,10 @@ export default function LivestreamImportPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month</label>
-              <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg text-sm"
-                style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+              <MonthDatePicker
+                gridDate={`${exportMonth}-01`}
+                setGridDate={d => setExportMonth(d.slice(0, 7))}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
@@ -559,9 +561,10 @@ export default function LivestreamImportPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month</label>
-              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg text-sm"
-                style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+              <MonthDatePicker
+                gridDate={`${month}-01`}
+                setGridDate={d => setMonth(d.slice(0, 7))}
+              />
             </div>
           </div>
 
