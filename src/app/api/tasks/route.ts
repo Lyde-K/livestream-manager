@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   const mine      = searchParams.get("mine") === "true";
   const parentId  = searchParams.get("parentId") ?? undefined;
 
-  // Only needed when not filtering by mine/team — skip the query otherwise
+  // For non-mine/non-team queries, get the user's team memberships to scope visibility
   const userTeamIds = (!mine && !teamId)
     ? (await prisma.teamMember.findMany({ where: { userId: user.id }, select: { teamId: true } })).map((m) => m.teamId)
     : [];
@@ -28,7 +28,14 @@ export async function GET(req: NextRequest) {
     where: {
       ...(status    ? { status }    : {}),
       ...(priority  ? { priority }  : {}),
-      ...(mine      ? { assignees: { some: { userId: user.id } } } : {}),
+      // "My Tasks" = tasks where user is assignee OR creator OR team collaborator
+      ...(mine ? {
+        OR: [
+          { assignees:  { some: { userId: user.id } } },
+          { createdById: user.id },
+          { team: { members: { some: { userId: user.id } } } },
+        ],
+      } : {}),
       ...(teamId    ? { teamId }    : {}),
       ...(parentId !== undefined ? { parentId: parentId || null } : { parentId: null }),
       // If not filtering by mine/team, exclude tasks from teams the user isn't in
