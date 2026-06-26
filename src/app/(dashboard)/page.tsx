@@ -357,9 +357,7 @@ export default async function DashboardPage(props: {
     return (
       <div className="space-y-6 animate-in">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
-            Welcome, {user.name} 👋
-          </h1>
+          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>My Overview</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
             {format(new Date(Date.now() + 8 * 3_600_000), "EEEE, d MMMM yyyy")}
           </p>

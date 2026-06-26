@@ -20,7 +20,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   // LIVESTREAM
-  { label: "Overview",          href: "/",                          icon: LayoutDashboard, roles: ["ADMIN","LIVE_HOST","CLIENT"], group: "LIVESTREAM" },
+  { label: "Overview",          href: "/",                          icon: LayoutDashboard, roles: ["ADMIN","CLIENT"],            group: "LIVESTREAM" },
+  { label: "My Overview",       href: "/",                          icon: LayoutDashboard, roles: ["LIVE_HOST"],                  group: "LIVESTREAM" },
   { label: "Schedule",          href: "/schedule",                  icon: Calendar,        roles: ["ADMIN"],     group: "LIVESTREAM" },
   { label: "Studio Schedule",   href: "/studio-schedule",           icon: Clapperboard,    roles: ["LIVE_HOST"], group: "LIVESTREAM" },
   { label: "My Schedule",       href: "/my-schedule",               icon: Calendar,        roles: ["LIVE_HOST"], group: "LIVESTREAM", permission: "viewMySchedule" },
