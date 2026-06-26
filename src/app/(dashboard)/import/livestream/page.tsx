@@ -78,8 +78,11 @@ async function parseShopeeFile(file: File) {
       atc:                 cols[8]  ?? "",
       avgViewDuration:     cols[9]  ?? "",
       viewers:             cols[10] ?? "",
+      ordersPlaced:        cols[11] ?? "",
       ordersConfirmed:     cols[12] ?? "",
+      itemsSoldPlaced:     cols[13] ?? "",
       itemsSoldConfirmed:  cols[14] ?? "",
+      salesPlaced:         cols[15] ?? "",
       salesConfirmed:      cols[16] ?? "",
     });
   }

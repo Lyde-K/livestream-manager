@@ -108,8 +108,11 @@ export interface ShopeeRow {
   atc: string;
   avgViewDuration: string; // "HH:MM:SS"
   viewers: string;
+  ordersPlaced: string;
   ordersConfirmed: string;
+  itemsSoldPlaced: string;
   itemsSoldConfirmed: string;
+  salesPlaced: string;
   salesConfirmed: string;  // GMV — Sales(Confirmed Order)
 }
 
@@ -330,9 +333,13 @@ function buildShopeePreview(
         gmv:                  parseRM(r.salesConfirmed),
         adsCost:              0,
         itemsSold:            toInt(r.itemsSoldConfirmed),
-        ordersPlaced:         toInt(r.ordersConfirmed),
-        views:                toInt(r.viewers),
-        productClicks:        toInt(r.atc), // Add to Cart
+        itemsSoldPlaced:      toInt(r.itemsSoldPlaced),
+        ordersPlaced:         toInt(r.ordersPlaced),
+        ordersConfirmed:      toInt(r.ordersConfirmed),
+        salesPlaced:          parseRM(r.salesPlaced),
+        viewers:              toInt(r.viewers),
+        engagedViewers:       toInt(r.engagedViewers),
+        addToCart:            toInt(r.atc),
         comments:             toInt(r.comments),
         avgViewDurationSec:   parseHMStoSeconds(r.avgViewDuration),
       },
