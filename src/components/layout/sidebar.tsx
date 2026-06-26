@@ -143,7 +143,7 @@ function NavSection({ group, items, activeCheck, defaultOpen = true }: SectionPr
       {open && (
         <div className="mt-1 space-y-0.5">
           {items.map((item) => (
-            <NavLink key={item.href} item={item} active={activeCheck(item.href)} accent={meta.accent} />
+            <NavLink key={item.label + item.href} item={item} active={activeCheck(item.href)} accent={meta.accent} />
           ))}
         </div>
       )}
