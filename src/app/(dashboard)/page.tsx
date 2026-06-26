@@ -148,7 +148,7 @@ export default async function DashboardPage(props: {
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Dashboard</h1>
+            <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Livestream Overview</h1>
             <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
               {format(now, "EEEE, d MMMM yyyy")}
             </p>
