@@ -207,7 +207,6 @@ export async function POST(req: NextRequest) {
         adsCost:              0, // patched separately by ads cost upload
         itemsSold:            toInt(r.itemsSold),
         ordersPlaced:         toInt(r.orders),
-        customers:            toInt(r.customers),
         views:                toInt(r.views),
         productImpressions:   toInt(r.productImpressions),
         productClicks:        toInt(r.productClicks),
