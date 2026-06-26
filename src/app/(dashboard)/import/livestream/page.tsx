@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { Upload, FileText, CheckCircle2, AlertCircle, AlertTriangle, RefreshCw, ChevronRight, X } from "lucide-react";
+import { Upload, FileText, CheckCircle2, AlertCircle, AlertTriangle, Download, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 
@@ -142,13 +142,177 @@ function thisMonth() {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type Step = "upload" | "preview" | "done";
+type Tab  = "import" | "export";
+
+// ── Export helpers ────────────────────────────────────────────────────────────
+
+interface ExportSession {
+  id: string;
+  externalRef: string | null;
+  platform: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  actualDurationMinutes: number | null;
+  isCampaignDay: boolean;
+  gmv: number | null;
+  grossRevenue: number | null;
+  adsCost: number | null;
+  itemsSold: number | null;
+  ordersPlaced: number | null;
+  ordersConfirmed: number | null;
+  views: number | null;
+  viewers: number | null;
+  engagedViewers: number | null;
+  productImpressions: number | null;
+  productClicks: number | null;
+  addToCart: number | null;
+  ctr: number | null;
+  ctor: number | null;
+  newFollowers: number | null;
+  comments: number | null;
+  shares: number | null;
+  likes: number | null;
+  avgViewDurationSec: number | null;
+  liveHost: { displayName: string } | null;
+  brand: { name: string };
+}
+
+function fmtDateMYT(iso: string) {
+  return new Date(iso).toLocaleString("en-MY", {
+    timeZone: "Asia/Kuala_Lumpur",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
+async function downloadExport(sessions: ExportSession[], platform: string, month: string, brandName: string) {
+  const ExcelJS = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+
+  const isTikTok = platform !== "SHOPEE";
+  const isShopee = platform !== "TIKTOK";
+  const bothPlatforms = platform === "ALL";
+
+  function makeSheet(ws: InstanceType<typeof ExcelJS.Workbook>["worksheets"][0], rows: ExportSession[]) {
+    const headers = [
+      "Brand", "Platform", "Session Title", "Host", "Date", "Start Time (MYT)", "End Time (MYT)",
+      "Duration (hrs)", "Campaign Day",
+      // Adjusted
+      "GMV (RM)", "Ads Cost (RM)", "Gross Revenue (RM)", "Net Revenue (RM)", "ROI", "GMV/hr (RM)",
+      // Raw — common
+      "Items Sold", "Orders",
+      // Raw — TikTok specific
+      ...(isTikTok ? ["Views", "Product Impressions", "Product Clicks", "CTR (%)", "CTOR (%)", "New Followers", "Comments", "Shares", "Likes", "Avg View Duration (sec)"] : []),
+      // Raw — Shopee specific
+      ...(isShopee ? ["Viewers", "Engaged Viewers", "Add to Cart", "Comments", "Avg View Duration (sec)"] : []),
+    ];
+
+    // Header row
+    ws.addRow(headers);
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } };
+
+    for (const s of rows) {
+      const start = new Date(s.scheduledStart);
+      const end   = new Date(s.scheduledEnd);
+      const durationHrs = s.actualDurationMinutes != null ? +(s.actualDurationMinutes / 60).toFixed(2) : null;
+      const net = (s.gmv ?? 0) - (s.adsCost ?? 0);
+      const roi = s.adsCost && s.adsCost > 0 ? +((s.gmv ?? 0) / s.adsCost).toFixed(2) : null;
+      const gmvPerHr = durationHrs && durationHrs > 0 ? +((s.gmv ?? 0) / durationHrs).toFixed(2) : null;
+
+      const dateMYT = start.toLocaleDateString("en-MY", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" });
+      const startMYT = start.toLocaleTimeString("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+      const endMYT   = end.toLocaleTimeString("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+
+      const base = [
+        s.brand.name,
+        s.platform,
+        s.externalRef ? s.externalRef.replace(/^(TT|SP)-/, "") : "",
+        s.liveHost?.displayName ?? "",
+        dateMYT,
+        startMYT,
+        endMYT,
+        durationHrs ?? "",
+        s.isCampaignDay ? "Yes" : "No",
+        s.gmv ?? 0,
+        s.adsCost ?? 0,
+        s.grossRevenue ?? "",
+        net,
+        roi ?? "",
+        gmvPerHr ?? "",
+        s.itemsSold ?? "",
+        s.platform === "SHOPEE" ? (s.ordersConfirmed ?? "") : (s.ordersPlaced ?? ""),
+      ];
+
+      const tiktokCols = isTikTok ? [
+        s.views ?? "",
+        s.productImpressions ?? "",
+        s.productClicks ?? "",
+        s.ctr != null ? +(s.ctr * 100).toFixed(2) : "",
+        s.ctor != null ? +(s.ctor * 100).toFixed(2) : "",
+        s.newFollowers ?? "",
+        s.comments ?? "",
+        s.shares ?? "",
+        s.likes ?? "",
+        s.avgViewDurationSec ?? "",
+      ] : [];
+
+      const shopeeCols = isShopee ? [
+        s.viewers ?? "",
+        s.engagedViewers ?? "",
+        s.addToCart ?? s.productClicks ?? "",
+        s.comments ?? "",
+        s.avgViewDurationSec ?? "",
+      ] : [];
+
+      ws.addRow([...base, ...tiktokCols, ...shopeeCols]);
+    }
+
+    // Auto-width
+    ws.columns.forEach(col => {
+      let max = 10;
+      col.eachCell?.({ includeEmpty: false }, cell => {
+        const len = String(cell.value ?? "").length;
+        if (len > max) max = len;
+      });
+      col.width = Math.min(max + 2, 40);
+    });
+  }
+
+  if (bothPlatforms) {
+    const tiktokRows = sessions.filter(s => s.platform === "TIKTOK");
+    const shopeeRows = sessions.filter(s => s.platform === "SHOPEE");
+    if (tiktokRows.length) makeSheet(wb.addWorksheet("TikTok"), tiktokRows);
+    if (shopeeRows.length) makeSheet(wb.addWorksheet("Shopee"), shopeeRows);
+  } else {
+    makeSheet(wb.addWorksheet(platform === "TIKTOK" ? "TikTok" : "Shopee"), sessions);
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `livestream-${brandName}-${month}-${platform.toLowerCase()}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function LivestreamImportPage() {
+  const [tab, setTab]                 = useState<Tab>("import");
   const [brands, setBrands]           = useState<Brand[]>([]);
   const [hosts, setHosts]             = useState<Host[]>([]);
   const [brandId, setBrandId]         = useState("");
   const [month, setMonth]             = useState(thisMonth());
   const [platform, setPlatform]       = useState<Platform>("TIKTOK");
+
+  // Export state
+  const [exportBrandId, setExportBrandId]   = useState("");
+  const [exportMonth, setExportMonth]       = useState(thisMonth());
+  const [exportPlatform, setExportPlatform] = useState<Platform | "ALL">("ALL");
+  const [exportLoading, setExportLoading]   = useState(false);
+  const [exportError, setExportError]       = useState("");
   const [sessionsFile, setSessionsFile] = useState<File | null>(null);
   const [adsCostFile, setAdsCostFile] = useState<File | null>(null);
   const [step, setStep]               = useState<Step>("upload");
@@ -236,6 +400,23 @@ export default function LivestreamImportPage() {
     } finally { setLoading(false); }
   }
 
+  async function handleExport() {
+    if (!exportBrandId || !exportMonth) { setExportError("Select brand and month"); return; }
+    setExportError(""); setExportLoading(true);
+    try {
+      const params = new URLSearchParams({ brandId: exportBrandId, month: exportMonth });
+      if (exportPlatform !== "ALL") params.set("platform", exportPlatform);
+      const res = await fetch(`/api/export/livestream?${params}`);
+      const data = await res.json();
+      if (!res.ok) { setExportError(data.error ?? "Export failed"); return; }
+      if (!data.sessions?.length) { setExportError("No completed sessions found for this selection"); return; }
+      const brand = brands.find(b => b.id === exportBrandId);
+      await downloadExport(data.sessions, exportPlatform, exportMonth, brand?.name ?? exportBrandId);
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "Unexpected error");
+    } finally { setExportLoading(false); }
+  }
+
   function reset() {
     setStep("upload"); setPreview([]); setHostOverrides({});
     setSessionsFile(null); setAdsCostFile(null); setResult(null); setError("");
@@ -262,6 +443,69 @@ export default function LivestreamImportPage() {
         </div>
       </div>
 
+      {/* Tab switcher */}
+      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+        {(["import", "export"] as Tab[]).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className="px-4 py-1.5 rounded-md text-sm font-semibold capitalize transition-all"
+            style={tab === t
+              ? { background: "var(--bg-card)", color: "var(--text-primary)", boxShadow: "0 1px 3px rgba(0,0,0,.15)" }
+              : { color: "var(--text-muted)" }}>
+            {t === "import" ? "Import" : "Export"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── EXPORT TAB ── */}
+      {tab === "export" && (
+        <div className="section-card p-5 space-y-5 max-w-2xl">
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Download session data as Excel — includes adjusted columns (ads cost, net revenue, ROI, GMV/hr) plus all raw metrics.
+          </p>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
+              <Select value={exportBrandId} onChange={e => setExportBrandId(e.target.value)}>
+                <option value="">Select brand…</option>
+                {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month</label>
+              <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm"
+                style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
+              <Select value={exportPlatform} onChange={e => setExportPlatform(e.target.value as Platform | "ALL")}>
+                <option value="ALL">All platforms</option>
+                <option value="TIKTOK">TikTok</option>
+                <option value="SHOPEE">Shopee</option>
+              </Select>
+            </div>
+          </div>
+
+          <div className="text-xs space-y-1 rounded-lg px-3 py-2.5" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+            <p className="font-semibold" style={{ color: "var(--text-secondary)" }}>Columns included:</p>
+            <p>Brand · Platform · Host · Date · Start/End · Duration (hrs) · Campaign Day</p>
+            <p>GMV · Ads Cost · Gross Revenue · Net Revenue · ROI · GMV/hr</p>
+            <p>Items Sold · Orders · Views · Product Clicks · CTR · CTOR · Comments · Shares · Likes · Avg View Duration</p>
+            <p className="italic">All platforms in one file — TikTok and Shopee on separate sheets when "All platforms" is selected.</p>
+          </div>
+
+          {exportError && <ErrorBanner message={exportError} />}
+
+          <div className="flex justify-end">
+            <Button onClick={handleExport} loading={exportLoading} disabled={!exportBrandId}>
+              <Download size={14} /> Download Excel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {tab === "import" && <>
       {/* Step indicator */}
       <div className="flex items-center gap-2 text-xs font-semibold">
         {(["upload","preview","done"] as Step[]).map((s, i) => (
@@ -486,6 +730,7 @@ export default function LivestreamImportPage() {
           </div>
         </div>
       )}
+      </> }
     </div>
   );
 }
