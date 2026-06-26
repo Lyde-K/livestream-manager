@@ -57,6 +57,12 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const { roomId, liveHostId, brandId, platform, scheduledStart, scheduledEnd, isCampaignDay, notes, slotColor } = await req.json();
+
+  // Level 1 prevention: every session must have a brand, and at least a room or a host.
+  // This blocks ghost sessions (no host + no room) at the API boundary.
+  if (!brandId) return Response.json({ error: "brandId is required" }, { status: 400 });
+  if (!liveHostId && !roomId) return Response.json({ error: "Session must have at least a host or a room" }, { status: 400 });
+
   const newSession = await prisma.session.create({
     data: {
       ...(liveHostId ? { liveHostId } : {}),

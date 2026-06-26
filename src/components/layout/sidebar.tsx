@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
   UserCheck, Sun, Moon, ChevronDown, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench, UsersRound, Sparkles,
-  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell, UmbrellaOff, Clapperboard,
+  Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell, UmbrellaOff, Clapperboard, ShieldCheck,
 } from "lucide-react";
 
 type NavGroup = "LIVESTREAM" | "AFFILIATE" | "MANAGEMENT";
@@ -53,6 +53,7 @@ const navItems: NavItem[] = [
   { label: "Sheets Sync",       href: "/admin/sync",                icon: RefreshCw,       roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Sync Errors",       href: "/admin/sync-log",            icon: AlertTriangle,   roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Fix Duplicates",    href: "/admin/fix-duplicates",      icon: Wrench,          roles: ["ADMIN"], group: "MANAGEMENT" },
+  { label: "Data Health",       href: "/admin/health",              icon: ShieldCheck,     roles: ["ADMIN"], group: "MANAGEMENT" },
 ];
 
 const GROUP_META: Record<NavGroup, { label: string; icon: React.ElementType; accent: string }> = {
