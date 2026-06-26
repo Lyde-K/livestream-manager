@@ -42,12 +42,10 @@ function extractHost(
   hosts: { id: string; displayName: string }[]
 ): { id: string; displayName: string } | null {
   const upper = title.toUpperCase();
-  // Sort longest display name first to avoid partial matches (AYUNI before AYUNI (A) problem)
   const sorted = [...hosts].sort((a, b) => b.displayName.length - a.displayName.length);
   for (const h of sorted) {
     if (upper.includes(h.displayName.toUpperCase())) return h;
   }
-  // Also try splitting on " - " and matching the suffix
   const parts = title.split(" - ");
   if (parts.length >= 2) {
     const suffix = parts[parts.length - 1].trim().toUpperCase();
@@ -56,6 +54,14 @@ function extractHost(
     }
   }
   return null;
+}
+
+// Punctuality: same rule as sync/sheets
+function computePunctuality(actualStart: Date, scheduledStart: Date, earlyThresholdMinutes = 5): string {
+  const diffMin = (actualStart.getTime() - scheduledStart.getTime()) / 60_000;
+  if (diffMin < -earlyThresholdMinutes) return "EARLY";
+  if (diffMin <= 5) return "ON_TIME";
+  return "LATE";
 }
 
 // ── Row types ─────────────────────────────────────────────────────────────────
@@ -99,8 +105,8 @@ export interface TikTokRow {
 }
 
 export interface ShopeeRow {
-  no: string;          // row number from export
-  title: string;       // Livestream Name
+  no: string;
+  title: string;
   startTime: string;   // "DD-MM-YYYY HH:MM"
   duration: string;    // "HH:MM:SS"
   engagedViewers: string;
@@ -113,7 +119,37 @@ export interface ShopeeRow {
   itemsSoldPlaced: string;
   itemsSoldConfirmed: string;
   salesPlaced: string;
-  salesConfirmed: string;  // GMV — Sales(Confirmed Order)
+  salesConfirmed: string;
+}
+
+// ── Shopee admin session type ─────────────────────────────────────────────────
+
+interface AdminSession {
+  id: string;
+  externalRef: string | null;
+  scheduledStart: Date;
+  scheduledEnd: Date;
+  liveHostId: string | null;
+}
+
+// Find the best matching admin session for an actual start time + host
+// Returns null if no session within ±2 hours with same host
+function findMatchingAdminSession(
+  actualStart: Date,
+  hostId: string,
+  adminSessions: AdminSession[]
+): AdminSession | null {
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  const candidates = adminSessions.filter(s =>
+    s.liveHostId === hostId &&
+    Math.abs(actualStart.getTime() - s.scheduledStart.getTime()) <= TWO_HOURS_MS
+  );
+  if (candidates.length === 0) return null;
+  // Pick closest scheduled start
+  return candidates.sort((a, b) =>
+    Math.abs(actualStart.getTime() - a.scheduledStart.getTime()) -
+    Math.abs(actualStart.getTime() - b.scheduledStart.getTime())
+  )[0];
 }
 
 // ── POST /api/import/livestream ───────────────────────────────────────────────
@@ -127,9 +163,9 @@ export async function POST(req: NextRequest) {
     action: "preview" | "confirm";
     platform: "TIKTOK" | "SHOPEE";
     brandId: string;
-    month: string; // "YYYY-MM"
+    month: string;
     rows: TikTokRow[] | ShopeeRow[];
-    hostOverrides?: Record<string, string>; // roomId/key → hostId
+    hostOverrides?: Record<string, string>;
   };
 
   const { action, platform, brandId, month, rows, hostOverrides = {} } = body;
@@ -146,8 +182,7 @@ export async function POST(req: NextRequest) {
     prisma.brand.findUnique({ where: { id: brandId }, select: { id: true, name: true } }),
     prisma.campaign.findMany({
       where: {
-        year,
-        month: mon,
+        year, month: mon,
         OR: [{ brandId }, { brandId: null }],
         platform: { in: [platform, "BOTH"] },
       },
@@ -156,12 +191,28 @@ export async function POST(req: NextRequest) {
 
   if (!brand) return Response.json({ error: "Brand not found" }, { status: 404 });
 
+  // ── For Shopee: fetch admin-created sessions (no SP- prefix = manually created)
+  let adminSessions: AdminSession[] = [];
+  if (platform === "SHOPEE") {
+    adminSessions = await prisma.session.findMany({
+      where: {
+        brandId,
+        platform: "SHOPEE",
+        scheduledStart: { gte: monthStart, lt: monthEnd },
+        OR: [
+          { externalRef: null },
+          { externalRef: { not: { startsWith: "SP-" } } },
+        ],
+      },
+      select: { id: true, externalRef: true, scheduledStart: true, scheduledEnd: true, liveHostId: true },
+    });
+  }
+
   // ── Build preview rows ────────────────────────────────────────────────────
 
-  const preview = (platform === "TIKTOK"
+  const preview = platform === "TIKTOK"
     ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides)
-    : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides)
-  );
+    : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides, adminSessions);
 
   if (action === "preview") {
     const matched   = preview.filter((r) => r.hostId).length;
@@ -170,39 +221,137 @@ export async function POST(req: NextRequest) {
     return Response.json({ preview, matched, unmatched, tests });
   }
 
-  // ── Confirm: delete existing sessions for this brand+month+platform ────────
+  // ── Confirm ───────────────────────────────────────────────────────────────
 
-  const prefix = platform === "TIKTOK" ? "TT-" : "SP-";
+  if (platform === "TIKTOK") {
+    // TikTok: simple delete + recreate (no admin slots to match)
+    await prisma.session.deleteMany({
+      where: {
+        brandId, platform: "TIKTOK",
+        scheduledStart: { gte: monthStart, lt: monthEnd },
+        externalRef: { startsWith: "TT-" },
+      },
+    });
+
+    let inserted = 0, skipped = 0;
+    for (const p of preview) {
+      if (!p.hostId || p.likelyTest) { skipped++; continue; }
+      await prisma.session.create({ data: { ...p.insertData, brandId, liveHostId: p.hostId } });
+      inserted++;
+    }
+    return Response.json({ ok: true, inserted, skipped, unmatched: preview.filter(p => !p.hostId).length, month, brand: brand.name });
+  }
+
+  // ── Shopee confirm: match-and-merge ───────────────────────────────────────
+
+  // 1. Delete old SP- sessions from previous imports (not admin-created ones)
   await prisma.session.deleteMany({
     where: {
-      brandId,
-      platform,
+      brandId, platform: "SHOPEE",
       scheduledStart: { gte: monthStart, lt: monthEnd },
-      externalRef: { startsWith: prefix },
+      externalRef: { startsWith: "SP-" },
     },
   });
 
-  let inserted = 0;
-  let skipped  = 0;
+  // 2. Filter out test sessions and unmatched hosts
+  const activeRows = preview.filter(p => p.hostId && !p.likelyTest);
 
-  for (const p of preview) {
-    if (!p.hostId) { skipped++; continue; }
-    if (p.likelyTest) { skipped++; continue; }
+  // 3. Group rows by matched admin session ID
+  const groupedBySlot = new Map<string, typeof activeRows>();
+  const unslottedRows: typeof activeRows = [];
 
-    await prisma.session.create({
-      data: { ...p.insertData, brandId, liveHostId: p.hostId },
+  for (const p of activeRows) {
+    if (p.matchedSlotId) {
+      const group = groupedBySlot.get(p.matchedSlotId) ?? [];
+      group.push(p);
+      groupedBySlot.set(p.matchedSlotId, group);
+    } else {
+      unslottedRows.push(p);
+    }
+  }
+
+  let updated = 0, inserted = 0, skipped = 0;
+
+  // 4. Update matched admin sessions with merged data
+  for (const [slotId, group] of groupedBySlot) {
+    const adminSlot = adminSessions.find(s => s.id === slotId)!;
+    const merged = mergeShopeeRows(group, adminSlot);
+    await prisma.session.update({
+      where: { id: slotId },
+      data: merged,
     });
+    updated++;
+  }
+
+  // 5. Create new SP- sessions for rows with no matching admin slot
+  for (const p of unslottedRows) {
+    await prisma.session.create({ data: { ...p.insertData, brandId, liveHostId: p.hostId! } });
     inserted++;
   }
 
+  skipped = preview.filter(p => !p.hostId || p.likelyTest).length;
+
   return Response.json({
     ok: true,
+    updated,
     inserted,
     skipped,
-    unmatched: preview.filter((p) => !p.hostId).length,
+    unmatched: preview.filter(p => !p.hostId).length,
     month,
     brand: brand.name,
   });
+}
+
+// ── Merge multiple Shopee rows into one session update ────────────────────────
+
+function mergeShopeeRows(
+  rows: Array<{ startMYT: string; endMYT: string; duration: number | null; gmv: number; isCampaign: boolean; insertData: Record<string, unknown> }>,
+  adminSlot: AdminSession
+) {
+  const sorted = [...rows].sort((a, b) => new Date(a.startMYT).getTime() - new Date(b.startMYT).getTime());
+  const earliest = sorted[0];
+  const latest   = sorted[sorted.length - 1];
+
+  const totalDuration  = rows.reduce((s, r) => s + (r.duration ?? 0), 0);
+  const totalGmv       = rows.reduce((s, r) => s + r.gmv, 0);
+  const sumOrders      = rows.reduce((s, r) => s + ((r.insertData.ordersConfirmed as number) ?? 0), 0);
+  const sumOrdersP     = rows.reduce((s, r) => s + ((r.insertData.ordersPlaced as number) ?? 0), 0);
+  const sumItems       = rows.reduce((s, r) => s + ((r.insertData.itemsSold as number) ?? 0), 0);
+  const sumItemsP      = rows.reduce((s, r) => s + ((r.insertData.itemsSoldPlaced as number) ?? 0), 0);
+  const sumSalesP      = rows.reduce((s, r) => s + ((r.insertData.salesPlaced as number) ?? 0), 0);
+  const sumComments    = rows.reduce((s, r) => s + ((r.insertData.comments as number) ?? 0), 0);
+  const sumAtc         = rows.reduce((s, r) => s + ((r.insertData.addToCart as number) ?? 0), 0);
+  // Viewers: max across rows (same audience, avoid double-counting)
+  const maxViewers     = Math.max(...rows.map(r => (r.insertData.viewers as number) ?? 0)) || null;
+  const maxEngaged     = Math.max(...rows.map(r => (r.insertData.engagedViewers as number) ?? 0)) || null;
+  // Avg view duration: from longest session
+  const longestRow     = [...rows].sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0))[0];
+
+  const actualStart = new Date(earliest.startMYT);
+  const actualEnd   = new Date(latest.endMYT);
+  const punctuality = computePunctuality(actualStart, adminSlot.scheduledStart);
+
+  return {
+    title:                (earliest.insertData.title as string) ?? null,
+    status:               "COMPLETED" as const,
+    actualStart,
+    actualEnd,
+    actualDurationMinutes: totalDuration,
+    isCampaignDay:        rows.some(r => r.isCampaign),
+    punctuality,
+    gmv:                  totalGmv,
+    adsCost:              0,
+    ordersConfirmed:      sumOrders || null,
+    ordersPlaced:         sumOrdersP || null,
+    itemsSold:            sumItems || null,
+    itemsSoldPlaced:      sumItemsP || null,
+    salesPlaced:          sumSalesP || null,
+    viewers:              maxViewers,
+    engagedViewers:       maxEngaged,
+    addToCart:            sumAtc || null,
+    comments:             sumComments || null,
+    avgViewDurationSec:   longestRow.insertData.avgViewDurationSec as number | null,
+  };
 }
 
 // ── TikTok preview builder ────────────────────────────────────────────────────
@@ -222,28 +371,26 @@ function buildTikTokPreview(
     const host = overrideHostId
       ? hosts.find(h => h.id === overrideHostId) ?? null
       : extractHost(r.roomTitle, hosts);
-    const isCampaign = campaigns.some(
-      (c) => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate)
-    );
-    const campaignName = campaigns.find(
-      (c) => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate)
-    )?.name ?? null;
+    const isCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
 
     return {
       key,
-      roomTitle:    r.roomTitle,
-      startMYT:     startMYT.toISOString(),
-      endMYT:       endMYT.toISOString(),
-      hostId:       host?.id ?? null,
-      hostName:     host?.displayName ?? null,
+      roomTitle:      r.roomTitle,
+      startMYT:       startMYT.toISOString(),
+      endMYT:         endMYT.toISOString(),
+      hostId:         host?.id ?? null,
+      hostName:       host?.displayName ?? null,
       isCampaign,
       campaignName,
-      gmv:          parseRM(r.gmv),
-      duration:     exactMinutes,
-      likelyTest:   exactMinutes < 15,
+      gmv:            parseRM(r.gmv),
+      duration:       exactMinutes,
+      likelyTest:     exactMinutes < 15,
+      matchedSlotId:  null as string | null,
+      matchedSlotTime: null as string | null,
       insertData: {
         externalRef:          `TT-${r.roomId}`,
-        brandId:              "", // filled below
+        brandId:              "",
         liveHostId:           host?.id ?? "",
         platform:             "TIKTOK" as const,
         title:                r.roomTitle,
@@ -275,7 +422,6 @@ function buildTikTokPreview(
 
 // ── Shopee preview builder ────────────────────────────────────────────────────
 
-// Parse "DD-MM-YYYY HH:MM" in MYT
 function parseShopeeDate(val: string): Date {
   const [datePart, timePart] = val.trim().split(" ");
   const [dd, mm, yyyy] = datePart.split("-");
@@ -286,40 +432,41 @@ function buildShopeePreview(
   rows: ShopeeRow[],
   hosts: { id: string; displayName: string }[],
   campaigns: { startDate: Date | string; endDate: Date | string; name: string }[],
-  hostOverrides: Record<string, string>
+  hostOverrides: Record<string, string>,
+  adminSessions: AdminSession[]
 ) {
   return rows.map((r) => {
     const startMYT     = parseShopeeDate(r.startTime);
     const durationMins = parseHMS(r.duration) ?? 0;
     const endMYT       = new Date(startMYT.getTime() + durationMins * 60_000);
-    // Stable key: row number + start datetime
     const key = `SP-${r.no}-${r.startTime.replace(/[^0-9]/g, "")}`;
     const overrideHostId = hostOverrides[key];
     const host = overrideHostId
       ? hosts.find(h => h.id === overrideHostId) ?? null
       : extractHost(r.title, hosts);
-    const isCampaign = campaigns.some(
-      (c) => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate)
-    );
-    const campaignName = campaigns.find(
-      (c) => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate)
-    )?.name ?? null;
+    const isCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
+
+    // Match to admin slot if host identified
+    const matchedSlot = host ? findMatchingAdminSession(startMYT, host.id, adminSessions) : null;
 
     return {
       key,
-      roomTitle:    r.title,
-      startMYT:     startMYT.toISOString(),
-      endMYT:       endMYT.toISOString(),
-      hostId:       host?.id ?? null,
-      hostName:     host?.displayName ?? null,
+      roomTitle:       r.title,
+      startMYT:        startMYT.toISOString(),
+      endMYT:          endMYT.toISOString(),
+      hostId:          host?.id ?? null,
+      hostName:        host?.displayName ?? null,
       isCampaign,
       campaignName,
-      gmv:          parseRM(r.salesConfirmed),
-      duration:     durationMins,
-      likelyTest:   durationMins < 15,
+      gmv:             parseRM(r.salesConfirmed),
+      duration:        durationMins,
+      likelyTest:      durationMins < 15,
+      matchedSlotId:   matchedSlot?.id ?? null,
+      matchedSlotTime: matchedSlot?.scheduledStart.toISOString() ?? null,
       insertData: {
         externalRef:          key,
-        brandId:              "", // filled below
+        brandId:              "",
         liveHostId:           host?.id ?? "",
         platform:             "SHOPEE" as const,
         title:                r.title,
@@ -348,8 +495,6 @@ function buildShopeePreview(
 }
 
 // ── PATCH /api/import/livestream ─────────────────────────────────────────────
-// Patch adsCost onto existing TikTok sessions by Room ID
-// Body: { rows: AdsCostRow[] }
 
 export interface AdsCostRow {
   roomId: string;
@@ -379,7 +524,7 @@ export async function PATCH(req: NextRequest) {
     await prisma.session.update({
       where: { externalRef },
       data: {
-        adsCost:     parseRM(r.cost),
+        adsCost:      parseRM(r.cost),
         grossRevenue: parseRM(r.grossRevenue) || null,
       },
     });

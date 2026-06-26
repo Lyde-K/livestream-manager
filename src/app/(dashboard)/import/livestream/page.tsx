@@ -19,6 +19,8 @@ interface PreviewRow {
   gmv: number;
   duration: number | null;
   likelyTest: boolean;
+  matchedSlotId: string | null;
+  matchedSlotTime: string | null;
 }
 
 interface Host { id: string; displayName: string; }
@@ -395,7 +397,7 @@ export default function LivestreamImportPage() {
   const [excludeTests, setExcludeTests]   = useState(true);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
-  const [result, setResult]           = useState<{ inserted: number; skipped: number; unmatched: number; adsCostMatched?: number } | null>(null);
+  const [result, setResult]           = useState<{ inserted: number; updated?: number; skipped: number; unmatched: number; adsCostMatched?: number } | null>(null);
 
   const sessionsRef = useRef<HTMLInputElement>(null);
   const adsCostRef  = useRef<HTMLInputElement>(null);
@@ -711,7 +713,9 @@ export default function LivestreamImportPage() {
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr style={{ background: "var(--bg-subtle)", borderBottom: "1px solid var(--border)" }}>
-                    {["Title","Start (MYT)","End (MYT)","Duration","Host","Campaign","GMV"].map(h => (
+                    {["Title","Start (MYT)","End (MYT)","Duration","Host","Campaign","GMV",
+                      ...(platform === "SHOPEE" ? ["Slot"] : [])
+                    ].map(h => (
                       <th key={h} className="px-3 py-2 text-left font-semibold" style={{ color: "var(--text-secondary)" }}>{h}</th>
                     ))}
                   </tr>
@@ -764,6 +768,19 @@ export default function LivestreamImportPage() {
                         <td className="px-3 py-2 font-semibold" style={{ color: "var(--text-primary)" }}>
                           {fmtRM(p.gmv)}
                         </td>
+                        {platform === "SHOPEE" && (
+                          <td className="px-3 py-2 whitespace-nowrap text-[10px]">
+                            {p.matchedSlotTime ? (
+                              <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(34,197,94,.12)", color: "#16a34a" }}>
+                                Matches {fmtMYT(p.matchedSlotTime)}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(249,115,22,.1)", color: "#f97316" }}>
+                                New session
+                              </span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -796,7 +813,10 @@ export default function LivestreamImportPage() {
             <h2 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>Import complete</h2>
           </div>
           <div className="space-y-2">
-            <KV label="Sessions imported" value={String(result.inserted)} />
+            {result.updated !== undefined && result.updated > 0 && (
+              <KV label="Existing slots updated" value={String(result.updated)} />
+            )}
+            <KV label={platform === "SHOPEE" ? "New sessions created" : "Sessions imported"} value={String(result.inserted)} />
             <KV label="Test sessions skipped" value={String(result.skipped)} />
             <KV label="Unmatched (skipped)" value={String(result.unmatched)} />
             {result.adsCostMatched !== undefined && (
@@ -804,7 +824,11 @@ export default function LivestreamImportPage() {
             )}
           </div>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Data is live in the dashboard. Previous {month} {platform === "TIKTOK" ? "TikTok" : "Shopee"} import data for this brand has been replaced.
+            Data is live in the dashboard.{" "}
+            {platform === "SHOPEE"
+              ? "Matched sessions updated existing admin-created slots with actuals and punctuality. Unmatched rows created as new sessions."
+              : `Previous ${month} TikTok import data for this brand has been replaced.`
+            }{" "}
             Other months and other platform data are untouched.
           </p>
           <div className="flex gap-2 pt-2">
