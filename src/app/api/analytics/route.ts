@@ -44,6 +44,11 @@ export async function GET(req: NextRequest) {
   const avgCTOR = ctorSessions.length > 0
     ? ctorSessions.reduce((s, x) => s + (x.ctor ?? 0), 0) / ctorSessions.length
     : null;
+  // Shopee conversion rate: ordersConfirmed / viewers
+  const shopeeSessions = sessions.filter((x) => x.platform === "SHOPEE");
+  const shopeeViewers = shopeeSessions.reduce((s, x) => s + (x.viewers ?? 0), 0);
+  const shopeeOrders  = shopeeSessions.reduce((s, x) => s + (x.ordersConfirmed ?? 0), 0);
+  const shopeeConversionRate = shopeeViewers > 0 ? shopeeOrders / shopeeViewers : null;
 
   // ── By date (YYYY-MM-DD) ──────────────────────────────────────────────────
   const byDateMap = new Map<string, { gmv: number; viewers: number; sessions: number; orders: number }>();
@@ -82,7 +87,11 @@ export async function GET(req: NextRequest) {
     });
   }
   const byBrand = Array.from(byBrandMap.values())
-    .map((b) => ({ ...b, avgCTOR: b.ctorCount > 0 ? b.ctorSum / b.ctorCount : null }))
+    .map((b) => ({
+      ...b,
+      avgCTOR: b.ctorCount > 0 ? b.ctorSum / b.ctorCount : null,
+      conversionRate: b.viewers > 0 ? b.orders / b.viewers : null,
+    }))
     .sort((a, b) => b.gmv - a.gmv);
 
   // ── By host (only sessions with an assigned host) ────────────────────────
@@ -144,7 +153,7 @@ export async function GET(req: NextRequest) {
   };
 
   return Response.json({
-    totalGMV, totalViewers, totalOrders, avgCTOR,
+    totalGMV, totalViewers, totalOrders, avgCTOR, shopeeConversionRate,
     sessionCount: sessions.length,
     byDate, byBrand, byHost, byPlatform, byCountry, byType,
   });

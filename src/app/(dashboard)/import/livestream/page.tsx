@@ -222,7 +222,7 @@ async function downloadExport(sessions: ExportSession[], platform: string, month
       "BRAND","Host","Hours","Campaign","Date","Month","Punctuality","Slot",
       "Livestream Name","Start Time","Duration","Engaged Viewers","Comments","ATC",
       "Avg. Viewing Duration","Viewers","Orders(Placed Order)","Orders(Confirmed Order)",
-      "Items Sold(Placed Order)","Items Sold(Confirmed Order)","Sales(Placed Order)","Sales(Confirmed Order)",
+      "Conversion Rate (%)","Items Sold(Placed Order)","Items Sold(Confirmed Order)","Sales(Placed Order)","Sales(Confirmed Order)",
     ];
     ws.addRow(HEADERS);
     const hr = ws.getRow(1);
@@ -259,6 +259,9 @@ async function downloadExport(sessions: ExportSession[], platform: string, month
         s.viewers ?? "",
         s.ordersPlaced ?? "",
         s.ordersConfirmed ?? "",
+        s.viewers && s.viewers > 0 && s.ordersConfirmed != null
+          ? +((s.ordersConfirmed / s.viewers) * 100).toFixed(2)
+          : "",
         s.itemsSoldPlaced ?? "",
         s.itemsSold ?? "",
         s.salesPlaced ?? "",

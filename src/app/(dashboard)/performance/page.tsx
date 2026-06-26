@@ -29,9 +29,9 @@ type Breakdown = "brand" | "host" | "platform" | "country";
 
 interface AnalyticsData {
   totalGMV: number; totalViewers: number; totalOrders: number;
-  avgCTOR: number | null; sessionCount: number;
+  avgCTOR: number | null; shopeeConversionRate: number | null; sessionCount: number;
   byDate: { date: string; gmv: number; viewers: number; sessions: number; orders: number }[];
-  byBrand: { brandId: string; brandName: string; platform: string; color: string; gmv: number; viewers: number; sessions: number; orders: number; avgCTOR: number | null }[];
+  byBrand: { brandId: string; brandName: string; platform: string; color: string; gmv: number; viewers: number; sessions: number; orders: number; avgCTOR: number | null; conversionRate: number | null }[];
   byHost: { hostId: string; hostName: string; displayName: string; type: string; gmv: number; viewers: number; sessions: number; hours: number }[];
   byPlatform: { platform: string; gmv: number; sessions: number; viewers: number }[];
   byCountry: { country: string; gmv: number; sessions: number; viewers: number }[];
@@ -286,10 +286,11 @@ export default function PerformancePage() {
           ) : (
             <>
               {/* KPI cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                 <AnalKPICard icon={TrendingUp} label="Total GMV" value={formatCurrency(analyticsData.totalGMV)} color="var(--accent)" />
                 <AnalKPICard icon={Eye} label="Total Viewers" value={analyticsData.totalViewers.toLocaleString()} color="var(--success)" />
-                <AnalKPICard icon={MousePointer2} label="Avg CTOR" value={analyticsData.avgCTOR!=null?`${(analyticsData.avgCTOR*100).toFixed(2)}%`:"—"} color="var(--warning)" />
+                <AnalKPICard icon={MousePointer2} label="Avg CTOR" value={analyticsData.avgCTOR!=null?`${(analyticsData.avgCTOR*100).toFixed(2)}%`:"—"} color="var(--warning)" sublabel="TikTok" />
+                <AnalKPICard icon={MousePointer2} label="Conv. Rate" value={analyticsData.shopeeConversionRate!=null?`${(analyticsData.shopeeConversionRate*100).toFixed(2)}%`:"—"} color="#f97316" sublabel="Shopee" />
                 <AnalKPICard icon={ShoppingCart} label="Orders Confirmed" value={analyticsData.totalOrders.toLocaleString()} color="#8b5cf6" />
                 <AnalKPICard icon={CheckCircle2} label="Sessions" value={String(analyticsData.sessionCount)} color="var(--text-secondary)" />
               </div>
@@ -348,7 +349,7 @@ export default function PerformancePage() {
                 <div className="overflow-x-auto">
                   {breakdown === "brand" && (
                     <table className="data-table">
-                      <thead><tr><th>Brand</th><th>Platform</th><th className="text-right">Sessions</th><th className="text-right">GMV</th><th className="text-right">GMV %</th><th className="text-right">Viewers</th><th className="text-right">Avg CTOR</th><th className="text-right">Orders</th></tr></thead>
+                      <thead><tr><th>Brand</th><th>Platform</th><th className="text-right">Sessions</th><th className="text-right">GMV</th><th className="text-right">GMV %</th><th className="text-right">Viewers</th><th className="text-right">Conv. Rate</th><th className="text-right">Avg CTOR</th><th className="text-right">Orders</th></tr></thead>
                       <tbody>
                         {analyticsData.byBrand.map(b=>(
                           <tr key={b.brandId}>
@@ -365,6 +366,7 @@ export default function PerformancePage() {
                               </div>
                             </td>
                             <td className="text-right tabular-nums">{b.viewers.toLocaleString()}</td>
+                            <td className="text-right tabular-nums">{b.conversionRate!=null?`${(b.conversionRate*100).toFixed(2)}%`:"—"}</td>
                             <td className="text-right tabular-nums">{b.avgCTOR!=null?`${(b.avgCTOR*100).toFixed(2)}%`:"—"}</td>
                             <td className="text-right tabular-nums">{b.orders.toLocaleString()}</td>
                           </tr>
@@ -647,12 +649,13 @@ function AdsTab({ allAdsSessions, highAdsRoiSessions }: { allAdsSessions: Return
 
 // ─── Small sub-components ────────────────────────────────────────────────────
 
-function AnalKPICard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string; color: string }) {
+function AnalKPICard({ icon: Icon, label, value, color, sublabel }: { icon: React.ElementType; label: string; value: string; color: string; sublabel?: string }) {
   return (
     <div className="section-card p-4">
       <div className="flex items-center gap-2 mb-2">
         <Icon size={14} style={{color}} />
         <span className="text-xs" style={{color:"var(--text-muted)"}}>{label}</span>
+        {sublabel && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{background:"var(--bg-subtle)",color:"var(--text-muted)",border:"1px solid var(--border)"}}>{sublabel}</span>}
       </div>
       <div className="text-xl font-bold" style={{color:"var(--text-primary)"}}>{value}</div>
     </div>
