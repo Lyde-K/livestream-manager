@@ -7,7 +7,7 @@ import { Select } from "@/components/ui/select";
 interface Brand { id: string; name: string; color: string; }
 
 interface PreviewRow {
-  roomId: string;
+  key: string;
   roomTitle: string;
   startMYT: string;
   endMYT: string;
@@ -21,6 +21,8 @@ interface PreviewRow {
 }
 
 interface Host { id: string; displayName: string; }
+
+type Platform = "TIKTOK" | "SHOPEE";
 
 // ── Parse TikTok export xlsx client-side ─────────────────────────────────────
 
@@ -46,13 +48,55 @@ async function parseTikTokFile(file: File) {
     // Row 1 = date range header, Row 2 = empty, Row 3 = column headers, Row 4+ = data
     if (n < 4) return;
     const vals = (row.values as unknown[]).slice(1);
-    if (!vals[0]) return; // skip empty rows
+    if (!vals[0]) return;
     const obj: Record<string, string> = {};
     HEADERS.forEach((h, i) => { obj[h] = String(vals[i] ?? "").trim(); });
     rows.push(obj);
   });
 
   return rows;
+}
+
+// ── Parse Shopee export CSV client-side ──────────────────────────────────────
+
+async function parseShopeeFile(file: File) {
+  const text = await file.text();
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  // Row 1 = headers, Row 2+ = data
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (!cols[0]) continue;
+    rows.push({
+      no:                  cols[2]  ?? "",
+      title:               cols[3]  ?? "",
+      startTime:           cols[4]  ?? "",
+      duration:            cols[5]  ?? "",
+      engagedViewers:      cols[6]  ?? "",
+      comments:            cols[7]  ?? "",
+      atc:                 cols[8]  ?? "",
+      avgViewDuration:     cols[9]  ?? "",
+      viewers:             cols[10] ?? "",
+      ordersConfirmed:     cols[12] ?? "",
+      itemsSoldConfirmed:  cols[14] ?? "",
+      salesConfirmed:      cols[16] ?? "",
+    });
+  }
+  return rows;
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQuote = !inQuote; continue; }
+    if (ch === "," && !inQuote) { result.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  result.push(cur);
+  return result;
 }
 
 async function parseAdsCostFile(file: File) {
@@ -104,6 +148,7 @@ export default function LivestreamImportPage() {
   const [hosts, setHosts]             = useState<Host[]>([]);
   const [brandId, setBrandId]         = useState("");
   const [month, setMonth]             = useState(thisMonth());
+  const [platform, setPlatform]       = useState<Platform>("TIKTOK");
   const [sessionsFile, setSessionsFile] = useState<File | null>(null);
   const [adsCostFile, setAdsCostFile] = useState<File | null>(null);
   const [step, setStep]               = useState<Step>("upload");
@@ -124,15 +169,27 @@ export default function LivestreamImportPage() {
     });
   }, []);
 
+  // Reset file when platform changes
+  function handlePlatformChange(p: Platform) {
+    setPlatform(p);
+    setSessionsFile(null);
+    setAdsCostFile(null);
+    if (sessionsRef.current) sessionsRef.current.value = "";
+    if (adsCostRef.current) adsCostRef.current.value = "";
+  }
+
   async function handlePreview() {
     if (!brandId || !month || !sessionsFile) { setError("Select brand, month, and session file"); return; }
     setError(""); setLoading(true);
     try {
-      const rows = await parseTikTokFile(sessionsFile);
-      const res  = await fetch("/api/import/livestream", {
+      const rows = platform === "TIKTOK"
+        ? await parseTikTokFile(sessionsFile)
+        : await parseShopeeFile(sessionsFile);
+
+      const res = await fetch("/api/import/livestream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "preview", brandId, month, rows }),
+        body: JSON.stringify({ action: "preview", platform, brandId, month, rows }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Preview failed"); return; }
@@ -147,37 +204,21 @@ export default function LivestreamImportPage() {
   async function handleConfirm() {
     setError(""); setLoading(true);
     try {
-      // Apply host overrides to rows before re-sending
-      const rows = await parseTikTokFile(sessionsFile!);
-
-      // Apply overrides: replace hostId in preview then re-POST with confirm
-      const overriddenPreview = preview.map((p) => ({
-        ...p,
-        hostId:   hostOverrides[p.roomId] ?? p.hostId,
-        hostName: hostOverrides[p.roomId]
-          ? (hosts.find(h => h.id === hostOverrides[p.roomId])?.displayName ?? p.hostName)
-          : p.hostName,
-      }));
-
-      // Filter rows to only include those not excluded
-      const activeRows = rows.filter((r, i) => {
-        const p = overriddenPreview[i];
-        if (!p) return false;
-        if (excludeTests && p.likelyTest) return false;
-        return true;
-      });
+      const rows = platform === "TIKTOK"
+        ? await parseTikTokFile(sessionsFile!)
+        : await parseShopeeFile(sessionsFile!);
 
       const res = await fetch("/api/import/livestream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "confirm", brandId, month, rows: activeRows, hostOverrides }),
+        body: JSON.stringify({ action: "confirm", platform, brandId, month, rows, hostOverrides }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Import failed"); return; }
 
       let adsCostMatched = 0;
-      // Patch ads cost if file provided
-      if (adsCostFile) {
+      // Ads cost only applicable for TikTok
+      if (platform === "TIKTOK" && adsCostFile) {
         const adsCostRows = await parseAdsCostFile(adsCostFile);
         const patchRes = await fetch("/api/import/livestream", {
           method: "PATCH",
@@ -188,7 +229,7 @@ export default function LivestreamImportPage() {
         adsCostMatched = patchData.matched ?? 0;
       }
 
-      setResult({ ...data, adsCostMatched });
+      setResult({ ...data, adsCostMatched: platform === "TIKTOK" ? adsCostMatched : undefined });
       setStep("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");
@@ -203,7 +244,7 @@ export default function LivestreamImportPage() {
   }
 
   const visiblePreview = excludeTests ? preview.filter(p => !p.likelyTest) : preview;
-  const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.roomId] ?? p.hostId));
+  const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId));
   const testCount      = preview.filter(p => p.likelyTest).length;
 
   return (
@@ -216,7 +257,7 @@ export default function LivestreamImportPage() {
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Livestream Import</h1>
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            Upload TikTok session export · hosts matched from title · campaign days auto-detected
+            Upload session export · hosts matched from title · campaign days auto-detected
           </p>
         </div>
       </div>
@@ -239,6 +280,25 @@ export default function LivestreamImportPage() {
       {/* ── STEP 1: Upload ── */}
       {step === "upload" && (
         <div className="section-card p-5 space-y-5 max-w-2xl">
+          {/* Platform toggle */}
+          <div>
+            <label className="block text-sm font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Platform</label>
+            <div className="flex gap-2">
+              {(["TIKTOK", "SHOPEE"] as Platform[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => handlePlatformChange(p)}
+                  className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
+                  style={platform === p
+                    ? { background: "var(--accent)", color: "#fff" }
+                    : { background: "var(--bg-subtle)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                >
+                  {p === "TIKTOK" ? "TikTok" : "Shopee"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
@@ -256,21 +316,27 @@ export default function LivestreamImportPage() {
           </div>
 
           <FileSlot
-            label="TikTok Session Export (.xlsx)"
-            hint="Creator Live Performance export — all sessions for this brand's account"
+            label={platform === "TIKTOK" ? "TikTok Session Export (.xlsx)" : "Shopee Livestream Export (.csv)"}
+            hint={platform === "TIKTOK"
+              ? "Creator Live Performance export — all sessions for this brand's account"
+              : "Shopee Seller Centre → Livestream → Export CSV"}
             file={sessionsFile}
             onPick={setSessionsFile}
             inputRef={sessionsRef}
+            accept={platform === "TIKTOK" ? ".xlsx" : ".csv"}
             required
           />
 
-          <FileSlot
-            label="Ads Cost Export (.xlsx) — optional"
-            hint="Livestream campaign data export — matched by Room ID to fill ads cost per session"
-            file={adsCostFile}
-            onPick={setAdsCostFile}
-            inputRef={adsCostRef}
-          />
+          {platform === "TIKTOK" && (
+            <FileSlot
+              label="Ads Cost Export (.xlsx) — optional"
+              hint="Livestream campaign data export — matched by Room ID to fill ads cost per session"
+              file={adsCostFile}
+              onPick={setAdsCostFile}
+              inputRef={adsCostRef}
+              accept=".xlsx"
+            />
+          )}
 
           {error && <ErrorBanner message={error} />}
 
@@ -326,13 +392,13 @@ export default function LivestreamImportPage() {
                 </thead>
                 <tbody>
                   {visiblePreview.map((p) => {
-                    const assignedHostId = hostOverrides[p.roomId] ?? p.hostId;
+                    const assignedHostId = hostOverrides[p.key] ?? p.hostId;
                     const assignedHostName = assignedHostId
                       ? (hosts.find(h => h.id === assignedHostId)?.displayName ?? p.hostName)
                       : null;
 
                     return (
-                      <tr key={p.roomId}
+                      <tr key={p.key}
                         className="border-b"
                         style={{
                           borderColor: "var(--border)",
@@ -340,7 +406,6 @@ export default function LivestreamImportPage() {
                         }}>
                         <td className="px-3 py-2 max-w-[200px]">
                           <p className="truncate font-medium" style={{ color: "var(--text-primary)" }}>{p.roomTitle}</p>
-                          <p className="text-[10px] font-mono" style={{ color: "var(--text-muted)" }}>{p.roomId.slice(-8)}</p>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>{fmtMYT(p.startMYT)}</td>
                         <td className="px-3 py-2 whitespace-nowrap" style={{ color: "var(--text-secondary)" }}>{fmtMYT(p.endMYT)}</td>
@@ -353,8 +418,8 @@ export default function LivestreamImportPage() {
                             <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{assignedHostName}</span>
                           ) : (
                             <Select
-                              value={hostOverrides[p.roomId] ?? ""}
-                              onChange={e => setHostOverrides(prev => ({ ...prev, [p.roomId]: e.target.value }))}
+                              value={hostOverrides[p.key] ?? ""}
+                              onChange={e => setHostOverrides(prev => ({ ...prev, [p.key]: e.target.value }))}
                             >
                               <option value="">Assign host…</option>
                               {hosts.map(h => <option key={h.id} value={h.id}>{h.displayName}</option>)}
@@ -388,10 +453,10 @@ export default function LivestreamImportPage() {
             <Button
               onClick={handleConfirm}
               loading={loading}
-              disabled={unmatchedRows.length > 0 && unmatchedRows.some(p => !(hostOverrides[p.roomId]))}
+              disabled={unmatchedRows.length > 0 && unmatchedRows.some(p => !(hostOverrides[p.key]))}
             >
               <CheckCircle2 size={14} />
-              Confirm import ({visiblePreview.filter(p => (hostOverrides[p.roomId] ?? p.hostId)).length} sessions)
+              Confirm import ({visiblePreview.filter(p => (hostOverrides[p.key] ?? p.hostId)).length} sessions)
             </Button>
           </div>
         </div>
@@ -413,8 +478,8 @@ export default function LivestreamImportPage() {
             )}
           </div>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Data is live in the dashboard. Previous {month} TikTok import data for this brand has been replaced.
-            Google Sheets synced data and other months are untouched.
+            Data is live in the dashboard. Previous {month} {platform === "TIKTOK" ? "TikTok" : "Shopee"} import data for this brand has been replaced.
+            Other months and other platform data are untouched.
           </p>
           <div className="flex gap-2 pt-2">
             <Button onClick={reset}>Import another month</Button>
@@ -427,10 +492,11 @@ export default function LivestreamImportPage() {
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-function FileSlot({ label, hint, file, onPick, inputRef, required }: {
+function FileSlot({ label, hint, file, onPick, inputRef, accept, required }: {
   label: string; hint: string; file: File | null;
   onPick: (f: File | null) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  accept?: string;
   required?: boolean;
 }) {
   return (
@@ -443,9 +509,9 @@ function FileSlot({ label, hint, file, onPick, inputRef, required }: {
           style={{ background: "var(--bg-subtle)", border: `1px solid ${file ? "var(--accent)" : "var(--border)"}` }}>
           <FileText size={14} style={{ color: file ? "var(--accent)" : "var(--text-muted)" }} />
           <span style={{ color: file ? "var(--text-primary)" : "var(--text-muted)" }}>
-            {file?.name ?? "Choose .xlsx file…"}
+            {file?.name ?? "Choose file…"}
           </span>
-          <input ref={inputRef} type="file" accept=".xlsx" className="hidden"
+          <input ref={inputRef} type="file" accept={accept} className="hidden"
             onChange={e => onPick(e.target.files?.[0] ?? null)} />
         </label>
         {file && (
