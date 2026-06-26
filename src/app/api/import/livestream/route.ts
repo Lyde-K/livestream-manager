@@ -243,6 +243,7 @@ function buildTikTokPreview(
         brandId:              "", // filled below
         liveHostId:           host?.id ?? "",
         platform:             "TIKTOK" as const,
+        title:                r.roomTitle,
         scheduledStart:       startMYT,
         scheduledEnd:         endMYT,
         actualStart:          startMYT,
@@ -318,6 +319,7 @@ function buildShopeePreview(
         brandId:              "", // filled below
         liveHostId:           host?.id ?? "",
         platform:             "SHOPEE" as const,
+        title:                r.title,
         scheduledStart:       startMYT,
         scheduledEnd:         endMYT,
         actualStart:          startMYT,

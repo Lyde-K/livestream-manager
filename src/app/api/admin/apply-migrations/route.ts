@@ -176,6 +176,12 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `ALTER TABLE "LiveHost" ADD COLUMN IF NOT EXISTS "permissions" JSONB NOT NULL DEFAULT '{}'`,
     ],
   },
+  {
+    name: "011_add_session_title",
+    statements: [
+      `ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "title" TEXT`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {

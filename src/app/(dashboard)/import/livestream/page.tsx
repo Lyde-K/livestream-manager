@@ -151,16 +151,21 @@ interface ExportSession {
   id: string;
   externalRef: string | null;
   platform: string;
+  title: string | null;
   scheduledStart: string;
   scheduledEnd: string;
+  actualStart: string | null;
   actualDurationMinutes: number | null;
   isCampaignDay: boolean;
+  punctuality: string | null;
   gmv: number | null;
   grossRevenue: number | null;
   adsCost: number | null;
   itemsSold: number | null;
+  itemsSoldPlaced: number | null;
   ordersPlaced: number | null;
   ordersConfirmed: number | null;
+  salesPlaced: number | null;
   views: number | null;
   viewers: number | null;
   engagedViewers: number | null;
@@ -178,75 +183,146 @@ interface ExportSession {
   brand: { name: string };
 }
 
-function fmtDateMYT(iso: string) {
-  return new Date(iso).toLocaleString("en-MY", {
-    timeZone: "Asia/Kuala_Lumpur",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  });
+// Convert seconds to Excel time fraction (fraction of 24h)
+function secsToExcelTime(secs: number): number {
+  return secs / 86400;
+}
+
+// Convert HH:MM:SS-equivalent minutes to Excel time fraction
+function minsToExcelTime(mins: number): number {
+  return mins / (24 * 60);
+}
+
+// MYT offset helper — returns {h, m} local time in MYT
+function mytTimeParts(iso: string): { h: number; m: number; s: number } {
+  const d = new Date(iso);
+  const myt = new Date(d.toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }));
+  return { h: myt.getHours(), m: myt.getMinutes(), s: myt.getSeconds() };
+}
+
+function mytDateStr(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kuala_Lumpur", day: "2-digit", month: "2-digit", year: "numeric" })
+    .split("/").join("-"); // "24-06-2026"
+}
+
+function mytMonthName(iso: string): string {
+  return new Date(iso).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur", month: "long" });
 }
 
 async function downloadExport(sessions: ExportSession[], platform: string, month: string, brandName: string) {
   const ExcelJS = await import("exceljs");
   const wb = new ExcelJS.Workbook();
 
-  const isTikTok = platform !== "SHOPEE";
-  const isShopee = platform !== "TIKTOK";
   const bothPlatforms = platform === "ALL";
 
-  function makeSheet(ws: InstanceType<typeof ExcelJS.Workbook>["worksheets"][0], rows: ExportSession[]) {
-    const headers = [
-      "Brand", "Platform", "Session Title", "Host", "Date", "Start Time (MYT)", "End Time (MYT)",
-      "Duration (hrs)", "Campaign Day",
-      // Adjusted
-      "GMV (RM)", "Ads Cost (RM)", "Gross Revenue (RM)", "Net Revenue (RM)", "ROI", "GMV/hr (RM)",
-      // Raw — common
-      "Items Sold", "Orders",
-      // Raw — TikTok specific
-      ...(isTikTok ? ["Views", "Product Impressions", "Product Clicks", "CTR (%)", "CTOR (%)", "New Followers", "Comments", "Shares", "Likes", "Avg View Duration (sec)"] : []),
-      // Raw — Shopee specific
-      ...(isShopee ? ["Viewers", "Engaged Viewers", "Add to Cart", "Comments", "Avg View Duration (sec)"] : []),
+  // ── Shopee sheet — exact format from sample ───────────────────────────────
+  function makeShopeeSheet(ws: InstanceType<typeof ExcelJS.Workbook>["worksheets"][0], rows: ExportSession[]) {
+    const HEADERS = [
+      "BRAND","Host","Hours","Campaign","Date","Month","Punctuality","Slot",
+      "Livestream Name","Start Time","Duration","Engaged Viewers","Comments","ATC",
+      "Avg. Viewing Duration","Viewers","Orders(Placed Order)","Orders(Confirmed Order)",
+      "Items Sold(Placed Order)","Items Sold(Confirmed Order)","Sales(Placed Order)","Sales(Confirmed Order)",
     ];
-
-    // Header row
-    ws.addRow(headers);
-    const headerRow = ws.getRow(1);
-    headerRow.font = { bold: true };
-    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } };
+    ws.addRow(HEADERS);
+    const hr = ws.getRow(1);
+    hr.font = { bold: true };
+    hr.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
 
     for (const s of rows) {
-      const start = new Date(s.scheduledStart);
-      const end   = new Date(s.scheduledEnd);
-      const durationHrs = s.actualDurationMinutes != null ? +(s.actualDurationMinutes / 60).toFixed(2) : null;
-      const net = (s.gmv ?? 0) - (s.adsCost ?? 0);
-      const roi = s.adsCost && s.adsCost > 0 ? +((s.gmv ?? 0) / s.adsCost).toFixed(2) : null;
-      const gmvPerHr = durationHrs && durationHrs > 0 ? +((s.gmv ?? 0) / durationHrs).toFixed(2) : null;
+      const startIso  = s.actualStart ?? s.scheduledStart;
+      const durationMins = s.actualDurationMinutes ?? 0;
+      const slotParts = mytTimeParts(s.scheduledStart);
+      const slotFrac  = secsToExcelTime(slotParts.h * 3600 + slotParts.m * 60);
+      const durationFrac = minsToExcelTime(durationMins);
+      const avgViewFrac  = s.avgViewDurationSec != null ? secsToExcelTime(s.avgViewDurationSec) : null;
+      const punctuality  = s.punctuality === "LATE" ? "No" : "Yes";
+      const campaign     = s.isCampaignDay ? "Campaign" : "BAU";
+      const hours        = +(durationMins / 60).toFixed(6);
 
-      const dateMYT = start.toLocaleDateString("en-MY", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" });
-      const startMYT = start.toLocaleTimeString("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
-      const endMYT   = end.toLocaleTimeString("en-MY", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
-
-      const base = [
+      const row = ws.addRow([
         s.brand.name,
-        s.platform,
-        s.externalRef ? s.externalRef.replace(/^(TT|SP)-/, "") : "",
         s.liveHost?.displayName ?? "",
-        dateMYT,
-        startMYT,
-        endMYT,
-        durationHrs ?? "",
-        s.isCampaignDay ? "Yes" : "No",
+        hours,
+        campaign,
+        mytDateStr(startIso),
+        mytMonthName(startIso),
+        punctuality,
+        slotFrac,
+        s.title ?? "",
+        new Date(startIso),
+        durationFrac,
+        s.engagedViewers ?? "",
+        s.comments ?? "",
+        s.addToCart ?? s.productClicks ?? "",
+        avgViewFrac ?? "",
+        s.viewers ?? "",
+        s.ordersPlaced ?? "",
+        s.ordersConfirmed ?? "",
+        s.itemsSoldPlaced ?? "",
+        s.itemsSold ?? "",
+        s.salesPlaced ?? "",
+        s.gmv ?? 0,
+      ]);
+
+      // Format time/date cells
+      row.getCell(8).numFmt  = "h:mm";               // Slot
+      row.getCell(10).numFmt = "DD-MM-YYYY hh:mm";   // Start Time
+      row.getCell(11).numFmt = "[h]:mm:ss";           // Duration
+      row.getCell(15).numFmt = "[h]:mm:ss";           // Avg View Duration
+    }
+
+    ws.columns.forEach(col => {
+      let max = 10;
+      col.eachCell?.({ includeEmpty: false }, cell => {
+        const len = String(cell.value ?? "").length;
+        if (len > max) max = len;
+      });
+      col.width = Math.min(max + 2, 40);
+    });
+  }
+
+  // ── TikTok sheet ──────────────────────────────────────────────────────────
+  function makeTikTokSheet(ws: InstanceType<typeof ExcelJS.Workbook>["worksheets"][0], rows: ExportSession[]) {
+    const HEADERS = [
+      "Brand","Host","Hours","Campaign","Date","Month","Livestream Name",
+      "Start Time","End Time","Duration (hrs)",
+      "GMV (RM)","Ads Cost (RM)","Gross Revenue (RM)","Net Revenue (RM)","ROI","GMV/hr (RM)",
+      "Items Sold","Orders Placed",
+      "Views","Product Impressions","Product Clicks","CTR (%)","CTOR (%)","New Followers","Comments","Shares","Likes","Avg View Duration (sec)",
+    ];
+    ws.addRow(HEADERS);
+    const hr = ws.getRow(1);
+    hr.font = { bold: true };
+    hr.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+
+    for (const s of rows) {
+      const startIso = s.actualStart ?? s.scheduledStart;
+      const endIso   = s.scheduledEnd;
+      const durationHrs = s.actualDurationMinutes != null ? +(s.actualDurationMinutes / 60).toFixed(4) : "";
+      const net  = (s.gmv ?? 0) - (s.adsCost ?? 0);
+      const roi  = s.adsCost && s.adsCost > 0 ? +((s.gmv ?? 0) / s.adsCost).toFixed(2) : "";
+      const gmvH = s.actualDurationMinutes && s.actualDurationMinutes > 0 ? +((s.gmv ?? 0) / (s.actualDurationMinutes / 60)).toFixed(2) : "";
+
+      ws.addRow([
+        s.brand.name,
+        s.liveHost?.displayName ?? "",
+        durationHrs,
+        s.isCampaignDay ? "Campaign" : "BAU",
+        mytDateStr(startIso),
+        mytMonthName(startIso),
+        s.title ?? "",
+        new Date(startIso),
+        new Date(endIso),
+        durationHrs,
         s.gmv ?? 0,
         s.adsCost ?? 0,
         s.grossRevenue ?? "",
         net,
-        roi ?? "",
-        gmvPerHr ?? "",
+        roi,
+        gmvH,
         s.itemsSold ?? "",
-        s.platform === "SHOPEE" ? (s.ordersConfirmed ?? "") : (s.ordersPlaced ?? ""),
-      ];
-
-      const tiktokCols = isTikTok ? [
+        s.ordersPlaced ?? "",
         s.views ?? "",
         s.productImpressions ?? "",
         s.productClicks ?? "",
@@ -257,20 +333,9 @@ async function downloadExport(sessions: ExportSession[], platform: string, month
         s.shares ?? "",
         s.likes ?? "",
         s.avgViewDurationSec ?? "",
-      ] : [];
-
-      const shopeeCols = isShopee ? [
-        s.viewers ?? "",
-        s.engagedViewers ?? "",
-        s.addToCart ?? s.productClicks ?? "",
-        s.comments ?? "",
-        s.avgViewDurationSec ?? "",
-      ] : [];
-
-      ws.addRow([...base, ...tiktokCols, ...shopeeCols]);
+      ]);
     }
 
-    // Auto-width
     ws.columns.forEach(col => {
       let max = 10;
       col.eachCell?.({ includeEmpty: false }, cell => {
@@ -284,10 +349,12 @@ async function downloadExport(sessions: ExportSession[], platform: string, month
   if (bothPlatforms) {
     const tiktokRows = sessions.filter(s => s.platform === "TIKTOK");
     const shopeeRows = sessions.filter(s => s.platform === "SHOPEE");
-    if (tiktokRows.length) makeSheet(wb.addWorksheet("TikTok"), tiktokRows);
-    if (shopeeRows.length) makeSheet(wb.addWorksheet("Shopee"), shopeeRows);
+    if (tiktokRows.length) makeTikTokSheet(wb.addWorksheet("TikTok"), tiktokRows);
+    if (shopeeRows.length) makeShopeeSheet(wb.addWorksheet("Shopee"), shopeeRows);
+  } else if (platform === "SHOPEE") {
+    makeShopeeSheet(wb.addWorksheet("Shopee"), sessions);
   } else {
-    makeSheet(wb.addWorksheet(platform === "TIKTOK" ? "TikTok" : "Shopee"), sessions);
+    makeTikTokSheet(wb.addWorksheet("TikTok"), sessions);
   }
 
   const buf = await wb.xlsx.writeBuffer();
@@ -496,11 +563,11 @@ export default function LivestreamImportPage() {
           </div>
 
           <div className="text-xs space-y-1 rounded-lg px-3 py-2.5" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
-            <p className="font-semibold" style={{ color: "var(--text-secondary)" }}>Columns included:</p>
-            <p>Brand · Platform · Host · Date · Start/End · Duration (hrs) · Campaign Day</p>
-            <p>GMV · Ads Cost · Gross Revenue · Net Revenue · ROI · GMV/hr</p>
-            <p>Items Sold · Orders · Views · Product Clicks · CTR · CTOR · Comments · Shares · Likes · Avg View Duration</p>
-            <p className="italic">All platforms in one file — TikTok and Shopee on separate sheets when "All platforms" is selected.</p>
+            <p className="font-semibold" style={{ color: "var(--text-secondary)" }}>Shopee columns:</p>
+            <p>Brand · Host · Hours · Campaign/BAU · Date · Month · Punctuality · Slot · Livestream Name · Start Time · Duration · Engaged Viewers · Comments · ATC · Avg. View Duration · Viewers · Orders(Placed/Confirmed) · Items Sold(Placed/Confirmed) · Sales(Placed/Confirmed)</p>
+            <p className="font-semibold mt-1" style={{ color: "var(--text-secondary)" }}>TikTok columns:</p>
+            <p>Brand · Host · Hours · Campaign/BAU · Date · Month · Livestream Name · Start/End · GMV · Ads Cost · Net Revenue · ROI · GMV/hr · Items Sold · Orders · Views · CTR · CTOR · Followers · Comments · Shares · Likes · Avg View Duration</p>
+            <p className="italic mt-1">All platforms in one file — TikTok and Shopee on separate sheets when "All platforms" is selected.</p>
           </div>
 
           {exportError && <ErrorBanner message={exportError} />}

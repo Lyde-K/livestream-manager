@@ -235,6 +235,7 @@ model Session {
   isCampaignDay  Boolean  @default(false)
   slotColor      String?  // per-slot display colour (manual slot builder)
   notes          String?
+  title          String?  // raw session/room title from TikTok or Shopee import
 
   // Filled when import data is matched
   actualStart           DateTime?
