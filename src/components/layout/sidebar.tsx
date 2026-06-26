@@ -40,6 +40,7 @@ const navItems: NavItem[] = [
   { label: "Blacklist",         href: "/affiliate/blacklist",       icon: Ban,             roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "AI Analysis",       href: "/affiliate/ai-analysis",     icon: Sparkles,        roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Import",            href: "/affiliate/import",          icon: Upload,          roles: ["ADMIN"],          group: "AFFILIATE" },
+  { label: "Livestream Import", href: "/import/livestream",         icon: Upload,          roles: ["ADMIN"],          group: "MANAGEMENT" },
   // MANAGEMENT (admin only)
   { label: "Brands",            href: "/admin/brands",              icon: Building2,       roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Live Hosts",        href: "/admin/hosts",               icon: Users,           roles: ["ADMIN"], group: "MANAGEMENT" },
