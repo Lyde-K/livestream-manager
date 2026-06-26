@@ -4,7 +4,7 @@ import { Upload, FileText, CheckCircle2, AlertCircle, AlertTriangle, Download, C
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 
-interface Brand { id: string; name: string; color: string; }
+interface Brand { id: string; name: string; color: string; platform: string; }
 
 interface PreviewRow {
   key: string;
@@ -336,6 +336,7 @@ export default function LivestreamImportPage() {
   // Reset file when platform changes
   function handlePlatformChange(p: Platform) {
     setPlatform(p);
+    setBrandId("");
     setSessionsFile(null);
     setAdsCostFile(null);
     if (sessionsRef.current) sessionsRef.current.value = "";
@@ -424,6 +425,9 @@ export default function LivestreamImportPage() {
     if (adsCostRef.current) adsCostRef.current.value = "";
   }
 
+  const brandsForPlatform = (p: string) =>
+    brands.filter(b => b.platform === p || b.platform === "BOTH");
+
   const visiblePreview = excludeTests ? preview.filter(p => !p.likelyTest) : preview;
   const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId));
   const testCount      = preview.filter(p => p.likelyTest).length;
@@ -468,7 +472,9 @@ export default function LivestreamImportPage() {
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
               <Select value={exportBrandId} onChange={e => setExportBrandId(e.target.value)}>
                 <option value="">Select brand…</option>
-                {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {(exportPlatform === "ALL" ? brands : brandsForPlatform(exportPlatform)).map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
               </Select>
             </div>
             <div>
@@ -479,7 +485,7 @@ export default function LivestreamImportPage() {
             </div>
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
-              <Select value={exportPlatform} onChange={e => setExportPlatform(e.target.value as Platform | "ALL")}>
+              <Select value={exportPlatform} onChange={e => { setExportPlatform(e.target.value as Platform | "ALL"); setExportBrandId(""); }}>
                 <option value="ALL">All platforms</option>
                 <option value="TIKTOK">TikTok</option>
                 <option value="SHOPEE">Shopee</option>
@@ -548,7 +554,7 @@ export default function LivestreamImportPage() {
               <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
               <Select value={brandId} onChange={e => setBrandId(e.target.value)}>
                 <option value="">Select brand…</option>
-                {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {brandsForPlatform(platform).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </Select>
             </div>
             <div>
