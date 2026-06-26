@@ -132,6 +132,8 @@ export async function POST(req: NextRequest) {
   const preview = rows.map((r) => {
     const startMYT  = new Date(`${r.startTime.replace(" ", "T")}+08:00`);
     const endMYT    = new Date(`${r.endTime.replace(" ", "T")}+08:00`);
+    // Exact duration from timestamps, not the rounded "2h00m" string
+    const exactMinutes = Math.round((endMYT.getTime() - startMYT.getTime()) / 60_000);
     const host      = extractHost(r.roomTitle, hosts);
     const isCampaign = campaigns.some(
       (c) => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate)
@@ -150,9 +152,8 @@ export async function POST(req: NextRequest) {
       isCampaign,
       campaignName,
       gmv:          parseRM(r.gmv),
-      duration:     parseDuration(r.duration),
-      // flag short sessions (< 15 min) as likely tests
-      likelyTest:   (parseDuration(r.duration) ?? 0) < 15,
+      duration:     exactMinutes,
+      likelyTest:   exactMinutes < 15,
     };
   });
 
