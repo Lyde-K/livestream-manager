@@ -43,27 +43,31 @@ function normalizeHostName(name: string): string {
 }
 
 // Extract host name from title using longest-match-first against host list.
-// Falls back to parenthesis-normalized comparison so "WANI A" matches "WANI (A)".
+// Exact and normalized (parentheses-stripped) checks run in a single pass sorted
+// by the longer of the two lengths — so "WANI (A)" (norm "WANI A", len 7) is
+// evaluated before plain "WANI" (len 4), preventing the short name from stealing
+// a title that belongs to the suffixed host.
 function extractHost(
   title: string,
   hosts: { id: string; displayName: string }[]
 ): { id: string; displayName: string } | null {
   const upper = title.toUpperCase();
-  const sorted = [...hosts].sort((a, b) => b.displayName.length - a.displayName.length);
 
-  // Pass 1: exact substring match
+  // Sort by the longer of displayName or normalizedName length, descending
+  const sorted = [...hosts].sort((a, b) => {
+    const aLen = Math.max(a.displayName.length, normalizeHostName(a.displayName).length);
+    const bLen = Math.max(b.displayName.length, normalizeHostName(b.displayName).length);
+    return bLen - aLen;
+  });
+
+  // Single pass: try exact match first, then normalized match
   for (const h of sorted) {
     if (upper.includes(h.displayName.toUpperCase())) return h;
-  }
-
-  // Pass 2: normalized match (strip parentheses from display name, check if title contains it)
-  const sortedNorm = [...hosts].sort((a, b) => normalizeHostName(b.displayName).length - normalizeHostName(a.displayName).length);
-  for (const h of sortedNorm) {
     const norm = normalizeHostName(h.displayName);
     if (norm && upper.includes(norm)) return h;
   }
 
-  // Pass 3: suffix match on " - " split (both exact and normalized)
+  // Suffix fallback: last segment after " - " (exact then normalized)
   const parts = title.split(" - ");
   if (parts.length >= 2) {
     const suffix = parts[parts.length - 1].trim().toUpperCase();
