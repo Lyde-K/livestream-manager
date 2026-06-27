@@ -28,7 +28,7 @@ type Period = "day" | "week" | "month" | "quarter" | "year" | "last30" | "last90
 type Breakdown = "brand" | "host" | "platform" | "country";
 
 interface AnalyticsData {
-  totalGMV: number; totalViewers: number; totalOrders: number;
+  totalGMV: number; totalHours: number; totalViewers: number; totalOrders: number;
   avgCTOR: number | null; shopeeConversionRate: number | null; sessionCount: number;
   byDate: { date: string; gmv: number; viewers: number; sessions: number; orders: number }[];
   byBrand: { brandId: string; brandName: string; platform: string; color: string; gmv: number; viewers: number; sessions: number; orders: number; avgCTOR: number | null; conversionRate: number | null }[];
@@ -292,6 +292,7 @@ export default function PerformancePage() {
                 <AnalKPICard icon={MousePointer2} label="Avg CTOR" value={analyticsData.avgCTOR!=null?`${(analyticsData.avgCTOR*100).toFixed(2)}%`:"—"} color="var(--warning)" sublabel="TikTok" />
                 <AnalKPICard icon={MousePointer2} label="Conv. Rate" value={analyticsData.shopeeConversionRate!=null?`${(analyticsData.shopeeConversionRate*100).toFixed(2)}%`:"—"} color="#f97316" sublabel="Shopee" />
                 <AnalKPICard icon={ShoppingCart} label="Orders Confirmed" value={analyticsData.totalOrders.toLocaleString()} color="#8b5cf6" />
+                <AnalKPICard icon={Clock} label="Total Hours" value={`${analyticsData.totalHours.toFixed(1)}h`} color="#6366f1" />
                 <AnalKPICard icon={CheckCircle2} label="Sessions" value={String(analyticsData.sessionCount)} color="var(--text-secondary)" />
               </div>
 

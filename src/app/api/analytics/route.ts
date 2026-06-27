@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
 
   // ── Totals ────────────────────────────────────────────────────────────────
   const totalGMV = sessions.reduce((s, x) => s + (x.gmv ?? 0), 0);
+  const totalHours = sessions.reduce((s, x) => s + (x.actualDurationMinutes ?? 0) / 60, 0);
   const totalViewers = sessions.reduce((s, x) => s + sessionViewers(x), 0);
   const totalOrders = sessions.reduce((s, x) => s + sessionOrders(x), 0);
   const ctorSessions = sessions.filter((x) => x.ctor != null);
@@ -160,7 +161,7 @@ export async function GET(req: NextRequest) {
   };
 
   return Response.json({
-    totalGMV, totalViewers, totalOrders, avgCTOR, shopeeConversionRate,
+    totalGMV, totalHours, totalViewers, totalOrders, avgCTOR, shopeeConversionRate,
     sessionCount: sessions.length,
     byDate, byBrand, byHost, byPlatform, byCountry, byType,
   });
