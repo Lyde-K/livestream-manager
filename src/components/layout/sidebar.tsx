@@ -8,7 +8,7 @@ import { useTheme } from "@/components/theme-provider";
 import {
   LayoutDashboard, Calendar, BarChart3,
   Users, Building2, DoorOpen, Award, LogOut, TrendingUp,
-  UserCheck, Sun, Moon, ChevronDown, Menu, X, Wallet, RefreshCw, AlertTriangle, Trophy, Wrench, UsersRound, Sparkles,
+  UserCheck, Sun, Moon, ChevronDown, Menu, X, Wallet, Trophy, Wrench, UsersRound, Sparkles,
   Handshake, Package, Upload, Ban, Settings, Flag, ClipboardList, Bell, UmbrellaOff, Clapperboard, ShieldCheck,
 } from "lucide-react";
 
@@ -52,8 +52,6 @@ const navItems: NavItem[] = [
   { label: "KPI Settings",      href: "/admin/kpi",                 icon: Award,           roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Intel Config",      href: "/admin/intelligence-config", icon: Sparkles,        roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Payroll",           href: "/admin/payroll",             icon: Wallet,          roles: ["ADMIN"], group: "MANAGEMENT" },
-  { label: "Sheets Sync",       href: "/admin/sync",                icon: RefreshCw,       roles: ["ADMIN"], group: "MANAGEMENT" },
-  { label: "Sync Errors",       href: "/admin/sync-log",            icon: AlertTriangle,   roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Fix Duplicates",    href: "/admin/fix-duplicates",      icon: Wrench,          roles: ["ADMIN"], group: "MANAGEMENT" },
   { label: "Data Health",       href: "/admin/health",              icon: ShieldCheck,     roles: ["ADMIN"], group: "MANAGEMENT" },
 ];
