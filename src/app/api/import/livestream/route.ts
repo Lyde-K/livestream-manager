@@ -180,9 +180,11 @@ export async function POST(req: NextRequest) {
   const [hosts, brand, campaigns] = await Promise.all([
     prisma.liveHost.findMany({ select: { id: true, displayName: true } }),
     prisma.brand.findUnique({ where: { id: brandId }, select: { id: true, name: true } }),
+    // Query by date overlap so multi-month campaigns and cross-month dates are detected
     prisma.campaign.findMany({
       where: {
-        year, month: mon,
+        startDate: { lt: monthEnd },
+        endDate:   { gte: monthStart },
         OR: [{ brandId }, { brandId: null }],
         platform: { in: [platform, "BOTH"] },
       },
