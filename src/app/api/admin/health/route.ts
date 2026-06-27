@@ -117,11 +117,16 @@ export async function GET() {
   }
   const duplicateGroups = [...sessionsByKey.values()].filter(g => g.length > 1);
   const duplicatePairs = duplicateGroups.reduce((sum, g) => sum + (g.length - 1), 0);
-  // Sample: show the first 5 duplicate groups with their externalRefs so we can diagnose
-  const duplicateSample = duplicateGroups.slice(0, 5).map(g => ({
+  const duplicateSample = duplicateGroups.map(g => ({
     host: g[0].liveHost?.displayName ?? "none",
-    start: new Date(g[0].scheduledStart).toISOString(),
-    sessions: g.map(s => ({ id: s.id, externalRef: s.externalRef ?? "(admin)" })),
+    brand: g[0].brand?.name ?? "Unknown",
+    startMYT: new Date(new Date(g[0].scheduledStart).getTime() + 8 * 3600_000)
+      .toISOString().replace("T", " ").slice(0, 16) + " MYT",
+    sessions: g.map(s => ({
+      id: s.id,
+      externalRef: s.externalRef ?? "(admin)",
+      isAdmin: !s.externalRef,
+    })),
   }));
 
   // ── Task checks ──────────────────────────────────────────────────────────

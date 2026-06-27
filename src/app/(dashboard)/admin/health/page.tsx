@@ -2,8 +2,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ShieldCheck, AlertTriangle, XCircle, RefreshCw,
-  Trash2, CheckCircle2, ClipboardList, Calendar,
+  Trash2, CheckCircle2, ClipboardList, Calendar, Eye, X,
 } from "lucide-react";
+
+interface DupSession { id: string; externalRef: string; isAdmin: boolean; }
+interface DupGroup { host: string; brand: string; startMYT: string; sessions: DupSession[]; }
 
 interface ScheduleCheck {
   count: number;
@@ -33,7 +36,7 @@ interface HealthReport {
   schedule: {
     ghostSessions: ScheduleCheck;
     suspiciousMYT: ScheduleCheck;
-    duplicateSessions: ScheduleCheck;
+    duplicateSessions: ScheduleCheck & { sample?: DupGroup[] };
   };
   tasks: {
     invisibleTasks: TaskCheck;
@@ -54,6 +57,8 @@ export default function AdminHealthPage() {
   const [fixing, setFixing]           = useState(false);
   const [fixingDups, setFixingDups]   = useState(false);
   const [fixMsg, setFixMsg]           = useState<string | null>(null);
+  const [dupModal, setDupModal]       = useState(false);
+  const [deletingId, setDeletingId]   = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,8 +70,16 @@ export default function AdminHealthPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function deleteSession(id: string) {
+    if (!confirm("Permanently delete this session?")) return;
+    setDeletingId(id);
+    await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+    setDeletingId(null);
+    load();
+  }
+
   async function cleanDuplicates() {
-    if (!confirm("Delete all imported (TT-/SP-) sessions that have a matching admin-created session for the same host and time slot?")) return;
+    if (!confirm("Delete all imported (GS-/TT-/SP-) duplicate sessions? Admin-created duplicates must be resolved manually via View Duplicates.")) return;
     setFixingDups(true);
     const res = await fetch("/api/admin/health", {
       method: "DELETE",
@@ -207,15 +220,23 @@ export default function AdminHealthPage() {
               check={report.schedule.duplicateSessions}
               action={
                 !report.schedule.duplicateSessions.ok ? (
-                  <button onClick={cleanDuplicates} disabled={fixingDups}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold"
-                    style={{ color: "#ef4444", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.25)" }}>
-                    <Trash2 size={11} />
-                    {fixingDups ? "Cleaning…" : "Clean Up Duplicates"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setDupModal(true)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                      style={{ color: "#6366f1", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.25)" }}>
+                      <Eye size={11} />
+                      View Duplicates
+                    </button>
+                    <button onClick={cleanDuplicates} disabled={fixingDups}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                      style={{ color: "#ef4444", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                      <Trash2 size={11} />
+                      {fixingDups ? "Cleaning…" : "Clean Up Duplicates"}
+                    </button>
+                  </div>
                 ) : null
               }
-              hint="Removes imported (TT-/SP-) sessions that already have a matching admin-created session for the same host and slot."
+              hint="Removes imported (GS-/TT-/SP-) duplicate sessions. Admin duplicates must be deleted manually via View Duplicates."
             />
           </div>
 
@@ -293,6 +314,69 @@ export default function AdminHealthPage() {
           </div>
         </>
       ) : null}
+      {/* ── Duplicates Modal ── */}
+      {dupModal && report && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setDupModal(false)}>
+          <div className="w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--border)", maxHeight: "80vh" }}
+            onClick={e => e.stopPropagation()}>
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+              <div>
+                <p className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>Duplicate Sessions</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-secondary)" }}>
+                  {report.schedule.duplicateSessions.count} duplicate pair{report.schedule.duplicateSessions.count !== 1 ? "s" : ""}. Admin sessions cannot be auto-deleted — use the delete button to remove one manually.
+                </p>
+              </div>
+              <button onClick={() => setDupModal(false)}
+                className="p-1.5 rounded-lg" style={{ color: "var(--text-muted)", background: "var(--bg-subtle)" }}>
+                <X size={14} />
+              </button>
+            </div>
+            {/* Scrollable list */}
+            <div className="overflow-y-auto flex-1 divide-y" style={{ borderColor: "var(--border)" }}>
+              {(report.schedule.duplicateSessions.sample ?? []).map((group, gi) => (
+                <div key={gi} className="px-5 py-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-bold" style={{ color: "var(--text-primary)" }}>{group.host}</span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>·</span>
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>{group.brand}</span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>·</span>
+                    <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{group.startMYT}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {group.sessions.map(s => (
+                      <div key={s.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg"
+                        style={{ background: s.isAdmin ? "rgba(99,102,241,0.06)" : "rgba(239,68,68,0.06)", border: `1px solid ${s.isAdmin ? "rgba(99,102,241,0.15)" : "rgba(239,68,68,0.15)"}` }}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                            style={{ background: s.isAdmin ? "rgba(99,102,241,0.15)" : "rgba(239,68,68,0.15)", color: s.isAdmin ? "#818cf8" : "#f87171" }}>
+                            {s.isAdmin ? "ADMIN" : "IMPORT"}
+                          </span>
+                          <span className="text-[11px] font-mono truncate" style={{ color: "var(--text-secondary)" }}>{s.externalRef}</span>
+                        </div>
+                        <button
+                          onClick={() => deleteSession(s.id)}
+                          disabled={deletingId === s.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold flex-shrink-0"
+                          style={{ color: "#ef4444", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                          <Trash2 size={10} />
+                          {deletingId === s.id ? "…" : "Delete"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {(report.schedule.duplicateSessions.sample ?? []).length === 0 && (
+                <div className="p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No duplicates found.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
