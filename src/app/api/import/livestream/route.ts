@@ -36,23 +36,43 @@ function parseHMStoSeconds(val: unknown): number | null {
   return parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]);
 }
 
-// Extract host name from title using longest-match-first against host list
+// Normalize a display name for loose matching: remove parentheses and collapse spaces
+// e.g. "WANI (A)" → "WANI A", "AYUNI (B)" → "AYUNI B"
+function normalizeHostName(name: string): string {
+  return name.replace(/[()]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+// Extract host name from title using longest-match-first against host list.
+// Falls back to parenthesis-normalized comparison so "WANI A" matches "WANI (A)".
 function extractHost(
   title: string,
   hosts: { id: string; displayName: string }[]
 ): { id: string; displayName: string } | null {
   const upper = title.toUpperCase();
   const sorted = [...hosts].sort((a, b) => b.displayName.length - a.displayName.length);
+
+  // Pass 1: exact substring match
   for (const h of sorted) {
     if (upper.includes(h.displayName.toUpperCase())) return h;
   }
+
+  // Pass 2: normalized match (strip parentheses from display name, check if title contains it)
+  const sortedNorm = [...hosts].sort((a, b) => normalizeHostName(b.displayName).length - normalizeHostName(a.displayName).length);
+  for (const h of sortedNorm) {
+    const norm = normalizeHostName(h.displayName);
+    if (norm && upper.includes(norm)) return h;
+  }
+
+  // Pass 3: suffix match on " - " split (both exact and normalized)
   const parts = title.split(" - ");
   if (parts.length >= 2) {
     const suffix = parts[parts.length - 1].trim().toUpperCase();
     for (const h of sorted) {
       if (h.displayName.toUpperCase() === suffix) return h;
+      if (normalizeHostName(h.displayName) === suffix) return h;
     }
   }
+
   return null;
 }
 
