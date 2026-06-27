@@ -97,25 +97,31 @@ export async function GET() {
   // 2. Suspicious MYT times: starting before 06:00 MYT = UTC hours 22–23
   // (midnight–05:59 MYT are common late-night slots; flag only truly unusual pre-6am)
   const recentSessions = await prisma.session.findMany({
-    select: { id: true, scheduledStart: true, liveHost: { select: { displayName: true } }, brand: { select: { name: true } } },
+    select: { id: true, scheduledStart: true, externalRef: true, liveHost: { select: { displayName: true } }, brand: { select: { name: true } } },
     where: { scheduledStart: { gte: new Date(Date.now() - 90 * 24 * 3600_000) } },
   });
 
   const suspiciousMYT = recentSessions.filter(s => {
     const h = new Date(s.scheduledStart).getUTCHours();
-    // UTC 22–23 = MYT 06:00–07:59 (the real pre-dawn edge cases)
-    // We flag nothing here now since late-night sessions are legitimate
-    // Keep check but only flag sessions between UTC 20-21 (MYT 04:00-05:59)
     return h >= 20 && h <= 21;
   });
 
   // 3. Duplicate sessions: same host + same scheduledStart
-  const sessionsByKey = new Map<string, number>();
+  const sessionsByKey = new Map<string, typeof recentSessions>();
   for (const s of recentSessions) {
     const key = `${s.liveHost?.displayName ?? "none"}::${new Date(s.scheduledStart).toISOString()}`;
-    sessionsByKey.set(key, (sessionsByKey.get(key) ?? 0) + 1);
+    const group = sessionsByKey.get(key) ?? [];
+    group.push(s);
+    sessionsByKey.set(key, group);
   }
-  const duplicatePairs = [...sessionsByKey.values()].filter(c => c > 1).reduce((sum, c) => sum + (c - 1), 0);
+  const duplicateGroups = [...sessionsByKey.values()].filter(g => g.length > 1);
+  const duplicatePairs = duplicateGroups.reduce((sum, g) => sum + (g.length - 1), 0);
+  // Sample: show the first 5 duplicate groups with their externalRefs so we can diagnose
+  const duplicateSample = duplicateGroups.slice(0, 5).map(g => ({
+    host: g[0].liveHost?.displayName ?? "none",
+    start: new Date(g[0].scheduledStart).toISOString(),
+    sessions: g.map(s => ({ id: s.id, externalRef: s.externalRef ?? "(admin)" })),
+  }));
 
   // ── Task checks ──────────────────────────────────────────────────────────
 
@@ -205,6 +211,7 @@ export async function GET() {
         count: duplicatePairs,
         ok: duplicatePairs === 0,
         label: "Duplicate sessions (same host + same start time, last 90 days)",
+        sample: duplicateSample,
       },
     },
     tasks: {
