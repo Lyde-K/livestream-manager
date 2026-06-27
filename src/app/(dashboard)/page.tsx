@@ -4,13 +4,12 @@ import { redirect } from "next/navigation";
 import { formatCurrency, mytMonthYear, mytMonthRange, mytToday } from "@/lib/utils";
 import {
   Users, Building2, DoorOpen, Calendar, TrendingUp, Clock,
-  CheckCircle2, ArrowUpRight, Medal, RefreshCw,
+  CheckCircle2, ArrowUpRight, Medal,
 } from "lucide-react";
-import { PlatformBadge } from "@/components/ui/platform-badge";
 import { MonthSelector } from "@/components/ui/month-selector";
 import { BrandDashboardPanel } from "@/components/dashboard/brand-dashboard-panel";
 import { AllBrandsAnalyticsPanel } from "@/components/dashboard/all-brands-analytics-panel";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 import { formatMYT } from "@/lib/myt";
 
 import Link from "next/link";
@@ -26,7 +25,7 @@ async function fetchAdminStats(month: number, year: number, brandId?: string) {
     ...(brandId ? { brandId } : {}),
   };
 
-  const [monthSessions, totalHosts, totalRooms, totalBrands, recentImports, lastSyncedSession] = await Promise.all([
+  const [monthSessions, totalHosts, totalRooms, totalBrands] = await Promise.all([
     prisma.session.findMany({
       where: sessionWhere,
       include: { brand: true },
@@ -34,12 +33,6 @@ async function fetchAdminStats(month: number, year: number, brandId?: string) {
     prisma.liveHost.count({ where: { isActive: true } }),
     prisma.room.count({ where: { isActive: true } }),
     prisma.brand.count({ where: { isActive: true } }),
-    prisma.uploadBatch.findMany({ orderBy: { createdAt: "desc" }, take: 3 }),
-    prisma.session.findFirst({
-      where: { status: "COMPLETED" },
-      orderBy: { updatedAt: "desc" },
-      select: { updatedAt: true },
-    }),
   ]);
 
   const completedSessions = monthSessions.filter(s => s.status === "COMPLETED");
@@ -64,11 +57,10 @@ async function fetchAdminStats(month: number, year: number, brandId?: string) {
   const topBrands = brandBreakdown.slice(0, 3);
 
   return {
-    totalHosts, totalRooms, totalBrands, recentImports,
+    totalHosts, totalRooms, totalBrands,
     monthSessionCount: monthSessions.length,
     completedCount: completedSessions.length,
     monthGMV, totalAdsCost, topBrands, brandBreakdown,
-    lastSyncedAt: lastSyncedSession?.updatedAt ?? null,
   };
 }
 
@@ -277,55 +269,6 @@ export default async function DashboardPage(props: {
             </div>
           </div>
 
-          {/* Recent Syncs — now shows GSheets sync + file imports */}
-          <div className="section-card">
-            <div className="section-card-header">
-              <h2 className="flex items-center gap-1.5 text-sm">
-                <RefreshCw size={12} style={{ color: "var(--accent)" }} />
-                Recent Syncs
-              </h2>
-              <Link href="/admin/sync" className="text-xs font-medium" style={{ color: "var(--accent)" }}>
-                Sync now
-              </Link>
-            </div>
-            <div className="px-3 py-2 space-y-2">
-              {/* Google Sheet sync */}
-              <div className="rounded-lg px-2.5 py-2" style={{ background: "var(--bg-subtle)" }}>
-                <p className="text-[10px] font-medium mb-0.5 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Google Sheet Sync</p>
-                {stats.lastSyncedAt ? (
-                  <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
-                    {formatDistanceToNow(new Date(stats.lastSyncedAt), { addSuffix: true })}
-                  </p>
-                ) : (
-                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>No syncs yet</p>
-                )}
-                {stats.lastSyncedAt && (
-                  <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
-                    {format(new Date(stats.lastSyncedAt), "d MMM yyyy, HH:mm")}
-                  </p>
-                )}
-              </div>
-              {/* File imports */}
-              {stats.recentImports.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-medium mb-1 uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>File Imports</p>
-                  <div className="space-y-1.5">
-                    {stats.recentImports.map(b => (
-                      <div key={b.id} className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <PlatformBadge platform={b.platform} showName={false} size="xs" />
-                          <span className="truncate max-w-[100px] text-[10px]" style={{ color: "var(--text-secondary)" }}>
-                            {b.fileName}
-                          </span>
-                        </div>
-                        <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{b.rowCount}r</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Brand-specific dashboard panel OR All-brands analytics */}
