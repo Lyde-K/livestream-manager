@@ -679,6 +679,8 @@ export default function LivestreamImportPage() {
       {/* ── STEP 2: Preview ── */}
       {step === "preview" && (
         <div className="space-y-4">
+          <Button variant="ghost" onClick={() => setStep("upload")}>← Back</Button>
+
           {/* Summary bar */}
           <div className="section-card px-4 py-3 flex items-center gap-6 flex-wrap">
             <Stat label="Total sessions" value={preview.length} />
