@@ -12,7 +12,7 @@ interface ScheduleCheck {
   count: number;
   ok: boolean;
   label: string;
-  sample?: { id: string; host: string; brand: string; startMYT: string }[];
+  sample?: { id: string; host: string; brand: string; startMYT: string; sessions?: DupSession[] }[];
 }
 
 interface TaskSample {
@@ -347,7 +347,7 @@ export default function AdminHealthPage() {
                     <span className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{group.startMYT}</span>
                   </div>
                   <div className="space-y-1.5">
-                    {group.sessions.map(s => (
+                    {(group.sessions ?? []).map(s => (
                       <div key={s.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg"
                         style={{ background: s.isAdmin ? "rgba(99,102,241,0.06)" : "rgba(239,68,68,0.06)", border: `1px solid ${s.isAdmin ? "rgba(99,102,241,0.15)" : "rgba(239,68,68,0.15)"}` }}>
                         <div className="flex items-center gap-2 min-w-0">
