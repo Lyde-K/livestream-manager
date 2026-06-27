@@ -86,6 +86,7 @@ const TIKTOK_COL_MAP: Record<string, string> = {
   "product impressions":              "productImpressions",
   "product clicks":                   "productClicks",
   "ctr":                              "ctr",
+  "ctr (product impressions)":        "ctr",
   "ctor":                             "ctor",
   "ctor (sku orders)":                "ctorSku",
   "sku order rate":                   "skuOrderRate",
@@ -94,10 +95,13 @@ const TIKTOK_COL_MAP: Record<string, string> = {
   "follow rate":                      "followRate",
   "comments":                         "comments",
   "comment rate":                     "commentRate",
+  "comments rate":                    "commentRate",
   "shares":                           "shares",
   "share rate":                       "shareRate",
+  "shares rate":                      "shareRate",
   "likes":                            "likes",
   "like rate":                        "likeRate",
+  "likes rate":                       "likeRate",
 };
 
 async function parseTikTokFile(file: File) {
@@ -530,9 +534,13 @@ export default function LivestreamImportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "preview", platform, brandId, month, rows, hostOverrides, campaignOverrides }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Preview failed"); return; }
-      setPreview(data.preview);
+      const rawText = await res.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(rawText); } catch {
+        throw new Error(`Server error ${res.status}: ${rawText.slice(0, 200) || "(empty response)"}`);
+      }
+      if (!res.ok) { setError((data.error as string) ?? "Preview failed"); return; }
+      setPreview(data.preview as PreviewRow[]);
       setHostOverrides({});
       setCampaignOverrides({});
       setStep("preview");
@@ -553,8 +561,12 @@ export default function LivestreamImportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "confirm", platform, brandId, month, rows, hostOverrides, campaignOverrides }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error ?? "Import failed"); return; }
+      const rawText2 = await res.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(rawText2); } catch {
+        throw new Error(`Server error ${res.status}: ${rawText2.slice(0, 200) || "(empty response)"}`);
+      }
+      if (!res.ok) { setError((data.error as string) ?? "Import failed"); return; }
 
       let adsCostMatched = 0;
       // Ads cost only applicable for TikTok
@@ -569,7 +581,7 @@ export default function LivestreamImportPage() {
         adsCostMatched = patchData.matched ?? 0;
       }
 
-      setResult({ ...data, adsCostMatched: platform === "TIKTOK" ? adsCostMatched : undefined });
+      setResult({ ...(data as { inserted: number; updated?: number; skipped: number; unmatched: number }), adsCostMatched: platform === "TIKTOK" ? adsCostMatched : undefined });
       setStep("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");

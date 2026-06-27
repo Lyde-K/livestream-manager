@@ -244,9 +244,15 @@ export async function POST(req: NextRequest) {
 
   // ── Build preview rows ────────────────────────────────────────────────────
 
-  const preview = platform === "TIKTOK"
-    ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides, campaignOverrides, adminSessions)
-    : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides, adminSessions, campaignOverrides);
+  let preview: ReturnType<typeof buildTikTokPreview> | ReturnType<typeof buildShopeePreview>;
+  try {
+    preview = platform === "TIKTOK"
+      ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides, campaignOverrides, adminSessions)
+      : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides, adminSessions, campaignOverrides);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: `Preview failed: ${msg}` }, { status: 500 });
+  }
 
   if (action === "preview") {
     const matched   = preview.filter((r) => r.hostId).length;
@@ -463,8 +469,10 @@ function buildTikTokPreview(
   adminSessions: AdminSession[]
 ) {
   return rows.map((r) => {
-    const startMYT  = new Date(`${r.startTime.replace(" ", "T")}+08:00`);
-    const endMYT    = new Date(`${r.endTime.replace(" ", "T")}+08:00`);
+    const startMYT  = new Date(`${(r.startTime ?? "").replace(" ", "T")}+08:00`);
+    const endMYT    = new Date(`${(r.endTime ?? "").replace(" ", "T")}+08:00`);
+    if (isNaN(startMYT.getTime())) throw new Error(`Invalid start time "${r.startTime}" in row "${r.roomTitle}"`);
+    if (isNaN(endMYT.getTime()))   throw new Error(`Invalid end time "${r.endTime}" in row "${r.roomTitle}"`);
     // Prefer TikTok's own duration column (HH:MM:SS) — more accurate than end-start
     // which can differ due to stream pauses or TikTok reporting lag.
     // Fall back to computed gap only if duration column is absent/unparseable.
