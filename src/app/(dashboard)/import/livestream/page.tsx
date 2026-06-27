@@ -65,27 +65,53 @@ async function parseTikTokFile(file: File) {
 async function parseShopeeFile(file: File) {
   const text = await file.text();
   const lines = text.split(/\r?\n/).filter(l => l.trim());
-  // Row 1 = headers, Row 2+ = data
+  if (lines.length < 2) return [];
+
+  // Read header row and build a name→index map (lowercase, trimmed)
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+  const col = (name: string) => headers.indexOf(name);
+
+  // Log headers to console so we can verify column names from real exports
+  console.log("[Shopee import] headers:", headers);
+
+  // Primary column indices by known Shopee export header names
+  const idxNo          = col("no.");
+  const idxTitle       = col("live streaming title");
+  const idxStart       = col("start time");
+  const idxDuration    = col("live streaming duration");
+  const idxEngaged     = col("engaged viewers");
+  const idxComments    = col("comments");
+  const idxAtc         = col("add to cart");
+  const idxAvgView     = col("avg. viewing time per viewer");
+  // Shopee uses "unique viewers" for the total audience count
+  const idxViewers     = col("unique viewers") !== -1 ? col("unique viewers") : col("viewers");
+  const idxOrdersP     = col("product orders placed");
+  const idxOrdersC     = col("product orders confirmed");
+  const idxItemsP      = col("product items sold (placed)");
+  const idxItemsC      = col("product items sold (confirmed)");
+  const idxSalesP      = col("product sales (placed)");
+  const idxSalesC      = col("product sales (confirmed)");
+
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
     if (!cols[0]) continue;
     rows.push({
-      no:                  cols[2]  ?? "",
-      title:               cols[3]  ?? "",
-      startTime:           cols[4]  ?? "",
-      duration:            cols[5]  ?? "",
-      engagedViewers:      cols[6]  ?? "",
-      comments:            cols[7]  ?? "",
-      atc:                 cols[8]  ?? "",
-      avgViewDuration:     cols[9]  ?? "",
-      viewers:             cols[10] ?? "",
-      ordersPlaced:        cols[11] ?? "",
-      ordersConfirmed:     cols[12] ?? "",
-      itemsSoldPlaced:     cols[13] ?? "",
-      itemsSoldConfirmed:  cols[14] ?? "",
-      salesPlaced:         cols[15] ?? "",
-      salesConfirmed:      cols[16] ?? "",
+      no:                  idxNo >= 0        ? cols[idxNo]       ?? "" : cols[2]  ?? "",
+      title:               idxTitle >= 0     ? cols[idxTitle]    ?? "" : cols[3]  ?? "",
+      startTime:           idxStart >= 0     ? cols[idxStart]    ?? "" : cols[4]  ?? "",
+      duration:            idxDuration >= 0  ? cols[idxDuration] ?? "" : cols[5]  ?? "",
+      engagedViewers:      idxEngaged >= 0   ? cols[idxEngaged]  ?? "" : cols[6]  ?? "",
+      comments:            idxComments >= 0  ? cols[idxComments] ?? "" : cols[7]  ?? "",
+      atc:                 idxAtc >= 0       ? cols[idxAtc]      ?? "" : cols[8]  ?? "",
+      avgViewDuration:     idxAvgView >= 0   ? cols[idxAvgView]  ?? "" : cols[9]  ?? "",
+      viewers:             idxViewers >= 0   ? cols[idxViewers]  ?? "" : cols[10] ?? "",
+      ordersPlaced:        idxOrdersP >= 0   ? cols[idxOrdersP]  ?? "" : cols[11] ?? "",
+      ordersConfirmed:     idxOrdersC >= 0   ? cols[idxOrdersC]  ?? "" : cols[12] ?? "",
+      itemsSoldPlaced:     idxItemsP >= 0    ? cols[idxItemsP]   ?? "" : cols[13] ?? "",
+      itemsSoldConfirmed:  idxItemsC >= 0    ? cols[idxItemsC]   ?? "" : cols[14] ?? "",
+      salesPlaced:         idxSalesP >= 0    ? cols[idxSalesP]   ?? "" : cols[15] ?? "",
+      salesConfirmed:      idxSalesC >= 0    ? cols[idxSalesC]   ?? "" : cols[16] ?? "",
     });
   }
   return rows;
