@@ -16,7 +16,8 @@ function parsePct(val: unknown): number | null {
 
 function toInt(val: unknown): number | null {
   if (val === null || val === undefined || val === "") return null;
-  const n = parseInt(String(val));
+  // Strip thousands-separator commas (e.g. "4,413" → "4413") before parsing
+  const n = parseInt(String(val).replace(/,/g, ""));
   return isNaN(n) ? null : n;
 }
 
