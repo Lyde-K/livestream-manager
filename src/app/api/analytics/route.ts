@@ -39,11 +39,14 @@ export async function GET(req: NextRequest) {
   // TikTok stores audience count in `views`; Shopee uses `viewers`. Normalise.
   const sessionViewers = (s: { viewers: number | null; views: number | null }) =>
     s.viewers ?? s.views ?? 0;
+  // TikTok only has `ordersPlaced`; Shopee has both (use confirmed when available).
+  const sessionOrders = (s: { ordersConfirmed: number | null; ordersPlaced: number | null }) =>
+    s.ordersConfirmed ?? s.ordersPlaced ?? 0;
 
   // ── Totals ────────────────────────────────────────────────────────────────
   const totalGMV = sessions.reduce((s, x) => s + (x.gmv ?? 0), 0);
   const totalViewers = sessions.reduce((s, x) => s + sessionViewers(x), 0);
-  const totalOrders = sessions.reduce((s, x) => s + (x.ordersConfirmed ?? 0), 0);
+  const totalOrders = sessions.reduce((s, x) => s + sessionOrders(x), 0);
   const ctorSessions = sessions.filter((x) => x.ctor != null);
   const avgCTOR = ctorSessions.length > 0
     ? ctorSessions.reduce((s, x) => s + (x.ctor ?? 0), 0) / ctorSessions.length
@@ -63,7 +66,7 @@ export async function GET(req: NextRequest) {
       gmv: cur.gmv + (s.gmv ?? 0),
       viewers: cur.viewers + sessionViewers(s),
       sessions: cur.sessions + 1,
-      orders: cur.orders + (s.ordersConfirmed ?? 0),
+      orders: cur.orders + sessionOrders(s),
     });
   }
   const byDate = Array.from(byDateMap.entries()).map(([date, v]) => ({ date, ...v }));
@@ -85,7 +88,7 @@ export async function GET(req: NextRequest) {
       gmv: cur.gmv + (s.gmv ?? 0),
       viewers: cur.viewers + sessionViewers(s),
       sessions: cur.sessions + 1,
-      orders: cur.orders + (s.ordersConfirmed ?? 0),
+      orders: cur.orders + sessionOrders(s),
       ctorSum: cur.ctorSum + (s.ctor ?? 0),
       ctorCount: cur.ctorCount + (s.ctor != null ? 1 : 0),
     });
