@@ -736,7 +736,9 @@ export default function LivestreamImportPage() {
                         className="border-b"
                         style={{
                           borderColor: "var(--border)",
-                          background: p.likelyTest ? "rgba(245,158,11,.04)" : undefined,
+                          background: !(hostOverrides[p.key] ?? p.hostId)
+                            ? "rgba(239,68,68,.06)"
+                            : p.likelyTest ? "rgba(245,158,11,.04)" : undefined,
                         }}>
                         <td className="px-3 py-2 max-w-[200px]">
                           <p className="truncate font-medium" style={{ color: "var(--text-primary)" }}>{p.roomTitle}</p>
