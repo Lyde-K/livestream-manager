@@ -393,7 +393,8 @@ export default function LivestreamImportPage() {
   const [adsCostFile, setAdsCostFile] = useState<File | null>(null);
   const [step, setStep]               = useState<Step>("upload");
   const [preview, setPreview]         = useState<PreviewRow[]>([]);
-  const [hostOverrides, setHostOverrides] = useState<Record<string, string>>({});
+  const [hostOverrides, setHostOverrides]         = useState<Record<string, string>>({});
+  const [campaignOverrides, setCampaignOverrides] = useState<Record<string, boolean>>({});
   const [excludeTests, setExcludeTests]   = useState(true);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
@@ -430,12 +431,13 @@ export default function LivestreamImportPage() {
       const res = await fetch("/api/import/livestream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "preview", platform, brandId, month, rows }),
+        body: JSON.stringify({ action: "preview", platform, brandId, month, rows, hostOverrides, campaignOverrides }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Preview failed"); return; }
       setPreview(data.preview);
       setHostOverrides({});
+      setCampaignOverrides({});
       setStep("preview");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");
@@ -452,7 +454,7 @@ export default function LivestreamImportPage() {
       const res = await fetch("/api/import/livestream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "confirm", platform, brandId, month, rows, hostOverrides }),
+        body: JSON.stringify({ action: "confirm", platform, brandId, month, rows, hostOverrides, campaignOverrides }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Import failed"); return; }
@@ -495,7 +497,7 @@ export default function LivestreamImportPage() {
   }
 
   function reset() {
-    setStep("upload"); setPreview([]); setHostOverrides({});
+    setStep("upload"); setPreview([]); setHostOverrides({}); setCampaignOverrides({});
     setSessionsFile(null); setAdsCostFile(null); setResult(null); setError("");
     if (sessionsRef.current) sessionsRef.current.value = "";
     if (adsCostRef.current) adsCostRef.current.value = "";
@@ -505,7 +507,7 @@ export default function LivestreamImportPage() {
     brands.filter(b => b.platform === p || b.platform === "BOTH");
 
   const visiblePreview = excludeTests ? preview.filter(p => !p.likelyTest) : preview;
-  const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId));
+  const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId ?? ""));
   const testCount      = preview.filter(p => p.likelyTest).length;
 
   return (
@@ -746,26 +748,26 @@ export default function LivestreamImportPage() {
                           {p.likelyTest && <span className="ml-1 px-1 rounded text-[9px] font-bold" style={{ background: "rgba(245,158,11,.15)", color: "#f59e0b" }}>TEST</span>}
                         </td>
                         <td className="px-3 py-2">
-                          {assignedHostName ? (
-                            <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{assignedHostName}</span>
-                          ) : (
-                            <Select
-                              value={hostOverrides[p.key] ?? ""}
-                              onChange={e => setHostOverrides(prev => ({ ...prev, [p.key]: e.target.value }))}
-                            >
-                              <option value="">Assign host…</option>
-                              {hosts.map(h => <option key={h.id} value={h.id}>{h.displayName}</option>)}
-                            </Select>
-                          )}
+                          <Select
+                            value={hostOverrides[p.key] ?? p.hostId ?? ""}
+                            onChange={e => setHostOverrides(prev => ({ ...prev, [p.key]: e.target.value }))}
+                          >
+                            <option value="">Unassigned…</option>
+                            {hosts.map(h => <option key={h.id} value={h.id}>{h.displayName}</option>)}
+                          </Select>
                         </td>
                         <td className="px-3 py-2">
-                          {p.isCampaign ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: "rgba(168,85,247,.12)", color: "#a855f7" }}>
-                              {p.campaignName ?? "CAMP"}
-                            </span>
-                          ) : (
-                            <span style={{ color: "var(--text-muted)" }}>—</span>
-                          )}
+                          <Select
+                            value={
+                              p.key in campaignOverrides
+                                ? (campaignOverrides[p.key] ? "campaign" : "bau")
+                                : (p.isCampaign ? "campaign" : "bau")
+                            }
+                            onChange={e => setCampaignOverrides(prev => ({ ...prev, [p.key]: e.target.value === "campaign" }))}
+                          >
+                            <option value="bau">BAU</option>
+                            <option value="campaign">{p.campaignName ?? "Campaign"}</option>
+                          </Select>
                         </td>
                         <td className="px-3 py-2 font-semibold" style={{ color: "var(--text-primary)" }}>
                           {fmtRM(p.gmv)}

@@ -186,9 +186,10 @@ export async function POST(req: NextRequest) {
     month: string;
     rows: TikTokRow[] | ShopeeRow[];
     hostOverrides?: Record<string, string>;
+    campaignOverrides?: Record<string, boolean>; // key → isCampaignDay override
   };
 
-  const { action, platform, brandId, month, rows, hostOverrides = {} } = body;
+  const { action, platform, brandId, month, rows, hostOverrides = {}, campaignOverrides = {} } = body;
 
   if (!brandId || !month || !rows?.length)
     return Response.json({ error: "brandId, month, and rows are required" }, { status: 400 });
@@ -233,8 +234,8 @@ export async function POST(req: NextRequest) {
   // ── Build preview rows ────────────────────────────────────────────────────
 
   const preview = platform === "TIKTOK"
-    ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides)
-    : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides, adminSessions);
+    ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides, campaignOverrides)
+    : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides, adminSessions, campaignOverrides);
 
   if (action === "preview") {
     const matched   = preview.filter((r) => r.hostId).length;
@@ -382,7 +383,8 @@ function buildTikTokPreview(
   rows: TikTokRow[],
   hosts: { id: string; displayName: string }[],
   campaigns: { startDate: Date | string; endDate: Date | string; name: string }[],
-  hostOverrides: Record<string, string>
+  hostOverrides: Record<string, string>,
+  campaignOverrides: Record<string, boolean>
 ) {
   return rows.map((r) => {
     const startMYT  = new Date(`${r.startTime.replace(" ", "T")}+08:00`);
@@ -393,7 +395,8 @@ function buildTikTokPreview(
     const host = overrideHostId
       ? hosts.find(h => h.id === overrideHostId) ?? null
       : extractHost(r.roomTitle, hosts);
-    const isCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const autoIsCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const isCampaign = key in campaignOverrides ? campaignOverrides[key] : autoIsCampaign;
     const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
 
     return {
@@ -455,7 +458,8 @@ function buildShopeePreview(
   hosts: { id: string; displayName: string }[],
   campaigns: { startDate: Date | string; endDate: Date | string; name: string }[],
   hostOverrides: Record<string, string>,
-  adminSessions: AdminSession[]
+  adminSessions: AdminSession[],
+  campaignOverrides: Record<string, boolean>
 ) {
   return rows.map((r) => {
     const startMYT     = parseShopeeDate(r.startTime);
@@ -466,7 +470,8 @@ function buildShopeePreview(
     const host = overrideHostId
       ? hosts.find(h => h.id === overrideHostId) ?? null
       : extractHost(r.title, hosts);
-    const isCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const autoIsCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const isCampaign = key in campaignOverrides ? campaignOverrides[key] : autoIsCampaign;
     const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
 
     // Match to admin slot if host identified
