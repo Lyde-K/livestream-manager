@@ -21,12 +21,20 @@ function toInt(val: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-// "HH:MM:SS" → minutes
+// Parse duration string → minutes.
+// Handles: "HH:MM:SS", "1h00m", "1h 30m", "90m", "1:30:00"
 function parseHMS(val: unknown): number | null {
   const s = String(val || "").trim();
-  const m = s.match(/^(\d+):(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  return parseInt(m[1]) * 60 + parseInt(m[2]);
+  // "HH:MM:SS" or "H:MM:SS"
+  const hms = s.match(/^(\d+):(\d{2}):(\d{2})$/);
+  if (hms) return parseInt(hms[1]) * 60 + parseInt(hms[2]);
+  // "1h30m", "1h 30m", "1h00m" (TikTok MY format)
+  const hm = s.match(/(\d+)\s*h\s*(\d+)\s*m/i);
+  if (hm) return parseInt(hm[1]) * 60 + parseInt(hm[2]);
+  // "90m" (minutes only)
+  const mo = s.match(/^(\d+)\s*m$/i);
+  if (mo) return parseInt(mo[1]);
+  return null;
 }
 
 // "HH:MM:SS" → seconds
