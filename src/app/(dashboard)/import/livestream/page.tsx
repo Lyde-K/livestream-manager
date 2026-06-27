@@ -29,6 +29,60 @@ type Platform = "TIKTOK" | "SHOPEE";
 
 // ── Parse TikTok export xlsx client-side ─────────────────────────────────────
 
+// Maps TikTok's actual column header text → our internal field name.
+// TikTok occasionally renames or reorders columns — mapping by name is immune to that.
+const TIKTOK_COL_MAP: Record<string, string> = {
+  "live streaming id":       "roomId",
+  "room id":                 "roomId",
+  "live streaming title":    "roomTitle",
+  "live room name":          "roomTitle",
+  "title":                   "roomTitle",
+  "start time":              "startTime",
+  "end time":                "endTime",
+  "live streaming duration": "duration",
+  "duration":                "duration",
+  // GMV / revenue — TikTok uses different labels in different regions/versions
+  "gmv":                     "gmv",
+  "product revenue":         "gmv",
+  "revenue":                 "gmv",
+  "sales":                   "gmv",
+  "items sold":              "itemsSold",
+  "orders":                  "orders",
+  "product orders":          "orders",
+  "sku orders":              "skuOrders",
+  "customers":               "customers",
+  "unique customers":        "customers",
+  "aov":                     "aov",
+  "average order value":     "aov",
+  "views":                   "views",
+  "total views":             "views",
+  "impressions":             "impressions",
+  "impressions per hour":    "impressionsPerHour",
+  "gmv per hour":            "gmvPerHour",
+  "show gpm":                "showGpm",
+  "watch gpm":               "watchGpm",
+  "avg. viewing time per view": "avgViewDurationPerView",
+  "avg viewing time per view":  "avgViewDurationPerView",
+  "avg. viewing time":       "avgViewDuration",
+  "average viewing time":    "avgViewDuration",
+  "tap-through rate":        "tapThroughRate",
+  "tap through rate":        "tapThroughRate",
+  "live ctr":                "liveCtr",
+  "product impressions":     "productImpressions",
+  "product clicks":          "productClicks",
+  "ctr":                     "ctr",
+  "ctor":                    "ctor",
+  "sku order rate":          "skuOrderRate",
+  "new followers":           "newFollowers",
+  "follow rate":             "followRate",
+  "comments":                "comments",
+  "comment rate":            "commentRate",
+  "shares":                  "shares",
+  "share rate":              "shareRate",
+  "likes":                   "likes",
+  "like rate":               "likeRate",
+};
+
 async function parseTikTokFile(file: File) {
   const ExcelJS = await import("exceljs");
   const wb = new ExcelJS.Workbook();
@@ -36,24 +90,50 @@ async function parseTikTokFile(file: File) {
   const ws = wb.worksheets[0];
   if (!ws) throw new Error("No sheet found");
 
-  const rows: Record<string, string>[] = [];
-  const HEADERS = [
-    "roomId","roomTitle","startTime","endTime","duration","gmv",
-    "itemsSold","orders","skuOrders","customers","aov","views",
-    "impressions","impressionsPerHour","gmvPerHour","showGpm","watchGpm",
-    "avgViewDurationPerView","avgViewDuration","tapThroughRate","liveCtr",
-    "productImpressions","productClicks","ctr","ctor","ctorSku","skuOrderRate",
-    "newFollowers","followRate","comments","commentRate","shares","shareRate",
-    "likes","likeRate",
-  ];
+  // Scan rows to find the header row (first row where col A looks like an ID/Room)
+  // TikTok format: Row 1 = date range, Row 2 = empty, Row 3 = column headers, Row 4+ = data
+  // But find it dynamically in case the format shifts
+  let headerRowNum = -1;
+  let colIndexMap: Record<string, number> = {};
 
   ws.eachRow({ includeEmpty: false }, (row, n) => {
-    // Row 1 = date range header, Row 2 = empty, Row 3 = column headers, Row 4+ = data
-    if (n < 4) return;
+    if (headerRowNum !== -1) return;
     const vals = (row.values as unknown[]).slice(1);
-    if (!vals[0]) return;
+    const firstCell = String(vals[0] ?? "").trim().toLowerCase();
+    // Header row starts with a known ID/title column name
+    if (TIKTOK_COL_MAP[firstCell] !== undefined || firstCell.includes("id") || firstCell.includes("title") || firstCell.includes("room")) {
+      headerRowNum = n;
+      vals.forEach((v, i) => {
+        const key = String(v ?? "").trim().toLowerCase();
+        const mapped = TIKTOK_COL_MAP[key];
+        if (mapped) colIndexMap[mapped] = i;
+      });
+      console.log("[TikTok import] detected headers:", vals.map(v => String(v ?? "").trim()), "→ mapped:", colIndexMap);
+    }
+  });
+
+  // Fallback: if header detection failed, use fixed positional mapping
+  if (headerRowNum === -1) {
+    console.warn("[TikTok import] header row not found, falling back to positional mapping");
+    const FALLBACK = ["roomId","roomTitle","startTime","endTime","duration","gmv",
+      "itemsSold","orders","skuOrders","customers","aov","views",
+      "impressions","impressionsPerHour","gmvPerHour","showGpm","watchGpm",
+      "avgViewDurationPerView","avgViewDuration","tapThroughRate","liveCtr",
+      "productImpressions","productClicks","ctr","ctor","ctorSku","skuOrderRate",
+      "newFollowers","followRate","comments","commentRate","shares","shareRate","likes","likeRate"];
+    FALLBACK.forEach((h, i) => { colIndexMap[h] = i; });
+    headerRowNum = 3;
+  }
+
+  const rows: Record<string, string>[] = [];
+  ws.eachRow({ includeEmpty: false }, (row, n) => {
+    if (n <= headerRowNum) return;
+    const vals = (row.values as unknown[]).slice(1);
+    if (!vals[colIndexMap["roomId"] ?? 0]) return;
     const obj: Record<string, string> = {};
-    HEADERS.forEach((h, i) => { obj[h] = String(vals[i] ?? "").trim(); });
+    for (const [field, idx] of Object.entries(colIndexMap)) {
+      obj[field] = String(vals[idx] ?? "").trim();
+    }
     rows.push(obj);
   });
 
@@ -685,7 +765,10 @@ export default function LivestreamImportPage() {
 
           {/* Summary bar */}
           <div className="section-card px-4 py-3 flex items-center gap-6 flex-wrap">
-            <Stat label="Total sessions" value={preview.length} />
+            <Stat label="Raw file rows" value={preview.length} />
+            <StatStr label="Raw GMV" value={`RM ${preview.reduce((s, p) => s + p.gmv, 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}`} />
+            <StatStr label="Raw Hours" value={`${(preview.reduce((s, p) => s + (p.duration ?? 0), 0) / 60).toFixed(1)}h`} />
+            <div style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }} />
             <Stat label="Host matched" value={preview.filter(p => p.hostId).length} color="#22c55e" />
             <Stat label="Unmatched" value={unmatchedRows.length} color={unmatchedRows.length > 0 ? "#ef4444" : undefined} />
             <Stat label="Campaign days" value={visiblePreview.filter(p => p.isCampaign).length} color="#a855f7" />
@@ -887,6 +970,15 @@ function ErrorBanner({ message }: { message: string }) {
 }
 
 function Stat({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div>
+      <div className="text-lg font-bold" style={{ color: color ?? "var(--text-primary)" }}>{value}</div>
+      <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>{label}</div>
+    </div>
+  );
+}
+
+function StatStr({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div>
       <div className="text-lg font-bold" style={{ color: color ?? "var(--text-primary)" }}>{value}</div>

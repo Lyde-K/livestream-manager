@@ -457,7 +457,11 @@ function buildTikTokPreview(
   return rows.map((r) => {
     const startMYT  = new Date(`${r.startTime.replace(" ", "T")}+08:00`);
     const endMYT    = new Date(`${r.endTime.replace(" ", "T")}+08:00`);
-    const exactMinutes = Math.round((endMYT.getTime() - startMYT.getTime()) / 60_000);
+    // Prefer TikTok's own duration column (HH:MM:SS) — more accurate than end-start
+    // which can differ due to stream pauses or TikTok reporting lag.
+    // Fall back to computed gap only if duration column is absent/unparseable.
+    const durationFromCol = parseHMS(r.duration);
+    const exactMinutes = durationFromCol ?? Math.round((endMYT.getTime() - startMYT.getTime()) / 60_000);
     const key = r.roomId;
     const overrideHostId = hostOverrides[key];
     const host = overrideHostId
