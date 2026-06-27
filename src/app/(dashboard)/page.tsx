@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 import { formatCurrency, mytMonthYear, mytMonthRange, mytToday } from "@/lib/utils";
 import {
   Users, Building2, DoorOpen, Calendar, TrendingUp, Clock,
-  CheckCircle2, ArrowUpRight, Medal,
+  CheckCircle2, ArrowUpRight, Medal, Crown,
 } from "lucide-react";
-import { MonthSelector } from "@/components/ui/month-selector";
+import { RangeSelector } from "@/components/ui/range-selector";
 import { BrandDashboardPanel } from "@/components/dashboard/brand-dashboard-panel";
 import { AllBrandsAnalyticsPanel } from "@/components/dashboard/all-brands-analytics-panel";
 import { format } from "date-fns";
@@ -17,18 +17,20 @@ import { unstable_cache } from "next/cache";
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-async function fetchAdminStats(month: number, year: number, brandId?: string) {
-  const { start: monthStart, end: monthEnd } = mytMonthRange(month, year);
-
+async function fetchAdminStats(
+  start: Date,
+  end: Date,
+  brandId?: string,
+) {
   const sessionWhere = {
-    scheduledStart: { gte: monthStart, lte: monthEnd },
+    scheduledStart: { gte: start, lte: end },
     ...(brandId ? { brandId } : {}),
   };
 
   const [monthSessions, totalHosts, totalRooms, totalBrands] = await Promise.all([
     prisma.session.findMany({
       where: sessionWhere,
-      include: { brand: true },
+      include: { brand: true, liveHost: true },
     }),
     prisma.liveHost.count({ where: { isActive: true } }),
     prisma.room.count({ where: { isActive: true } }),
@@ -36,19 +38,19 @@ async function fetchAdminStats(month: number, year: number, brandId?: string) {
   ]);
 
   const completedSessions = monthSessions.filter(s => s.status === "COMPLETED");
-  const monthGMV    = completedSessions.reduce((sum, s) => sum + (s.gmv ?? 0), 0);
+  const monthGMV     = completedSessions.reduce((sum, s) => sum + (s.gmv ?? 0), 0);
   const totalAdsCost = completedSessions.reduce((sum, s) => sum + (s.adsCost ?? 0), 0);
 
-  // Brand GMV breakdown (all brands, sorted by GMV)
+  // Brand GMV breakdown
   const brandMap = new Map<string, { name: string; color: string; gmv: number; adsCost: number; sessions: number; hours: number }>();
   for (const s of completedSessions) {
     const cur = brandMap.get(s.brandId) ?? { name: s.brand.name, color: s.brand.color, gmv: 0, adsCost: 0, sessions: 0, hours: 0 };
     brandMap.set(s.brandId, {
       ...cur,
-      gmv: cur.gmv + (s.gmv ?? 0),
-      adsCost: cur.adsCost + (s.adsCost ?? 0),
+      gmv:      cur.gmv + (s.gmv ?? 0),
+      adsCost:  cur.adsCost + (s.adsCost ?? 0),
       sessions: cur.sessions + 1,
-      hours: cur.hours + (s.actualDurationMinutes ?? 0) / 60,
+      hours:    cur.hours + (s.actualDurationMinutes ?? 0) / 60,
     });
   }
   const brandBreakdown = [...brandMap.values()]
@@ -56,21 +58,35 @@ async function fetchAdminStats(month: number, year: number, brandId?: string) {
     .map(b => ({ ...b, gmvPerHour: b.hours > 0 ? b.gmv / b.hours : 0, netRevenue: b.gmv - b.adsCost }));
   const topBrands = brandBreakdown.slice(0, 3);
 
+  // Host GMV breakdown
+  const hostMap = new Map<string, { name: string; gmv: number; sessions: number; hours: number }>();
+  for (const s of completedSessions.filter(s => s.liveHostId)) {
+    const key = s.liveHostId!;
+    const cur = hostMap.get(key) ?? { name: s.liveHost?.displayName ?? "Unknown", gmv: 0, sessions: 0, hours: 0 };
+    hostMap.set(key, {
+      ...cur,
+      gmv:      cur.gmv + (s.gmv ?? 0),
+      sessions: cur.sessions + 1,
+      hours:    cur.hours + (s.actualDurationMinutes ?? 0) / 60,
+    });
+  }
+  const topHosts = [...hostMap.values()]
+    .sort((a, b) => b.gmv - a.gmv)
+    .slice(0, 3);
+
   return {
     totalHosts, totalRooms, totalBrands,
     monthSessionCount: monthSessions.length,
     completedCount: completedSessions.length,
-    monthGMV, totalAdsCost, topBrands, brandBreakdown,
+    monthGMV, totalAdsCost, topBrands, topHosts, brandBreakdown,
   };
 }
 
-function getAdminStats(month: number, year: number, brandId?: string) {
-  const cacheKey = brandId
-    ? ["admin-stats", String(month), String(year), brandId]
-    : ["admin-stats", String(month), String(year)];
+function getAdminStats(start: Date, end: Date, brandId?: string) {
+  const key = `${start.toISOString()}_${end.toISOString()}_${brandId ?? "all"}`;
   return unstable_cache(
-    () => fetchAdminStats(month, year, brandId),
-    cacheKey,
+    () => fetchAdminStats(start, end, brandId),
+    ["admin-stats", key],
     { revalidate: 30 },
   )();
 }
@@ -107,7 +123,7 @@ async function getLiveHostStats(userId: string) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default async function DashboardPage(props: {
-  searchParams: Promise<{ month?: string; year?: string; brand?: string }>;
+  searchParams: Promise<{ month?: string; year?: string; brand?: string; start?: string; end?: string }>;
 }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -117,13 +133,38 @@ export default async function DashboardPage(props: {
     const sp    = await props.searchParams;
     const { month: mM, year: mY } = mytMonthYear();
     const now = new Date(Date.now() + 8 * 3_600_000);
-    const month = sp.month !== undefined ? parseInt(sp.month) : mM;
-    const year  = sp.year  !== undefined ? parseInt(sp.year)  : mY;
+
+    // Determine date range — custom takes priority over month/year
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    let month: number;
+    let year: number;
+    let isCustomRange = false;
+    let startDate: string | undefined;
+    let endDate: string | undefined;
+
+    if (sp.start && sp.end) {
+      isCustomRange = true;
+      startDate = sp.start;
+      endDate   = sp.end;
+      rangeStart = new Date(`${sp.start}T00:00:00+08:00`);
+      rangeEnd   = new Date(`${sp.end}T23:59:59+08:00`);
+      // Derive month/year from start for display fallback
+      month = rangeStart.getMonth();
+      year  = rangeStart.getFullYear();
+    } else {
+      month = sp.month !== undefined ? parseInt(sp.month) : mM;
+      year  = sp.year  !== undefined ? parseInt(sp.year)  : mY;
+      const { start, end } = mytMonthRange(month, year);
+      rangeStart = start;
+      rangeEnd   = end;
+    }
+
+    const isMTD = !isCustomRange && month === mM && year === mY;
     const selectedBrandId = sp.brand ?? null;
-    const isMTD = month === mM && year === mY;
 
     const [stats, brands] = await Promise.all([
-      getAdminStats(month, year, selectedBrandId ?? undefined),
+      getAdminStats(rangeStart, rangeEnd, selectedBrandId ?? undefined),
       prisma.brand.findMany({ where: { isActive: true, hasLivestream: true }, orderBy: { name: "asc" } }),
     ]);
     const selectedBrand = selectedBrandId ? brands.find(b => b.id === selectedBrandId) ?? null : null;
@@ -131,7 +172,10 @@ export default async function DashboardPage(props: {
       ? Math.round((stats.completedCount / stats.monthSessionCount) * 100)
       : 0;
 
-    const displayMonthLabel = format(new Date(year, month, 1), "MMMM yyyy");
+    const rangeLabel = isCustomRange
+      ? `${format(rangeStart, "d MMM yyyy")} – ${format(rangeEnd, "d MMM yyyy")}`
+      : format(new Date(year, month, 1), "MMMM yyyy");
+
     const medals = ["🥇", "🥈", "🥉"];
 
     return (
@@ -146,7 +190,12 @@ export default async function DashboardPage(props: {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <MonthSelector month={month} year={year} isMTD={isMTD} brand={selectedBrandId ?? undefined} />
+            <RangeSelector
+              month={month} year={year} isMTD={isMTD}
+              brand={selectedBrandId ?? undefined}
+              startDate={startDate}
+              endDate={endDate}
+            />
             <Link
               href="/schedule"
               className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg"
@@ -161,7 +210,9 @@ export default async function DashboardPage(props: {
         {brands.length > 0 && (
           <div className="flex gap-1.5 flex-wrap">
             <Link
-              href={`/?month=${month}&year=${year}`}
+              href={isCustomRange
+                ? `/?start=${startDate}&end=${endDate}`
+                : `/?month=${month}&year=${year}`}
               className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
               style={!selectedBrandId
                 ? { background: "var(--accent)", color: "#fff" }
@@ -169,7 +220,10 @@ export default async function DashboardPage(props: {
               All Brands
             </Link>
             {brands.map(b => (
-              <Link key={b.id} href={`/?month=${month}&year=${year}&brand=${b.id}`}
+              <Link key={b.id}
+                href={isCustomRange
+                  ? `/?start=${startDate}&end=${endDate}&brand=${b.id}`
+                  : `/?month=${month}&year=${year}&brand=${b.id}`}
                 className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
                 style={selectedBrandId === b.id
                   ? { background: b.color + "20", color: b.color, border: `1px solid ${b.color}60` }
@@ -180,7 +234,7 @@ export default async function DashboardPage(props: {
           </div>
         )}
 
-        {/* Stat cards — hidden when viewing a specific brand */}
+        {/* Stat cards */}
         {!selectedBrandId && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Link href="/admin/hosts">
@@ -195,7 +249,7 @@ export default async function DashboardPage(props: {
             <Link href="/performance">
               <GradientStatCard
                 icon={TrendingUp}
-                label={isMTD ? "MTD GMV" : "Month GMV"}
+                label={isMTD ? "MTD GMV" : "Period GMV"}
                 value={formatCurrency(stats.monthGMV)}
                 sub={`${stats.completedCount} sessions · ${completionRate}% done`}
                 gradient="metric-card-amber"
@@ -204,9 +258,10 @@ export default async function DashboardPage(props: {
           </div>
         )}
 
-        {/* Top 3 Brands + Month Summary row */}
+        {/* Top Brands + Top Hosts + Month Summary row */}
         <div className={`grid grid-cols-1 gap-4 ${selectedBrandId ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
-          {/* Top 3 Brands — hidden when a brand is selected */}
+
+          {/* Top Brands — hidden when a brand is selected */}
           {!selectedBrandId && (
             <div className="section-card">
               <div className="section-card-header">
@@ -247,11 +302,53 @@ export default async function DashboardPage(props: {
             </div>
           )}
 
-          {/* Month Summary — compact 2-col grid */}
+          {/* Top Hosts */}
+          {!selectedBrandId && (
+            <div className="section-card">
+              <div className="section-card-header">
+                <h2 className="flex items-center gap-1.5 text-sm">
+                  <Crown size={13} style={{ color: "var(--accent)" }} />
+                  Top Hosts
+                </h2>
+                <Link href="/performance" className="flex items-center gap-1 text-xs font-medium" style={{ color: "var(--accent)" }}>
+                  <ArrowUpRight size={11} />
+                </Link>
+              </div>
+              {stats.topHosts.length === 0 ? (
+                <div className="empty-state py-4 text-xs">No completed sessions yet.</div>
+              ) : (
+                <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                  {stats.topHosts.map((h, i) => (
+                    <div key={h.name} className="flex items-center gap-2 px-3 py-2">
+                      <span className="text-base w-5 text-center flex-shrink-0 leading-none">{medals[i]}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-xs truncate" style={{ color: "var(--text-primary)" }}>{h.name}</p>
+                        <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                          {h.sessions}sess · {h.hours.toFixed(1)}h
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-bold text-xs" style={{ color: "var(--text-primary)" }}>{formatCurrency(h.gmv)}</p>
+                        {h.hours > 0 && (
+                          <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            {formatCurrency(h.gmv / h.hours)}/hr
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Period Summary */}
           <div className="section-card">
             <div className="section-card-header">
-              <h2 className="text-sm">{selectedBrand ? `${selectedBrand.name} · Month Summary` : "Month Summary"}</h2>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>{displayMonthLabel}{isMTD ? " MTD" : ""}</span>
+              <h2 className="text-sm">{selectedBrand ? `${selectedBrand.name} · Summary` : "Period Summary"}</h2>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {rangeLabel}{isMTD ? " MTD" : ""}
+              </span>
             </div>
             <div className="px-3 py-2 space-y-0">
               <CompactKV label="Sessions" value={`${stats.completedCount} / ${stats.monthSessionCount}`} />
