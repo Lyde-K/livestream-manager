@@ -22,6 +22,7 @@ export async function DELETE(req: NextRequest) {
       OR: [
         { externalRef: { startsWith: "TT-" } },
         { externalRef: { startsWith: "SP-" } },
+        { externalRef: { startsWith: "GS-" } },
       ],
     },
     select: { id: true, liveHostId: true, scheduledStart: true, brandId: true },
@@ -70,7 +71,7 @@ export async function DELETE(req: NextRequest) {
     // but ONLY delete import sessions — never delete admin sessions
     for (let i = 1; i < group.length; i++) {
       const s = allSessions.find(x => x.id === group[i])!;
-      const isImport = s.externalRef?.startsWith("TT-") || s.externalRef?.startsWith("SP-");
+      const isImport = s.externalRef?.startsWith("TT-") || s.externalRef?.startsWith("SP-") || s.externalRef?.startsWith("GS-");
       if (isImport) toDelete.add(s.id);
     }
   }
