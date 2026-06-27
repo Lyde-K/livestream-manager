@@ -218,27 +218,25 @@ export async function POST(req: NextRequest) {
 
   if (!brand) return Response.json({ error: "Brand not found" }, { status: 404 });
 
-  // ── For Shopee: fetch admin-created sessions (no SP- prefix = manually created)
-  let adminSessions: AdminSession[] = [];
-  if (platform === "SHOPEE") {
-    adminSessions = await prisma.session.findMany({
-      where: {
-        brandId,
-        platform: "SHOPEE",
-        scheduledStart: { gte: monthStart, lt: monthEnd },
-        OR: [
-          { externalRef: null },
-          { externalRef: { not: { startsWith: "SP-" } } },
-        ],
-      },
-      select: { id: true, externalRef: true, scheduledStart: true, scheduledEnd: true, liveHostId: true },
-    });
-  }
+  // Fetch admin-created sessions for matching (non-TT-/SP- prefix = manually created)
+  const adminPrefix = platform === "TIKTOK" ? "TT-" : "SP-";
+  const adminSessions: AdminSession[] = await prisma.session.findMany({
+    where: {
+      brandId,
+      platform,
+      scheduledStart: { gte: monthStart, lt: monthEnd },
+      OR: [
+        { externalRef: null },
+        { externalRef: { not: { startsWith: adminPrefix } } },
+      ],
+    },
+    select: { id: true, externalRef: true, scheduledStart: true, scheduledEnd: true, liveHostId: true },
+  });
 
   // ── Build preview rows ────────────────────────────────────────────────────
 
   const preview = platform === "TIKTOK"
-    ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides, campaignOverrides)
+    ? buildTikTokPreview(rows as TikTokRow[], hosts, campaigns, hostOverrides, campaignOverrides, adminSessions)
     : buildShopeePreview(rows as ShopeeRow[], hosts, campaigns, hostOverrides, adminSessions, campaignOverrides);
 
   if (action === "preview") {
@@ -251,7 +249,7 @@ export async function POST(req: NextRequest) {
   // ── Confirm ───────────────────────────────────────────────────────────────
 
   if (platform === "TIKTOK") {
-    // TikTok: simple delete + recreate (no admin slots to match)
+    // Delete old TT- sessions from previous imports (never touch admin-created sessions)
     await prisma.session.deleteMany({
       where: {
         brandId, platform: "TIKTOK",
@@ -260,13 +258,36 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    let inserted = 0, skipped = 0;
-    for (const p of preview) {
-      if (!p.hostId || p.likelyTest) { skipped++; continue; }
-      await prisma.session.create({ data: { ...p.insertData, brandId, liveHostId: p.hostId } });
+    const activeRows = preview.filter(p => p.hostId && !p.likelyTest);
+    const groupedBySlot = new Map<string, typeof activeRows>();
+    const unslottedRows: typeof activeRows = [];
+
+    for (const p of activeRows) {
+      if (p.matchedSlotId) {
+        const group = groupedBySlot.get(p.matchedSlotId) ?? [];
+        group.push(p);
+        groupedBySlot.set(p.matchedSlotId, group);
+      } else {
+        unslottedRows.push(p);
+      }
+    }
+
+    let updated = 0, inserted = 0;
+
+    for (const [slotId, group] of groupedBySlot) {
+      const adminSlot = adminSessions.find(s => s.id === slotId)!;
+      const merged = mergeTikTokRows(group, adminSlot);
+      await prisma.session.update({ where: { id: slotId }, data: merged });
+      updated++;
+    }
+
+    for (const p of unslottedRows) {
+      await prisma.session.create({ data: { ...p.insertData, brandId, liveHostId: p.hostId! } });
       inserted++;
     }
-    return Response.json({ ok: true, inserted, skipped, unmatched: preview.filter(p => !p.hostId).length, month, brand: brand.name });
+
+    const skipped = preview.filter(p => !p.hostId || p.likelyTest).length;
+    return Response.json({ ok: true, updated, inserted, skipped, unmatched: preview.filter(p => !p.hostId).length, month, brand: brand.name });
   }
 
   // ── Shopee confirm: match-and-merge ───────────────────────────────────────
@@ -381,6 +402,47 @@ function mergeShopeeRows(
   };
 }
 
+// ── Merge TikTok rows for same slot (usually just one row per slot) ───────────
+
+function mergeTikTokRows(
+  rows: Array<{ startMYT: string; endMYT: string; duration: number | null; gmv: number; isCampaign: boolean; insertData: Record<string, unknown> }>,
+  adminSlot: AdminSession
+) {
+  const sorted = [...rows].sort((a, b) => new Date(a.startMYT).getTime() - new Date(b.startMYT).getTime());
+  const earliest = sorted[0];
+  const latest   = sorted[sorted.length - 1];
+  const totalDuration = rows.reduce((s, r) => s + (r.duration ?? 0), 0);
+  const totalGmv      = rows.reduce((s, r) => s + r.gmv, 0);
+  const actualStart   = new Date(earliest.startMYT);
+  const actualEnd     = new Date(latest.endMYT);
+  const punctuality   = computePunctuality(actualStart, adminSlot.scheduledStart);
+  const d = earliest.insertData;
+
+  return {
+    title:                (d.title as string) ?? null,
+    status:               "COMPLETED" as const,
+    actualStart,
+    actualEnd,
+    actualDurationMinutes: totalDuration,
+    isCampaignDay:        rows.some(r => r.isCampaign),
+    punctuality,
+    gmv:                  totalGmv,
+    adsCost:              (d.adsCost as number) ?? 0,
+    itemsSold:            (d.itemsSold as number | null) ?? null,
+    ordersPlaced:         (d.ordersPlaced as number | null) ?? null,
+    views:                (d.views as number | null) ?? null,
+    productImpressions:   (d.productImpressions as number | null) ?? null,
+    productClicks:        (d.productClicks as number | null) ?? null,
+    ctr:                  (d.ctr as number | null) ?? null,
+    ctor:                 (d.ctor as number | null) ?? null,
+    newFollowers:         (d.newFollowers as number | null) ?? null,
+    comments:             (d.comments as number | null) ?? null,
+    shares:               (d.shares as number | null) ?? null,
+    likes:                (d.likes as number | null) ?? null,
+    avgViewDurationSec:   (d.avgViewDurationSec as number | null) ?? null,
+  };
+}
+
 // ── TikTok preview builder ────────────────────────────────────────────────────
 
 function buildTikTokPreview(
@@ -388,7 +450,8 @@ function buildTikTokPreview(
   hosts: { id: string; displayName: string }[],
   campaigns: { startDate: Date | string; endDate: Date | string; name: string }[],
   hostOverrides: Record<string, string>,
-  campaignOverrides: Record<string, boolean>
+  campaignOverrides: Record<string, boolean>,
+  adminSessions: AdminSession[]
 ) {
   return rows.map((r) => {
     const startMYT  = new Date(`${r.startTime.replace(" ", "T")}+08:00`);
@@ -402,6 +465,7 @@ function buildTikTokPreview(
     const autoIsCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
     const isCampaign = key in campaignOverrides ? campaignOverrides[key] : autoIsCampaign;
     const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
+    const matchedSlot = host ? findMatchingAdminSession(startMYT, host.id, adminSessions) : null;
 
     return {
       key,
@@ -415,8 +479,8 @@ function buildTikTokPreview(
       gmv:            parseRM(r.gmv),
       duration:       exactMinutes,
       likelyTest:     exactMinutes < 15,
-      matchedSlotId:  null as string | null,
-      matchedSlotTime: null as string | null,
+      matchedSlotId:  matchedSlot?.id ?? null,
+      matchedSlotTime: matchedSlot?.scheduledStart.toISOString() ?? null,
       insertData: {
         externalRef:          `TT-${r.roomId}`,
         brandId:              "",

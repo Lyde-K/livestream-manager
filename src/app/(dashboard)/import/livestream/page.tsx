@@ -717,9 +717,7 @@ export default function LivestreamImportPage() {
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr style={{ background: "var(--bg-subtle)", borderBottom: "1px solid var(--border)" }}>
-                    {["Title","Start (MYT)","End (MYT)","Duration","Host","Campaign","GMV",
-                      ...(platform === "SHOPEE" ? ["Slot"] : [])
-                    ].map(h => (
+                    {["Title","Start (MYT)","End (MYT)","Duration","Host","Campaign","GMV","Slot"].map(h => (
                       <th key={h} className="px-3 py-2 text-left font-semibold" style={{ color: "var(--text-secondary)" }}>{h}</th>
                     ))}
                   </tr>
@@ -774,19 +772,17 @@ export default function LivestreamImportPage() {
                         <td className="px-3 py-2 font-semibold" style={{ color: "var(--text-primary)" }}>
                           {fmtRM(p.gmv)}
                         </td>
-                        {platform === "SHOPEE" && (
-                          <td className="px-3 py-2 whitespace-nowrap text-[10px]">
-                            {p.matchedSlotTime ? (
-                              <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(34,197,94,.12)", color: "#16a34a" }}>
-                                Matches {fmtMYT(p.matchedSlotTime)}
-                              </span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(249,115,22,.1)", color: "#f97316" }}>
-                                New session
-                              </span>
-                            )}
-                          </td>
-                        )}
+                        <td className="px-3 py-2 whitespace-nowrap text-[10px]">
+                          {p.matchedSlotTime ? (
+                            <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(34,197,94,.12)", color: "#16a34a" }}>
+                              Matches {fmtMYT(p.matchedSlotTime)}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded font-semibold" style={{ background: "rgba(249,115,22,.1)", color: "#f97316" }}>
+                              New session
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -831,10 +827,7 @@ export default function LivestreamImportPage() {
           </div>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             Data is live in the dashboard.{" "}
-            {platform === "SHOPEE"
-              ? "Matched sessions updated existing admin-created slots with actuals and punctuality. Unmatched rows created as new sessions."
-              : `Previous ${month} TikTok import data for this brand has been replaced.`
-            }{" "}
+            Matched sessions updated existing admin-created slots with actuals and punctuality. Unmatched rows created as new sessions.{" "}
             Other months and other platform data are untouched.
           </p>
           <div className="flex gap-2 pt-2">
