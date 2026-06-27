@@ -36,9 +36,13 @@ export async function GET(req: NextRequest) {
     orderBy: { scheduledStart: "asc" },
   });
 
+  // TikTok stores audience count in `views`; Shopee uses `viewers`. Normalise.
+  const sessionViewers = (s: { viewers: number | null; views: number | null }) =>
+    s.viewers ?? s.views ?? 0;
+
   // ── Totals ────────────────────────────────────────────────────────────────
   const totalGMV = sessions.reduce((s, x) => s + (x.gmv ?? 0), 0);
-  const totalViewers = sessions.reduce((s, x) => s + (x.viewers ?? 0), 0);
+  const totalViewers = sessions.reduce((s, x) => s + sessionViewers(x), 0);
   const totalOrders = sessions.reduce((s, x) => s + (x.ordersConfirmed ?? 0), 0);
   const ctorSessions = sessions.filter((x) => x.ctor != null);
   const avgCTOR = ctorSessions.length > 0
@@ -57,7 +61,7 @@ export async function GET(req: NextRequest) {
     const cur = byDateMap.get(key) ?? { gmv: 0, viewers: 0, sessions: 0, orders: 0 };
     byDateMap.set(key, {
       gmv: cur.gmv + (s.gmv ?? 0),
-      viewers: cur.viewers + (s.viewers ?? 0),
+      viewers: cur.viewers + sessionViewers(s),
       sessions: cur.sessions + 1,
       orders: cur.orders + (s.ordersConfirmed ?? 0),
     });
@@ -79,7 +83,7 @@ export async function GET(req: NextRequest) {
     byBrandMap.set(key, {
       ...cur,
       gmv: cur.gmv + (s.gmv ?? 0),
-      viewers: cur.viewers + (s.viewers ?? 0),
+      viewers: cur.viewers + sessionViewers(s),
       sessions: cur.sessions + 1,
       orders: cur.orders + (s.ordersConfirmed ?? 0),
       ctorSum: cur.ctorSum + (s.ctor ?? 0),
@@ -111,7 +115,7 @@ export async function GET(req: NextRequest) {
     byHostMap.set(key, {
       ...cur,
       gmv: cur.gmv + (s.gmv ?? 0),
-      viewers: cur.viewers + (s.viewers ?? 0),
+      viewers: cur.viewers + sessionViewers(s),
       sessions: cur.sessions + 1,
       hours: cur.hours + (s.actualDurationMinutes ?? 0) / 60,
     });
@@ -126,7 +130,7 @@ export async function GET(req: NextRequest) {
       platform: p,
       gmv: ps.reduce((s, x) => s + (x.gmv ?? 0), 0),
       sessions: ps.length,
-      viewers: ps.reduce((s, x) => s + (x.viewers ?? 0), 0),
+      viewers: ps.reduce((s, x) => s + sessionViewers(x), 0),
     };
   });
 
@@ -139,7 +143,7 @@ export async function GET(req: NextRequest) {
       ...cur,
       gmv: cur.gmv + (s.gmv ?? 0),
       sessions: cur.sessions + 1,
-      viewers: cur.viewers + (s.viewers ?? 0),
+      viewers: cur.viewers + sessionViewers(s),
     });
   }
   const byCountry = Array.from(countryMap.values()).sort((a, b) => b.gmv - a.gmv);
