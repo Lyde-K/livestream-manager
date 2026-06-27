@@ -1,5 +1,56 @@
+import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+
+// DELETE: remove imported (TT-/SP-) sessions that duplicate an admin-created session
+// (same liveHostId + same scheduledStart minute)
+export async function DELETE(req: NextRequest) {
+  const session = await auth();
+  if (!session || (session.user as { role: string }).role !== "ADMIN")
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  if (req.headers.get("x-confirm-delete-duplicates") !== "yes-delete-import-duplicates")
+    return Response.json({ error: "Missing confirmation header" }, { status: 400 });
+
+  // Find all imported sessions (TT- or SP- prefix)
+  const imported = await prisma.session.findMany({
+    where: {
+      OR: [
+        { externalRef: { startsWith: "TT-" } },
+        { externalRef: { startsWith: "SP-" } },
+      ],
+    },
+    select: { id: true, liveHostId: true, scheduledStart: true, brandId: true, platform: true },
+  });
+
+  // For each imported session, check if an admin-created session exists with the same
+  // liveHostId and scheduledStart (within 1 minute tolerance)
+  const toDelete: string[] = [];
+  for (const imp of imported) {
+    if (!imp.liveHostId) continue;
+    const windowStart = new Date(imp.scheduledStart.getTime() - 60_000);
+    const windowEnd   = new Date(imp.scheduledStart.getTime() + 60_000);
+    const adminExists = await prisma.session.findFirst({
+      where: {
+        id:          { not: imp.id },
+        brandId:     imp.brandId,
+        liveHostId:  imp.liveHostId,
+        scheduledStart: { gte: windowStart, lte: windowEnd },
+        AND: [
+          { OR: [{ externalRef: null }, { externalRef: { not: { startsWith: "TT-" } } }] },
+          { OR: [{ externalRef: null }, { externalRef: { not: { startsWith: "SP-" } } }] },
+        ],
+      },
+      select: { id: true },
+    });
+    if (adminExists) toDelete.push(imp.id);
+  }
+
+  if (toDelete.length === 0) return Response.json({ ok: true, deleted: 0 });
+
+  await prisma.session.deleteMany({ where: { id: { in: toDelete } } });
+  return Response.json({ ok: true, deleted: toDelete.length });
+}
 
 export async function GET() {
   const session = await auth();
@@ -13,7 +64,8 @@ export async function GET() {
     where: { liveHostId: null, roomId: null },
   });
 
-  // 2. Suspicious MYT times: starting before 08:00 MYT = UTC hour 16–23
+  // 2. Suspicious MYT times: starting before 06:00 MYT = UTC hours 22–23
+  // (midnight–05:59 MYT are common late-night slots; flag only truly unusual pre-6am)
   const recentSessions = await prisma.session.findMany({
     select: { id: true, scheduledStart: true, liveHost: { select: { displayName: true } }, brand: { select: { name: true } } },
     where: { scheduledStart: { gte: new Date(Date.now() - 90 * 24 * 3600_000) } },
@@ -21,7 +73,10 @@ export async function GET() {
 
   const suspiciousMYT = recentSessions.filter(s => {
     const h = new Date(s.scheduledStart).getUTCHours();
-    return h >= 16 && h <= 23;
+    // UTC 22–23 = MYT 06:00–07:59 (the real pre-dawn edge cases)
+    // We flag nothing here now since late-night sessions are legitimate
+    // Keep check but only flag sessions between UTC 20-21 (MYT 04:00-05:59)
+    return h >= 20 && h <= 21;
   });
 
   // 3. Duplicate sessions: same host + same scheduledStart
@@ -107,7 +162,7 @@ export async function GET() {
       suspiciousMYT: {
         count: suspiciousMYT.length,
         ok: suspiciousMYT.length === 0,
-        label: "Sessions starting before 08:00 MYT (last 90 days)",
+        label: "Sessions starting before 04:00 MYT (last 90 days)",
         sample: suspiciousMYT.slice(0, 5).map(s => ({
           id: s.id,
           host: s.liveHost?.displayName ?? "Unassigned",

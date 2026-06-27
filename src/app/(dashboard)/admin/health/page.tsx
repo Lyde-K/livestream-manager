@@ -51,8 +51,9 @@ const STATUS_META = {
 export default function AdminHealthPage() {
   const [report, setReport]   = useState<HealthReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fixing, setFixing]   = useState(false);
-  const [fixMsg, setFixMsg]   = useState<string | null>(null);
+  const [fixing, setFixing]           = useState(false);
+  const [fixingDups, setFixingDups]   = useState(false);
+  const [fixMsg, setFixMsg]           = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,6 +64,23 @@ export default function AdminHealthPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  async function cleanDuplicates() {
+    if (!confirm("Delete all imported (TT-/SP-) sessions that have a matching admin-created session for the same host and time slot?")) return;
+    setFixingDups(true);
+    const res = await fetch("/api/admin/health", {
+      method: "DELETE",
+      headers: { "x-confirm-delete-duplicates": "yes-delete-import-duplicates" },
+    });
+    const data = await res.json();
+    setFixingDups(false);
+    if (data.ok) {
+      setFixMsg(`Cleaned up ${data.deleted} duplicate import session${data.deleted !== 1 ? "s" : ""}.`);
+      load();
+    } else {
+      setFixMsg(`Error: ${data.error ?? "Unknown"}`);
+    }
+  }
 
   async function deleteGhosts() {
     if (!confirm("Permanently delete all ghost sessions (no host + no room)?")) return;
@@ -185,7 +203,20 @@ export default function AdminHealthPage() {
               }
             />
 
-            <CheckRow check={report.schedule.duplicateSessions} />
+            <CheckRow
+              check={report.schedule.duplicateSessions}
+              action={
+                !report.schedule.duplicateSessions.ok ? (
+                  <button onClick={cleanDuplicates} disabled={fixingDups}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold"
+                    style={{ color: "#ef4444", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                    <Trash2 size={11} />
+                    {fixingDups ? "Cleaning…" : "Clean Up Duplicates"}
+                  </button>
+                ) : null
+              }
+              hint="Removes imported (TT-/SP-) sessions that already have a matching admin-created session for the same host and slot."
+            />
           </div>
 
           {/* ── Task checks ── */}
