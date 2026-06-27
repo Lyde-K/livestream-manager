@@ -2,8 +2,10 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-// DELETE: remove imported (TT-/SP-) sessions that duplicate an admin-created session
-// (same liveHostId + same scheduledStart minute)
+// DELETE: remove duplicate sessions detected by the health check.
+// Handles two cases:
+//   1. Imported (TT-/SP-) session alongside a matching admin session (same host, ±2h start)
+//   2. Duplicate imported sessions — same externalRef prefix group imported twice
 export async function DELETE(req: NextRequest) {
   const session = await auth();
   if (!session || (session.user as { role: string }).role !== "ADMIN")
@@ -12,7 +14,9 @@ export async function DELETE(req: NextRequest) {
   if (req.headers.get("x-confirm-delete-duplicates") !== "yes-delete-import-duplicates")
     return Response.json({ error: "Missing confirmation header" }, { status: 400 });
 
-  // Find all imported sessions (TT- or SP- prefix)
+  const toDelete = new Set<string>();
+
+  // ── Case 1: TT-/SP- session paired with an admin session (same host, ±2h) ─
   const imported = await prisma.session.findMany({
     where: {
       OR: [
@@ -20,21 +24,18 @@ export async function DELETE(req: NextRequest) {
         { externalRef: { startsWith: "SP-" } },
       ],
     },
-    select: { id: true, liveHostId: true, scheduledStart: true, brandId: true, platform: true },
+    select: { id: true, liveHostId: true, scheduledStart: true, brandId: true },
   });
 
-  // For each imported session, check if an admin-created session exists with the same
-  // liveHostId and scheduledStart (within 1 minute tolerance)
-  const toDelete: string[] = [];
   for (const imp of imported) {
     if (!imp.liveHostId) continue;
-    const windowStart = new Date(imp.scheduledStart.getTime() - 60_000);
-    const windowEnd   = new Date(imp.scheduledStart.getTime() + 60_000);
+    const windowStart = new Date(imp.scheduledStart.getTime() - 2 * 3600_000);
+    const windowEnd   = new Date(imp.scheduledStart.getTime() + 2 * 3600_000);
     const adminExists = await prisma.session.findFirst({
       where: {
-        id:          { not: imp.id },
-        brandId:     imp.brandId,
-        liveHostId:  imp.liveHostId,
+        id:         { not: imp.id },
+        brandId:    imp.brandId,
+        liveHostId: imp.liveHostId,
         scheduledStart: { gte: windowStart, lte: windowEnd },
         AND: [
           { OR: [{ externalRef: null }, { externalRef: { not: { startsWith: "TT-" } } }] },
@@ -43,13 +44,42 @@ export async function DELETE(req: NextRequest) {
       },
       select: { id: true },
     });
-    if (adminExists) toDelete.push(imp.id);
+    if (adminExists) toDelete.add(imp.id);
   }
 
-  if (toDelete.length === 0) return Response.json({ ok: true, deleted: 0 });
+  // ── Case 2: duplicate imported sessions (same host + same scheduledStart) ─
+  // Group all sessions that share liveHostId + scheduledStart; keep the earliest,
+  // delete the rest. This catches double-imports of the same xlsx.
+  const allSessions = await prisma.session.findMany({
+    select: { id: true, liveHostId: true, scheduledStart: true, externalRef: true, createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
 
-  await prisma.session.deleteMany({ where: { id: { in: toDelete } } });
-  return Response.json({ ok: true, deleted: toDelete.length });
+  const byKey = new Map<string, string[]>();
+  for (const s of allSessions) {
+    if (!s.liveHostId) continue;
+    const key = `${s.liveHostId}::${s.scheduledStart.toISOString()}`;
+    const group = byKey.get(key) ?? [];
+    group.push(s.id);
+    byKey.set(key, group);
+  }
+
+  for (const group of byKey.values()) {
+    if (group.length < 2) continue;
+    // Keep the first (earliest createdAt); mark the rest for deletion
+    // but ONLY delete import sessions — never delete admin sessions
+    for (let i = 1; i < group.length; i++) {
+      const s = allSessions.find(x => x.id === group[i])!;
+      const isImport = s.externalRef?.startsWith("TT-") || s.externalRef?.startsWith("SP-");
+      if (isImport) toDelete.add(s.id);
+    }
+  }
+
+  const ids = [...toDelete];
+  if (ids.length === 0) return Response.json({ ok: true, deleted: 0 });
+
+  await prisma.session.deleteMany({ where: { id: { in: ids } } });
+  return Response.json({ ok: true, deleted: ids.length });
 }
 
 export async function GET() {
