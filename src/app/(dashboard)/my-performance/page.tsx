@@ -250,39 +250,62 @@ export default function MyPerformancePage() {
                           <span>{b.completedSessions} sessions · {b.totalHours.toFixed(1)}h</span>
                         </div>
 
-                        {/* GMV/hour grid */}
-                        <div className="grid grid-cols-2 gap-1.5 mb-2">
-                          <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
-                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">BAU GMV/hr</p>
-                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                              {b.normalDayGMVPerHour > 0 ? formatCurrency(b.normalDayGMVPerHour) : "—"}
-                            </p>
+                        {/* BAU breakdown */}
+                        <div className="rounded p-2.5 mb-1.5 text-xs" style={{ background: "var(--bg-card)" }}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>BAU</span>
+                            {b.kpiConfigFound && (
+                              <span className="font-semibold" style={{ color: b.bauTier > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                                {b.bauTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}% (KPI 2)` : b.bauTier === 1 ? `${b.kpi1Rate}% (KPI 1)` : "0% — not achieved"}
+                              </span>
+                            )}
                           </div>
-                          <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
-                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Campaign GMV/hr</p>
-                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                              {b.campaignDayGMVPerHour > 0 ? formatCurrency(b.campaignDayGMVPerHour) : "—"}
-                            </p>
+                          <div className="flex gap-3" style={{ color: "var(--text-muted)" }}>
+                            <span>GMV/hr <strong style={{ color: "var(--text-primary)" }}>{b.normalDayGMVPerHour > 0 ? formatCurrency(b.normalDayGMVPerHour) : "—"}</strong></span>
+                            {b.kpiConfigFound && b.tier1KpiNormal > 0 && (
+                              <>
+                                <span>KPI 1 target <strong style={{ color: b.bauTier >= 1 ? "var(--success)" : "var(--danger)" }}>{formatCurrency(b.tier1KpiNormal)}/hr</strong></span>
+                                {b.tier2KpiNormal > 0 && (
+                                  <span>KPI 2 target <strong style={{ color: b.bauTier >= 2 ? "var(--success)" : "var(--text-muted)" }}>{formatCurrency(b.tier2KpiNormal)}/hr</strong></span>
+                                )}
+                              </>
+                            )}
+                            {b.kpiConfigFound && b.tier1KpiNormal === 0 && (
+                              <span style={{ color: "var(--text-muted)" }}>Flat rate — no threshold</span>
+                            )}
                           </div>
                         </div>
 
-                        {/* KPI rates + tier row */}
-                        {b.kpiConfigFound ? (
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
-                              <p style={{ color: "var(--text-muted)" }} className="mb-0.5">BAU Rate</p>
-                              <p className="font-semibold" style={{ color: "var(--accent)" }}>
-                                {b.bauTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}% (Tier 2)` : b.bauTier === 1 ? `${b.kpi1Rate}% (Tier 1)` : "Not achieved"}
-                              </p>
-                            </div>
-                            <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
-                              <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Campaign Rate</p>
-                              <p className="font-semibold" style={{ color: "var(--accent)" }}>
-                                {b.campTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}% (Tier 2)` : b.campTier === 1 ? `${b.kpi1Rate}% (Tier 1)` : b.campaignDayGMVPerHour === 0 ? "—" : "Not achieved"}
-                              </p>
-                            </div>
+                        {/* Campaign breakdown */}
+                        <div className="rounded p-2.5 mb-2 text-xs" style={{ background: "var(--bg-card)" }}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>Campaign</span>
+                            {b.kpiConfigFound && b.campaignDayGMVPerHour > 0 && (
+                              <span className="font-semibold" style={{ color: b.campTier > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                                {b.campTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}% (KPI 2)` : b.campTier === 1 ? `${b.kpi1Rate}% (KPI 1)` : "0% — not achieved"}
+                              </span>
+                            )}
                           </div>
-                        ) : (
+                          <div className="flex gap-3" style={{ color: "var(--text-muted)" }}>
+                            <span>GMV/hr <strong style={{ color: "var(--text-primary)" }}>{b.campaignDayGMVPerHour > 0 ? formatCurrency(b.campaignDayGMVPerHour) : "—"}</strong></span>
+                            {b.kpiConfigFound && b.campaignDayGMVPerHour > 0 && b.tier1KpiCampaign > 0 && (
+                              <>
+                                <span>KPI 1 target <strong style={{ color: b.campTier >= 1 ? "var(--success)" : "var(--danger)" }}>{formatCurrency(b.tier1KpiCampaign)}/hr</strong></span>
+                                {b.tier2KpiCampaign > 0 && (
+                                  <span>KPI 2 target <strong style={{ color: b.campTier >= 2 ? "var(--success)" : "var(--text-muted)" }}>{formatCurrency(b.tier2KpiCampaign)}/hr</strong></span>
+                                )}
+                              </>
+                            )}
+                            {b.kpiConfigFound && b.campaignDayGMVPerHour > 0 && b.tier1KpiCampaign === 0 && (
+                              <span style={{ color: "var(--text-muted)" }}>Flat rate — no threshold</span>
+                            )}
+                            {b.campaignDayGMVPerHour === 0 && (
+                              <span style={{ color: "var(--text-muted)" }}>No campaign sessions</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {!b.kpiConfigFound && (
                           <p className="text-xs" style={{ color: "var(--text-muted)" }}>Commission rate not set for this month</p>
                         )}
                       </div>
