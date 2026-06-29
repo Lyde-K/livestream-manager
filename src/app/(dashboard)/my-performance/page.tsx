@@ -227,11 +227,6 @@ export default function MyPerformancePage() {
               {brandsOpen && (
                 <div className="mt-3 space-y-2">
                   {stats.byBrand.map(b => {
-                    // Determine the effective rate used for this brand's commission
-                    const effectiveRate = b.estimatedCommission > 0 && b.totalGMV > 0
-                      ? (b.estimatedCommission / b.totalGMV) * 100
-                      : null;
-
                     return (
                       <div
                         key={b.brandId}
@@ -271,14 +266,21 @@ export default function MyPerformancePage() {
                           </div>
                         </div>
 
-                        {/* KPI rates row */}
+                        {/* KPI rates + tier row */}
                         {b.kpiConfigFound ? (
-                          <div className="flex gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
-                            <span>KPI 1 <strong style={{ color: "var(--accent)" }}>{b.kpi1Rate}%</strong></span>
-                            <span>KPI 2 <strong style={{ color: "var(--accent)" }}>{b.kpi2Rate}%</strong></span>
-                            {effectiveRate !== null && (
-                              <span>Effective <strong style={{ color: "var(--text-secondary)" }}>{effectiveRate.toFixed(2)}%</strong></span>
-                            )}
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
+                              <p style={{ color: "var(--text-muted)" }} className="mb-0.5">BAU Rate</p>
+                              <p className="font-semibold" style={{ color: "var(--accent)" }}>
+                                {b.bauTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}% (Tier 2)` : b.bauTier === 1 ? `${b.kpi1Rate}% (Tier 1)` : "Not achieved"}
+                              </p>
+                            </div>
+                            <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
+                              <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Campaign Rate</p>
+                              <p className="font-semibold" style={{ color: "var(--accent)" }}>
+                                {b.campTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}% (Tier 2)` : b.campTier === 1 ? `${b.kpi1Rate}% (Tier 1)` : b.campaignDayGMVPerHour === 0 ? "—" : "Not achieved"}
+                              </p>
+                            </div>
                           </div>
                         ) : (
                           <p className="text-xs" style={{ color: "var(--text-muted)" }}>Commission rate not set for this month</p>
