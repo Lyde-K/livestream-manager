@@ -502,6 +502,8 @@ export default function LivestreamImportPage() {
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
   const [result, setResult]           = useState<{ inserted: number; updated?: number; skipped: number; unmatched: number; unmatchedTitles?: string[]; adsCostMatched?: number } | null>(null);
+  const [dbSessions, setDbSessions]   = useState<{ summary: { total: number; totalGMV: number; byType: { adminCreated: number; shopeeImported: number; tiktokImported: number } }; sessions: Array<{ id: string; externalRef: string | null; platform: string; status: string; scheduledStart: string; gmv: number | null; liveHost: { displayName: string } | null; title: string | null }> } | null>(null);
+  const [dbLoading, setDbLoading]     = useState(false);
 
   const sessionsRef = useRef<HTMLInputElement>(null);
   const adsCostRef  = useRef<HTMLInputElement>(null);
@@ -512,6 +514,16 @@ export default function LivestreamImportPage() {
       setHosts(d.map(h => ({ id: h.id, displayName: h.displayName })));
     });
   }, []);
+
+  useEffect(() => {
+    if (!brandId || !month) { setDbSessions(null); return; }
+    setDbLoading(true);
+    fetch(`/api/admin/sessions/debug?brandId=${brandId}&month=${month}&platform=${platform}`)
+      .then(r => r.json())
+      .then(d => setDbSessions(d))
+      .catch(() => setDbSessions(null))
+      .finally(() => setDbLoading(false));
+  }, [brandId, month, platform]);
 
   // Reset file when platform changes
   function handlePlatformChange(p: Platform) {
@@ -777,6 +789,55 @@ export default function LivestreamImportPage() {
               />
             </div>
           </div>
+
+          {/* Existing DB sessions for this brand+month */}
+          {brandId && month && (
+            <div className="rounded-lg border p-3 space-y-1.5 text-xs" style={{ borderColor: "var(--border)", background: "var(--bg-subtle)" }}>
+              <div className="flex items-center justify-between">
+                <span className="font-semibold" style={{ color: "var(--text-secondary)" }}>
+                  Existing sessions in DB for {month}
+                </span>
+                {dbLoading && <span style={{ color: "var(--text-muted)" }}>Loading…</span>}
+              </div>
+              {dbSessions && !dbLoading && (
+                <>
+                  <div className="flex gap-4 flex-wrap">
+                    <span>Total: <b>{dbSessions.summary.total}</b></span>
+                    <span>GMV: <b>RM {(dbSessions.summary.totalGMV ?? 0).toLocaleString("en-MY", { maximumFractionDigits: 2 })}</b></span>
+                    <span style={{ color: dbSessions.summary.byType.adminCreated > 0 ? "#f59e0b" : "var(--text-muted)" }}>
+                      Admin-created: <b>{dbSessions.summary.byType.adminCreated}</b>
+                    </span>
+                    <span>
+                      {platform === "SHOPEE" ? "SP- imported" : "TT- imported"}: <b>{platform === "SHOPEE" ? dbSessions.summary.byType.shopeeImported : dbSessions.summary.byType.tiktokImported}</b>
+                    </span>
+                  </div>
+                  {dbSessions.sessions.length > 0 && (
+                    <div className="mt-1 max-h-36 overflow-y-auto space-y-0.5">
+                      {dbSessions.sessions.map(s => {
+                        const isAdmin = !s.externalRef || (!s.externalRef.startsWith("TT-") && !s.externalRef.startsWith("SP-"));
+                        const date = new Date(s.scheduledStart).toLocaleDateString("en-MY", { day: "2-digit", month: "short", timeZone: "Asia/Kuala_Lumpur" });
+                        return (
+                          <div key={s.id} className="flex gap-2 items-center" style={{ color: isAdmin ? "#f59e0b" : "var(--text-muted)" }}>
+                            <span className="w-14 shrink-0">{date}</span>
+                            <span className="w-16 shrink-0 font-mono text-[10px]">{isAdmin ? "admin" : (s.externalRef?.slice(0, 12) ?? "—")}</span>
+                            <span className="truncate flex-1">{s.liveHost?.displayName ?? "—"}: {s.title ?? "—"}</span>
+                            <span className="shrink-0 font-semibold" style={{ color: (s.gmv ?? 0) > 0 ? "var(--text-primary)" : "var(--text-muted)" }}>
+                              RM {(s.gmv ?? 0).toLocaleString("en-MY", { maximumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {dbSessions.summary.byType.adminCreated > 0 && (
+                    <p style={{ color: "#f59e0b" }}>
+                      ⚠ Admin-created sessions won&apos;t be deleted during import — they&apos;ll only be updated if a CSV row matches the host &amp; time (±2h).
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <FileSlot
             label={platform === "TIKTOK" ? "TikTok Session Export (.xlsx)" : "Shopee Livestream Export (.csv)"}
