@@ -102,6 +102,7 @@ model Brand {
   affiliateProductCosts AffiliateProductCost[]
   gmvTargets            MonthlyGMVTarget[]
   campaigns             Campaign[]
+  brandKpiConfigs       BrandKPIConfig[]
 }
 
 model Campaign {
@@ -636,4 +637,25 @@ model RLAuditLog {
   createdAt   DateTime @default(now())
   @@index([liveHostId])
   @@index([createdAt])
+}
+
+model BrandKPIConfig {
+  id           String  @id @default(cuid())
+  brandId      String
+  brand        Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  month        Int     // 1-based
+  year         Int
+  plannedHours Int     @default(0)
+  kpiRate      Float   @default(1.0)   // commission % rate per tier (e.g. 1.0 = 1%, 0.5 = 0.5%)
+
+  bauTier1     Float   @default(0)     // BAU GMV/hr tier1 threshold
+  bauTier2     Float   @default(0)     // BAU GMV/hr tier2 threshold
+  campTier1    Float   @default(0)     // Campaign GMV/hr tier1 threshold
+  campTier2    Float   @default(0)     // Campaign GMV/hr tier2 threshold
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([brandId, month, year])
+  @@index([month, year])
 }

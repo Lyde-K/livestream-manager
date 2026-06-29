@@ -1,236 +1,487 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Modal } from "@/components/ui/modal";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Award, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-
-interface Host { id: string; displayName: string; user: { name: string }; }
-interface Brand { id: string; name: string; platform: string; }
-interface KPI {
-  id: string; liveHostId: string; brandId: string; month: number; year: number;
-  tier1KpiNormal: number; tier2KpiNormal: number; tier1KpiCampaign: number; tier2KpiCampaign: number;
-  baseCommissionRate: number; tier1Rate: number; tier2Rate: number;
-  liveHost: { user: { name: string }; displayName: string };
-  brand: { name: string };
-}
+import { Wand2, Save, Info, ExternalLink } from "lucide-react";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-export default function KPIPage() {
+interface BrandInfo {
+  id: string;
+  name: string;
+  platform: string;
+  color: string;
+}
+
+interface KPIConfigSaved {
+  id: string;
+  plannedHours: number;
+  kpiRate: number;
+  bauTier1: number;
+  bauTier2: number;
+  campTier1: number;
+  campTier2: number;
+}
+
+interface PrevMonth {
+  bauGMV: number;
+  bauHours: number;
+  campGMV: number;
+  campHours: number;
+}
+
+interface Recommended {
+  bauTier1: number;
+  bauTier2: number;
+  campTier1: number;
+  campTier2: number;
+}
+
+interface BrandRow {
+  brand: BrandInfo;
+  gmvTarget: number;
+  kpiConfig: KPIConfigSaved | null;
+  prevMonth: PrevMonth;
+  recommended: Recommended;
+  estCommission: { kpi1: number; kpi2: number } | null;
+}
+
+interface EditState {
+  plannedHours: number;
+  kpiRate: number;
+  bauTier1: number;
+  bauTier2: number;
+  campTier1: number;
+  campTier2: number;
+  /** true if T1/T2 values came from recommendation (not saved config) */
+  isRecommended: boolean;
+}
+
+function initEdit(row: BrandRow): EditState {
+  if (row.kpiConfig) {
+    return {
+      plannedHours: row.kpiConfig.plannedHours,
+      kpiRate: row.kpiConfig.kpiRate,
+      bauTier1: row.kpiConfig.bauTier1,
+      bauTier2: row.kpiConfig.bauTier2,
+      campTier1: row.kpiConfig.campTier1,
+      campTier2: row.kpiConfig.campTier2,
+      isRecommended: false,
+    };
+  }
+  return {
+    plannedHours: 0,
+    kpiRate: 1.0,
+    bauTier1: row.recommended.bauTier1,
+    bauTier2: row.recommended.bauTier2,
+    campTier1: row.recommended.campTier1,
+    campTier2: row.recommended.campTier2,
+    isRecommended: true,
+  };
+}
+
+function NumInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  className?: string;
+}) {
+  return (
+    <Input
+      type="number"
+      step="0.01"
+      value={value === 0 ? "" : value}
+      placeholder="0"
+      className={className}
+      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+      style={{ width: "90px" }}
+    />
+  );
+}
+
+export default function BrandKPIPage() {
   const now = new Date();
-  const [kpis, setKpis] = useState<KPI[]>([]);
-  const [hosts, setHosts] = useState<Host[]>([]);
-  const [brands, setBrands] = useState<Brand[]>([]);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<KPI | null>(null);
-  const [form, setForm] = useState({
-    liveHostId: "", brandId: "", month: now.getMonth() + 1, year: now.getFullYear(),
-    tier1KpiNormal: "", tier2KpiNormal: "", tier1KpiCampaign: "", tier2KpiCampaign: "",
-    baseCommissionRate: "", tier1Rate: "", tier2Rate: "",
-  });
+  const [rows, setRows] = useState<BrandRow[]>([]);
+  const [edits, setEdits] = useState<Record<string, EditState>>({});
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
-  async function load() {
-    const [k, h, b] = await Promise.all([
-      fetch(`/api/kpi?month=${month}&year=${year}`),
-      fetch("/api/hosts"),
-      fetch("/api/brands"),
-    ]);
-    setKpis(await k.json());
-    setHosts(await h.json());
-    setBrands(await b.json());
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/brand-kpi?month=${month}&year=${year}`);
+      const data = await res.json() as { brands: BrandRow[] };
+      setRows(data.brands);
+      const initialEdits: Record<string, EditState> = {};
+      for (const row of data.brands) {
+        initialEdits[row.brand.id] = initEdit(row);
+      }
+      setEdits(initialEdits);
+    } finally {
+      setLoading(false);
+    }
+  }, [month, year]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function updateEdit(brandId: string, patch: Partial<EditState>) {
+    setEdits((prev) => ({
+      ...prev,
+      [brandId]: { ...prev[brandId], ...patch, isRecommended: false },
+    }));
   }
 
-  useEffect(() => { load(); }, [month, year]);
-
-  function openCreate() {
-    setEditing(null);
-    setForm({ liveHostId: "", brandId: "", month, year, tier1KpiNormal: "", tier2KpiNormal: "", tier1KpiCampaign: "", tier2KpiCampaign: "", baseCommissionRate: "", tier1Rate: "", tier2Rate: "" });
-    setOpen(true);
-  }
-  function openEdit(k: KPI) {
-    setEditing(k);
-    setForm({ liveHostId: k.liveHostId, brandId: k.brandId, month: k.month, year: k.year,
-      tier1KpiNormal: String(k.tier1KpiNormal), tier2KpiNormal: String(k.tier2KpiNormal),
-      tier1KpiCampaign: String(k.tier1KpiCampaign), tier2KpiCampaign: String(k.tier2KpiCampaign),
-      baseCommissionRate: String(k.baseCommissionRate), tier1Rate: String(k.tier1Rate), tier2Rate: String(k.tier2Rate),
+  function recommendAll() {
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        next[row.brand.id] = {
+          ...next[row.brand.id],
+          bauTier1: row.recommended.bauTier1,
+          bauTier2: row.recommended.bauTier2,
+          campTier1: row.recommended.campTier1,
+          campTier2: row.recommended.campTier2,
+          isRecommended: true,
+        };
+      }
+      return next;
     });
-    setOpen(true);
   }
 
-  async function save() {
+  async function saveAll() {
     setSaving(true);
-    const url = editing ? `/api/kpi/${editing.id}` : "/api/kpi";
-    const method = editing ? "PUT" : "POST";
-    const body = { ...form, tier1KpiNormal: Number(form.tier1KpiNormal), tier2KpiNormal: Number(form.tier2KpiNormal), tier1KpiCampaign: Number(form.tier1KpiCampaign), tier2KpiCampaign: Number(form.tier2KpiCampaign), baseCommissionRate: Number(form.baseCommissionRate), tier1Rate: Number(form.tier1Rate), tier2Rate: Number(form.tier2Rate) };
-    await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    setSaving(false); setOpen(false); load();
+    try {
+      const brandsPayload = rows.map((row) => {
+        const edit = edits[row.brand.id] ?? initEdit(row);
+        return {
+          brandId: row.brand.id,
+          plannedHours: edit.plannedHours,
+          kpiRate: edit.kpiRate,
+          bauTier1: edit.bauTier1,
+          bauTier2: edit.bauTier2,
+          campTier1: edit.campTier1,
+          campTier2: edit.campTier2,
+        };
+      });
+      const res = await fetch("/api/brand-kpi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, year, brands: brandsPayload }),
+      });
+      if (res.ok) {
+        showToast("KPI settings saved!");
+        await load();
+      } else {
+        showToast("Save failed. Please try again.");
+      }
+    } finally {
+      setSaving(false);
+    }
   }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  const stdBrands = rows.filter((r) => (edits[r.brand.id]?.kpiRate ?? 1.0) >= 1.0);
+  const redBrands = rows.filter((r) => (edits[r.brand.id]?.kpiRate ?? 1.0) < 1.0);
+
+  function renderTable(section: BrandRow[], title: string, rateLabel: string) {
+    if (section.length === 0) return null;
+    return (
+      <div className="section-card" style={{ marginBottom: "1.5rem" }}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{title}</span>
+          <Badge variant="secondary">{rateLabel}</Badge>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>({section.length} brand{section.length !== 1 ? "s" : ""})</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="data-table" style={{ minWidth: "1100px" }}>
+            <thead>
+              <tr>
+                <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Brand</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Platform</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>Planned hrs</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>KPI rate %</th>
+                <th style={{ textAlign: "center" }}>Type</th>
+                <th style={{ textAlign: "right" }}>Prev GMV</th>
+                <th style={{ textAlign: "right" }}>Prev hrs</th>
+                <th style={{ textAlign: "right" }}>Avg/hr</th>
+                <th style={{ textAlign: "right", color: "var(--color-warning, #f59e0b)" }}>Rec T1</th>
+                <th style={{ textAlign: "right", color: "var(--color-warning, #f59e0b)" }}>Rec T2</th>
+                <th style={{ textAlign: "right" }}>T1 Target</th>
+                <th style={{ textAlign: "right" }}>T2 Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              {section.map((row) => {
+                const edit = edits[row.brand.id];
+                if (!edit) return null;
+                const bauAvg = row.prevMonth.bauHours > 0 ? row.prevMonth.bauGMV / row.prevMonth.bauHours : 0;
+                const campAvg = row.prevMonth.campHours > 0 ? row.prevMonth.campGMV / row.prevMonth.campHours : 0;
+                return (
+                  <>
+                    {/* BAU row */}
+                    <tr key={`${row.brand.id}-bau`}>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", fontWeight: 500 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: row.brand.color, flexShrink: 0, display: "inline-block" }} />
+                          {row.brand.name}
+                        </span>
+                      </td>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", color: "var(--text-secondary)" }}>
+                        {row.brand.platform}
+                      </td>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
+                        <NumInput
+                          value={edit.plannedHours}
+                          onChange={(v) => updateEdit(row.brand.id, { plannedHours: v })}
+                          className="text-right"
+                        />
+                      </td>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
+                        <Select
+                          value={edit.kpiRate}
+                          onChange={(e) => updateEdit(row.brand.id, { kpiRate: Number(e.target.value) })}
+                          style={{ width: "70px" }}
+                        >
+                          <option value={1.0}>1.0%</option>
+                          <option value={0.5}>0.5%</option>
+                        </Select>
+                      </td>
+                      <td><Badge variant="secondary">BAU</Badge></td>
+                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                        {row.prevMonth.bauGMV > 0 ? formatCurrency(row.prevMonth.bauGMV) : "—"}
+                      </td>
+                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                        {row.prevMonth.bauHours > 0 ? row.prevMonth.bauHours.toFixed(1) + "h" : "—"}
+                      </td>
+                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                        {bauAvg > 0 ? formatCurrency(bauAvg) + "/h" : "—"}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
+                          {row.recommended.bauTier1 > 0 ? formatCurrency(row.recommended.bauTier1) : "—"}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
+                          {row.recommended.bauTier2 > 0 ? formatCurrency(row.recommended.bauTier2) : "—"}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "flex-end" }}>
+                          {edit.isRecommended && <span style={{ fontSize: "0.65em", padding: "1px 4px", background: "var(--color-warning, #f59e0b)", color: "#fff", borderRadius: "4px", fontWeight: 600 }}>Rec</span>}
+                          <NumInput
+                            value={edit.bauTier1}
+                            onChange={(v) => updateEdit(row.brand.id, { bauTier1: v })}
+                            className="text-right"
+                          />
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <NumInput
+                          value={edit.bauTier2}
+                          onChange={(v) => updateEdit(row.brand.id, { bauTier2: v })}
+                          className="text-right"
+                        />
+                      </td>
+                    </tr>
+                    {/* Campaign row */}
+                    <tr key={`${row.brand.id}-camp`}>
+                      <td><Badge variant="warning">Campaign</Badge></td>
+                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                        {row.prevMonth.campGMV > 0 ? formatCurrency(row.prevMonth.campGMV) : "—"}
+                      </td>
+                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                        {row.prevMonth.campHours > 0 ? row.prevMonth.campHours.toFixed(1) + "h" : "—"}
+                      </td>
+                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                        {campAvg > 0 ? formatCurrency(campAvg) + "/h" : "—"}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
+                          {row.recommended.campTier1 > 0 ? formatCurrency(row.recommended.campTier1) : "—"}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
+                          {row.recommended.campTier2 > 0 ? formatCurrency(row.recommended.campTier2) : "—"}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "flex-end" }}>
+                          {edit.isRecommended && <span style={{ fontSize: "0.65em", padding: "1px 4px", background: "var(--color-warning, #f59e0b)", color: "#fff", borderRadius: "4px", fontWeight: 600 }}>Rec</span>}
+                          <NumInput
+                            value={edit.campTier1}
+                            onChange={(v) => updateEdit(row.brand.id, { campTier1: v })}
+                            className="text-right"
+                          />
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <NumInput
+                          value={edit.campTier2}
+                          onChange={(v) => updateEdit(row.brand.id, { campTier2: v })}
+                          className="text-right"
+                        />
+                      </td>
+                    </tr>
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // Commission estimate table
+  const commRows = rows.filter((r) => r.gmvTarget > 0);
+  const totalKpi1 = commRows.reduce((s, r) => {
+    const kpiRate = edits[r.brand.id]?.kpiRate ?? 1.0;
+    return s + r.gmvTarget * (kpiRate / 100);
+  }, 0);
+  const totalKpi2 = totalKpi1;
 
   return (
     <div className="space-y-5 animate-in">
+      {/* Toast */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            zIndex: 9999,
+            background: "var(--color-success, #22c55e)",
+            color: "#fff",
+            padding: "10px 20px",
+            borderRadius: "8px",
+            fontWeight: 500,
+            fontSize: "0.9rem",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>KPI Settings</h1>
           <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>
-            Set GMV/hour targets and commission rates per host, brand, and month
+            Set GMV/hour targets and commission rates per brand for the selected month
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="w-28">
-            {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </Select>
           <Select value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24">
-            {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
+            {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
           </Select>
-          <Button onClick={openCreate}><Plus size={14} /> Add KPI</Button>
+          <Button variant="secondary" onClick={recommendAll}>
+            <Wand2 size={14} /> Recommend all
+          </Button>
+          <Button onClick={saveAll} loading={saving}>
+            <Save size={14} /> Save all
+          </Button>
         </div>
       </div>
 
+      {/* Info banner */}
       <div className="alert alert-info">
         <Info size={15} className="flex-shrink-0 mt-0.5" />
         <div>
-          <strong>How KPI Tiers Work:</strong> Set Tier 1 &amp; Tier 2 GMV/hour thresholds for normal and campaign days separately.
-          If the host&apos;s average GMV/hour (normal days) reaches Tier 2 → they earn the Tier 2 commission rate on total GMV.
-          Tier 1 → Tier 1 rate. Below both → Base rate.
+          <strong>How it works:</strong> Recommended T1 = last month avg/hr × 1.3, T2 = × 1.8.
+          KPI rate % is the commission paid on total GMV when the tier is achieved.
+          Values shown in <span style={{ color: "var(--color-warning, #f59e0b)", fontWeight: 600 }}>amber</span> are auto-recommended and not yet saved.
         </div>
       </div>
 
-      <div className="section-card">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Host</th>
-              <th>Brand</th>
-              <th className="text-right">T1 KPI (Normal)</th>
-              <th className="text-right">T2 KPI (Normal)</th>
-              <th className="text-right">T1 KPI (Campaign)</th>
-              <th className="text-right">Base %</th>
-              <th className="text-right">T1 %</th>
-              <th className="text-right">T2 %</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {kpis.length === 0 && (
-              <tr>
-                <td colSpan={9}>
-                  <div className="empty-state">
-                    <Award size={24} className="mx-auto mb-2 opacity-40" />
-                    No KPI configured for {MONTHS[month-1]} {year}
-                  </div>
-                </td>
-              </tr>
-            )}
-            {kpis.map((k) => (
-              <tr key={k.id}>
-                <td className="font-medium">{k.liveHost.user.name}</td>
-                <td style={{ color: "var(--text-secondary)" }}>{k.brand.name}</td>
-                <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(k.tier1KpiNormal)}/hr</td>
-                <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(k.tier2KpiNormal)}/hr</td>
-                <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(k.tier1KpiCampaign)}/hr</td>
-                <td className="text-right"><Badge variant="secondary">{k.baseCommissionRate}%</Badge></td>
-                <td className="text-right"><Badge variant="warning">{k.tier1Rate}%</Badge></td>
-                <td className="text-right"><Badge variant="success">{k.tier2Rate}%</Badge></td>
-                <td className="text-right">
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(k)}><Pencil size={12} /> Edit</Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit KPI" : "Add KPI Config"} size="xl">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Live Host</label>
-              <Select value={form.liveHostId} onChange={(e) => setForm({...form, liveHostId: e.target.value})}>
-                <option value="">Select host…</option>
-                {hosts.map(h => <option key={h.id} value={h.id}>{h.user.name}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Brand</label>
-              <Select value={form.brandId} onChange={(e) => setForm({...form, brandId: e.target.value})}>
-                <option value="">Select brand…</option>
-                {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Month</label>
-              <Select value={form.month} onChange={(e) => setForm({...form, month: Number(e.target.value)})}>
-                {MONTHS.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Year</label>
-              <Select value={form.year} onChange={(e) => setForm({...form, year: Number(e.target.value)})}>
-                {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
-              </Select>
-            </div>
-          </div>
-
-          <div className="pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-            <div className="text-sm font-semibold mb-2" style={{ color: "var(--text-primary)" }}>Normal Days — GMV/hour Targets</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Tier 1 (RM/hr)</label>
-                <Input type="number" value={form.tier1KpiNormal} onChange={(e) => setForm({...form, tier1KpiNormal: e.target.value})} placeholder="800" />
-              </div>
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Tier 2 (RM/hr)</label>
-                <Input type="number" value={form.tier2KpiNormal} onChange={(e) => setForm({...form, tier2KpiNormal: e.target.value})} placeholder="1500" />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-            <div className="text-sm font-semibold mb-2" style={{ color: "var(--text-primary)" }}>Campaign Days — GMV/hour Targets</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Tier 1 (RM/hr)</label>
-                <Input type="number" value={form.tier1KpiCampaign} onChange={(e) => setForm({...form, tier1KpiCampaign: e.target.value})} placeholder="2000" />
-              </div>
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Tier 2 (RM/hr)</label>
-                <Input type="number" value={form.tier2KpiCampaign} onChange={(e) => setForm({...form, tier2KpiCampaign: e.target.value})} placeholder="3500" />
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-            <div className="text-sm font-semibold mb-2" style={{ color: "var(--text-primary)" }}>Commission Rates (% of total GMV)</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Base Rate (%)</label>
-                <Input type="number" step="0.1" value={form.baseCommissionRate} onChange={(e) => setForm({...form, baseCommissionRate: e.target.value})} placeholder="1.0" />
-              </div>
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Tier 1 Rate (%)</label>
-                <Input type="number" step="0.1" value={form.tier1Rate} onChange={(e) => setForm({...form, tier1Rate: e.target.value})} placeholder="1.5" />
-              </div>
-              <div>
-                <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>Tier 2 Rate (%)</label>
-                <Input type="number" step="0.1" value={form.tier2Rate} onChange={(e) => setForm({...form, tier2Rate: e.target.value})} placeholder="2.0" />
-              </div>
-            </div>
-          </div>
+      {loading ? (
+        <div className="section-card" style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
+          Loading…
         </div>
-        <div className="flex gap-2 justify-end mt-4 pt-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={save} loading={saving}>Save KPI</Button>
-        </div>
-      </Modal>
+      ) : (
+        <>
+          {renderTable(stdBrands, "Standard Tier", "1.0% KPI rate")}
+          {renderTable(redBrands, "Reduced Tier", "0.5% KPI rate")}
+
+          {/* Commission estimate */}
+          {commRows.length > 0 && (
+            <div className="section-card">
+              <div className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
+                Estimated Commission (if KPI achieved)
+              </div>
+              <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                Based on GMV targets for {MONTHS[month - 1]} {year}. Commission = GMV Target × KPI rate.
+              </p>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Brand</th>
+                    <th className="text-right">GMV Target</th>
+                    <th className="text-right">KPI Rate</th>
+                    <th className="text-right">Est. Commission (KPI1)</th>
+                    <th className="text-right">Est. Commission (KPI2)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {commRows.map((row) => {
+                    const kpiRate = edits[row.brand.id]?.kpiRate ?? 1.0;
+                    const est = row.gmvTarget * (kpiRate / 100);
+                    return (
+                      <tr key={row.brand.id}>
+                        <td className="font-medium">
+                          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: row.brand.color, flexShrink: 0, display: "inline-block" }} />
+                            {row.brand.name}
+                          </span>
+                        </td>
+                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(row.gmvTarget)}</td>
+                        <td className="text-right"><Badge variant="secondary">{kpiRate}%</Badge></td>
+                        <td className="text-right">{formatCurrency(est)}</td>
+                        <td className="text-right">{formatCurrency(est)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
+                    <td>Total</td>
+                    <td className="text-right">{formatCurrency(commRows.reduce((s, r) => s + r.gmvTarget, 0))}</td>
+                    <td />
+                    <td className="text-right">{formatCurrency(totalKpi1)}</td>
+                    <td className="text-right">{formatCurrency(totalKpi2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Link to old host-level page */}
+          <div style={{ textAlign: "right" }}>
+            <a
+              href="/admin/kpi/host"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "0.82rem", color: "var(--text-muted)" }}
+            >
+              Advanced: per-host KPI overrides <ExternalLink size={12} />
+            </a>
+          </div>
+        </>
+      )}
     </div>
   );
 }
