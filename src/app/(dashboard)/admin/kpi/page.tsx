@@ -370,13 +370,13 @@ export default function BrandKPIPage() {
     );
   }
 
-  // Commission estimate table
-  const commRows = rows.filter((r) => r.gmvTarget > 0);
-  const totalKpi1 = commRows.reduce((s, r) => {
+  // Commission estimate table — show all brands; only sum rows with a GMV target
+  const commRows = rows;
+  const totalKpi1 = rows.filter(r => r.gmvTarget > 0).reduce((s, r) => {
     const k1 = edits[r.brand.id]?.kpi1Rate ?? 1.0;
     return s + r.gmvTarget * (k1 / 100);
   }, 0);
-  const totalKpi2 = commRows.reduce((s, r) => {
+  const totalKpi2 = rows.filter(r => r.gmvTarget > 0).reduce((s, r) => {
     const k1 = edits[r.brand.id]?.kpi1Rate ?? 1.0;
     const k2 = edits[r.brand.id]?.kpi2Rate ?? 0.5;
     return s + r.gmvTarget * ((k1 + k2) / 100);
@@ -448,7 +448,7 @@ export default function BrandKPIPage() {
           {renderTable(rows)}
 
           {/* Commission estimate */}
-          {commRows.length > 0 && (
+          {rows.length > 0 && (
             <div className="section-card">
               <div style={{ marginBottom: "4px" }}>
                 <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -472,10 +472,12 @@ export default function BrandKPIPage() {
                 </thead>
                 <tbody>
                   {commRows.map((row) => {
-                    const k1 = edits[row.brand.id]?.kpi1Rate ?? 1.0;
-                    const k2 = edits[row.brand.id]?.kpi2Rate ?? 0.5;
-                    const estK1 = row.gmvTarget * (k1 / 100);
-                    const estK2 = row.gmvTarget * ((k1 + k2) / 100);
+                    const edit = edits[row.brand.id];
+                    const k1 = edit?.kpi1Rate ?? 1.0;
+                    const k2 = edit?.kpi2Rate ?? 0.5;
+                    const hasTarget = row.gmvTarget > 0;
+                    const estK1 = hasTarget ? row.gmvTarget * (k1 / 100) : null;
+                    const estK2 = hasTarget ? row.gmvTarget * ((k1 + k2) / 100) : null;
                     return (
                       <tr key={row.brand.id}>
                         <td className="font-medium">
@@ -484,11 +486,17 @@ export default function BrandKPIPage() {
                             {row.brand.name}
                           </span>
                         </td>
-                        <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(row.gmvTarget)}</td>
+                        <td className="text-right" style={{ color: hasTarget ? "var(--text-secondary)" : "var(--text-muted)" }}>
+                          {hasTarget ? formatCurrency(row.gmvTarget) : <span style={{ fontSize: "0.8em" }}>No target</span>}
+                        </td>
                         <td className="text-center"><Badge variant="secondary">{k1}%</Badge></td>
                         <td className="text-center"><Badge variant="secondary">{k2}%</Badge></td>
-                        <td className="text-right">{formatCurrency(estK1)}</td>
-                        <td className="text-right">{formatCurrency(estK2)}</td>
+                        <td className="text-right" style={{ color: hasTarget ? undefined : "var(--text-muted)" }}>
+                          {estK1 !== null ? formatCurrency(estK1) : "—"}
+                        </td>
+                        <td className="text-right" style={{ color: hasTarget ? undefined : "var(--text-muted)" }}>
+                          {estK2 !== null ? formatCurrency(estK2) : "—"}
+                        </td>
                       </tr>
                     );
                   })}
