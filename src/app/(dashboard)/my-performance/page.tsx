@@ -22,18 +22,23 @@ export default function MyPerformancePage() {
 
   useEffect(() => {
     setLoading(true);
+    setStats(null);
     fetch(`/api/performance?month=${month}&year=${year}`)
       .then(r => r.json())
-      .then(d => { setStats(d); setLoading(false); });
+      .then(d => { setStats(d); setLoading(false); })
+      .catch(() => setLoading(false));
   }, [month, year]);
+
+  const monthLabel = `${MONTHS[month - 1]} ${year}`;
 
   return (
     <div className="space-y-4 animate-in max-w-2xl mx-auto">
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>My Performance</h1>
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>{MONTHS[month - 1]} {year}</p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>{monthLabel}</p>
         </div>
         <div className="flex items-center gap-1.5">
           <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="w-24 text-sm">
@@ -52,7 +57,9 @@ export default function MyPerformancePage() {
       )}
 
       {!loading && !stats && (
-        <div className="section-card py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No data for this period.</div>
+        <div className="section-card py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+          No sessions found for {monthLabel}.
+        </div>
       )}
 
       {!loading && stats && (
@@ -60,12 +67,7 @@ export default function MyPerformancePage() {
 
           {/* 4 stat chips */}
           <div className="grid grid-cols-2 gap-3">
-            <Chip
-              icon={TrendingUp}
-              label="Total GMV"
-              value={formatCurrency(stats.totalGMV)}
-              color="var(--accent)"
-            />
+            <Chip icon={TrendingUp} label="Total GMV" value={formatCurrency(stats.totalGMV)} color="var(--accent)" />
             <Chip
               icon={Clock}
               label="Hours Done"
@@ -77,7 +79,7 @@ export default function MyPerformancePage() {
               icon={AlertTriangle}
               label="Late Sessions"
               value={String(stats.lateSessions)}
-              sub={stats.lateSessions > 5 ? "Threshold exceeded" : `${5 - stats.lateSessions} remaining`}
+              sub={stats.lateSessions > 5 ? "Threshold exceeded" : `${Math.max(0, 5 - stats.lateSessions)} remaining`}
               color={stats.lateSessions > 5 ? "var(--danger)" : "var(--warning)"}
             />
             <Chip
@@ -89,16 +91,20 @@ export default function MyPerformancePage() {
             />
           </div>
 
-          {/* Commission card */}
+          {/* My Earnings card */}
           <div className="section-card p-4">
-            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>Estimated Commission</p>
+            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>My Estimated Earnings — {monthLabel}</p>
             <p className="text-3xl font-bold mb-4" style={{ color: "var(--text-primary)" }}>
               {formatCurrency(stats.netCommission)}
             </p>
+
+            {/* Breakdown row */}
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--bg-subtle)" }}>
-                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Base</p>
-                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(stats.estimatedCommission)}</p>
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Base Commission</p>
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                  {formatCurrency(stats.estimatedCommission)}
+                </p>
               </div>
               <div
                 className="rounded-lg p-2.5 text-center"
@@ -113,17 +119,32 @@ export default function MyPerformancePage() {
                 className="rounded-lg p-2.5 text-center"
                 style={{ background: stats.punctualityDeduction > 0 ? "rgba(239,68,68,0.1)" : "var(--bg-subtle)" }}
               >
-                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Punctuality</p>
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Punctuality Deduction</p>
                 <p className="font-semibold" style={{ color: stats.punctualityDeduction > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
                   {stats.punctualityDeduction > 0 ? `−${formatCurrency(stats.punctualityDeduction)}` : "—"}
                 </p>
               </div>
             </div>
+
+            {/* Deduction explanations */}
+            {(stats.hoursDeduction > 0 || stats.punctualityDeduction > 0) && (
+              <div className="mt-3 space-y-1">
+                {stats.hoursDeduction > 0 && (
+                  <p className="text-xs" style={{ color: "var(--danger)" }}>
+                    ⚠ Hours deficit exceeds threshold — 0.5% deduction applied on total GMV
+                  </p>
+                )}
+                {stats.punctualityDeduction > 0 && (
+                  <p className="text-xs" style={{ color: "var(--danger)" }}>
+                    ⚠ More than 5 late sessions — 0.5% deduction applied on total GMV
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Hours + Punctuality side-by-side */}
+          {/* Hours + Punctuality */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Hours */}
             <div className="section-card p-4">
               <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>Hours Tracking</p>
               <div className="space-y-2">
@@ -137,7 +158,7 @@ export default function MyPerformancePage() {
                     {stats.totalActualHours.toFixed(1)}h
                   </span>
                 </div>
-                <div className="progress-track mt-2">
+                <div className="progress-track mt-1">
                   <div
                     className="progress-fill"
                     style={{
@@ -147,18 +168,16 @@ export default function MyPerformancePage() {
                   />
                 </div>
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  {((stats.totalActualHours / (stats.requiredHours || 1)) * 100).toFixed(0)}% completed
-                  {stats.hoursDeficit > 0 && ` · ${stats.hoursDeficit.toFixed(1)}h deficit`}
+                  {((stats.totalActualHours / (stats.requiredHours || 1)) * 100).toFixed(0)}% of required hours
+                  {stats.hoursDeficit > 0 && (
+                    <span style={{ color: stats.hoursDeficit > 5 ? "var(--danger)" : "var(--text-muted)" }}>
+                      {" "}· {stats.hoursDeficit.toFixed(1)}h short
+                    </span>
+                  )}
                 </p>
-                {stats.hoursDeficit > 5 && (
-                  <p className="text-xs" style={{ color: "var(--danger)" }}>
-                    ⚠ Deficit &gt;5h → −0.5% deduction
-                  </p>
-                )}
               </div>
             </div>
 
-            {/* Punctuality */}
             <div className="section-card p-4">
               <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>Punctuality</p>
               <div className="space-y-2">
@@ -185,13 +204,13 @@ export default function MyPerformancePage() {
               </div>
               {stats.lateSessions > 5 && (
                 <p className="text-xs mt-2" style={{ color: "var(--danger)" }}>
-                  ⚠ {stats.lateSessions} late sessions → −0.5% deduction
+                  ⚠ {stats.lateSessions} late — exceeds 5-session limit
                 </p>
               )}
             </div>
           </div>
 
-          {/* KPI by brand — collapsible */}
+          {/* Earnings by brand — collapsible */}
           {stats.byBrand.length > 0 && (
             <div className="section-card p-4">
               <button
@@ -200,52 +219,61 @@ export default function MyPerformancePage() {
                 style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
               >
                 <p className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
-                  Commission by Brand
+                  Earnings by Brand
                 </p>
-                {brandsOpen ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+                {brandsOpen
+                  ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} />
+                  : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
               </button>
 
               {brandsOpen && (
                 <div className="mt-3 space-y-2">
                   {stats.byBrand.map(b => {
-                    const tierLabel = b.bauTier === 2 ? "Tier 2" : b.bauTier === 1 ? "Tier 1" : "—";
-                    const tierColor = b.bauTier === 2 ? "var(--success)" : b.bauTier === 1 ? "var(--warning)" : "var(--text-muted)";
+                    // Determine the effective rate used for this brand's commission
+                    const effectiveRate = b.estimatedCommission > 0 && b.totalGMV > 0
+                      ? (b.estimatedCommission / b.totalGMV) * 100
+                      : null;
+
                     return (
                       <div
                         key={b.brandId}
-                        className="rounded-lg p-3 text-sm"
+                        className="rounded-lg p-3"
                         style={{ background: "var(--bg-subtle)" }}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-xs" style={{ color: "var(--text-primary)" }}>{b.brandName}</span>
-                          <span className="text-xs font-semibold" style={{ color: tierColor }}>{tierLabel}</span>
+                          <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                            {b.brandName}
+                          </span>
+                          <span className="text-xs font-bold" style={{ color: b.estimatedCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                            {formatCurrency(b.estimatedCommission)}
+                          </span>
                         </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div>
-                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">GMV</p>
-                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.totalGMV)}</p>
-                          </div>
-                          <div>
-                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Rate</p>
-                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
-                              {b.kpiConfigFound
-                                ? (b.bauTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}%` : `${b.kpi1Rate}%`)
-                                : "—"}
-                            </p>
-                          </div>
-                          <div>
-                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Commission</p>
-                            <p className="font-semibold" style={{ color: b.estimatedCommission > 0 ? "var(--success)" : "var(--text-secondary)" }}>
-                              {formatCurrency(b.estimatedCommission)}
-                            </p>
-                          </div>
+                        <div className="flex gap-4 text-xs" style={{ color: "var(--text-muted)" }}>
+                          <span>GMV: <strong style={{ color: "var(--text-secondary)" }}>{formatCurrency(b.totalGMV)}</strong></span>
+                          <span>{b.completedSessions} sessions · {b.totalHours.toFixed(1)}h</span>
+                          {effectiveRate !== null && (
+                            <span>Rate: <strong style={{ color: "var(--text-secondary)" }}>{effectiveRate.toFixed(2)}%</strong></span>
+                          )}
                         </div>
                         {!b.kpiConfigFound && (
-                          <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>No KPI config for this month</p>
+                          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                            Commission rate not set for this brand
+                          </p>
                         )}
                       </div>
                     );
                   })}
+
+                  {/* Total row */}
+                  <div
+                    className="rounded-lg p-3 flex items-center justify-between"
+                    style={{ background: "var(--bg-subtle)", borderTop: "1px solid var(--border)" }}
+                  >
+                    <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Total</span>
+                    <span className="text-xs font-bold" style={{ color: "var(--success)" }}>
+                      {formatCurrency(stats.estimatedCommission)}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
