@@ -188,6 +188,7 @@ function findMatchingAdminSession(
 // ── POST /api/import/livestream ───────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  try {
   const session = await auth();
   if (!session || (session.user as { role: string }).role !== "ADMIN")
     return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -379,6 +380,11 @@ export async function POST(req: NextRequest) {
     month,
     brand: brand.name,
   });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[import/livestream POST]", msg);
+    return Response.json({ error: `Import error: ${msg}` }, { status: 500 });
+  }
 }
 
 // ── Merge multiple Shopee rows into one session update ────────────────────────
@@ -637,31 +643,37 @@ export interface AdsCostRow {
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await auth();
-  if (!session || (session.user as { role: string }).role !== "ADMIN")
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+  try {
+    const session = await auth();
+    if (!session || (session.user as { role: string }).role !== "ADMIN")
+      return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const body = await req.json() as { rows: AdsCostRow[] };
-  const { rows } = body;
+    const body = await req.json() as { rows: AdsCostRow[] };
+    const { rows } = body;
 
-  if (!rows?.length) return Response.json({ error: "rows required" }, { status: 400 });
+    if (!rows?.length) return Response.json({ error: "rows required" }, { status: 400 });
 
-  let matched = 0, unmatched = 0;
+    let matched = 0, unmatched = 0;
 
-  for (const r of rows) {
-    const externalRef = `TT-${r.roomId}`;
-    const existing = await prisma.session.findUnique({ where: { externalRef } });
-    if (!existing) { unmatched++; continue; }
+    for (const r of rows) {
+      const externalRef = `TT-${r.roomId}`;
+      const existing = await prisma.session.findUnique({ where: { externalRef } });
+      if (!existing) { unmatched++; continue; }
 
-    await prisma.session.update({
-      where: { externalRef },
-      data: {
-        adsCost:      parseRM(r.cost),
-        grossRevenue: parseRM(r.grossRevenue) || null,
-      },
-    });
-    matched++;
+      await prisma.session.update({
+        where: { externalRef },
+        data: {
+          adsCost:      parseRM(r.cost),
+          grossRevenue: parseRM(r.grossRevenue) || null,
+        },
+      });
+      matched++;
+    }
+
+    return Response.json({ ok: true, matched, unmatched });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[import/livestream PATCH]", msg);
+    return Response.json({ error: `Ads cost import error: ${msg}` }, { status: 500 });
   }
-
-  return Response.json({ ok: true, matched, unmatched });
 }
