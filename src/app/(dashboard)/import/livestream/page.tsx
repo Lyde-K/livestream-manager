@@ -501,7 +501,7 @@ export default function LivestreamImportPage() {
   const [selectedKeys, setSelectedKeys]       = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
-  const [result, setResult]           = useState<{ inserted: number; updated?: number; skipped: number; unmatched: number; adsCostMatched?: number } | null>(null);
+  const [result, setResult]           = useState<{ inserted: number; updated?: number; skipped: number; unmatched: number; unmatchedTitles?: string[]; adsCostMatched?: number } | null>(null);
 
   const sessionsRef = useRef<HTMLInputElement>(null);
   const adsCostRef  = useRef<HTMLInputElement>(null);
@@ -1008,6 +1008,12 @@ export default function LivestreamImportPage() {
             <KV label={platform === "SHOPEE" ? "New sessions created" : "Sessions imported"} value={String(result.inserted)} />
             <KV label="Test sessions skipped" value={String(result.skipped)} />
             <KV label="Unmatched (skipped)" value={String(result.unmatched)} />
+            {result.unmatchedTitles && result.unmatchedTitles.length > 0 && (
+              <div className="mt-2 p-2 rounded text-xs" style={{ background: "var(--bg-danger)", color: "var(--text-danger)" }}>
+                <p className="font-semibold mb-1">Skipped — no host matched in title:</p>
+                {result.unmatchedTitles.map((t, i) => <p key={i} className="truncate opacity-80">{t}</p>)}
+              </div>
+            )}
             {result.adsCostMatched !== undefined && (
               <KV label="Ads cost patched" value={`${result.adsCostMatched} sessions`} />
             )}

@@ -210,7 +210,10 @@ export async function POST(req: NextRequest) {
 
   const [year, mon] = month.split("-").map(Number);
   const monthStart = new Date(`${month}-01T00:00:00+08:00`);
-  const monthEnd   = new Date(new Date(monthStart).setMonth(monthStart.getMonth() + 1));
+  // Compute end as first second of next month in MYT — avoids UTC getMonth() bug on Vercel
+  const nextYear = mon === 12 ? year + 1 : year;
+  const nextMon  = mon === 12 ? 1 : mon + 1;
+  const monthEnd = new Date(`${nextYear}-${String(nextMon).padStart(2, "0")}-01T00:00:00+08:00`);
 
   const [hosts, brand, campaigns] = await Promise.all([
     prisma.liveHost.findMany({ select: { id: true, displayName: true } }),
@@ -323,8 +326,9 @@ export async function POST(req: NextRequest) {
       inserted++;
     }
 
+    const ttUnmatched = preview.filter(p => !p.hostId && !p.likelyTest);
     const skipped = preview.filter(p => !p.hostId || p.likelyTest).length;
-    return Response.json({ ok: true, updated, inserted, skipped, unmatched: preview.filter(p => !p.hostId).length, month, brand: brand.name });
+    return Response.json({ ok: true, updated, inserted, skipped, unmatched: ttUnmatched.length, unmatchedTitles: ttUnmatched.map(p => (p as { roomTitle?: string }).roomTitle ?? "?"), month, brand: brand.name });
   }
 
   // ── Shopee confirm: match-and-merge ───────────────────────────────────────
@@ -379,6 +383,7 @@ export async function POST(req: NextRequest) {
     inserted++;
   }
 
+  const unmatchedRows = preview.filter(p => !p.hostId && !p.likelyTest);
   skipped = preview.filter(p => !p.hostId || p.likelyTest).length;
 
   return Response.json({
@@ -386,7 +391,8 @@ export async function POST(req: NextRequest) {
     updated,
     inserted,
     skipped,
-    unmatched: preview.filter(p => !p.hostId).length,
+    unmatched: unmatchedRows.length,
+    unmatchedTitles: unmatchedRows.map(p => (p as { roomTitle?: string; key?: string }).roomTitle ?? (p as { key?: string }).key ?? "?"),
     month,
     brand: brand.name,
   });
