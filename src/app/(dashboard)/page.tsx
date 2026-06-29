@@ -13,7 +13,6 @@ import { format } from "date-fns";
 import { formatMYT } from "@/lib/myt";
 
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
@@ -83,12 +82,7 @@ async function fetchAdminStats(
 }
 
 function getAdminStats(start: Date, end: Date, brandId?: string) {
-  const key = `${start.toISOString()}_${end.toISOString()}_${brandId ?? "all"}`;
-  return unstable_cache(
-    () => fetchAdminStats(start, end, brandId),
-    ["admin-stats", key],
-    { revalidate: 0 },
-  )();
+  return fetchAdminStats(start, end, brandId);
 }
 
 async function getLiveHostStats(userId: string) {
