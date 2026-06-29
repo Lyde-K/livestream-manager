@@ -203,8 +203,13 @@ export async function getHostMonthlyStats(
       const kpi2 = kpi2Rate;
 
       // ── BAU commission ────────────────────────────────────────────────
-      if (kpi.bauTier1 > 0) {
-        if (kpi.bauTier2 > 0 && normalGMVPerHour >= kpi.bauTier2) {
+      // When bauTier1 = 0 (no threshold configured), treat as flat rate: tier 1 always achieved.
+      // When bauTier1 > 0, host must meet the threshold to earn commission.
+      if (normalGMV > 0) {
+        if (kpi.bauTier1 === 0) {
+          resolvedBauTier = 1;
+          kpiAchievedTier = 1;
+        } else if (kpi.bauTier2 > 0 && normalGMVPerHour >= kpi.bauTier2) {
           resolvedBauTier = 2;
           kpiAchievedTier = 2;
         } else if (normalGMVPerHour >= kpi.bauTier1) {
@@ -216,8 +221,11 @@ export async function getHostMonthlyStats(
       }
 
       // ── Campaign commission ────────────────────────────────────────────
-      if (kpi.campTier1 > 0 && campaignGMV > 0) {
-        if (kpi.campTier2 > 0 && campaignGMVPerHour >= kpi.campTier2) {
+      // Same flat-rate logic when campTier1 = 0.
+      if (campaignGMV > 0) {
+        if (kpi.campTier1 === 0) {
+          resolvedCampTier = 1;
+        } else if (kpi.campTier2 > 0 && campaignGMVPerHour >= kpi.campTier2) {
           resolvedCampTier = 2;
         } else if (campaignGMVPerHour >= kpi.campTier1) {
           resolvedCampTier = 1;

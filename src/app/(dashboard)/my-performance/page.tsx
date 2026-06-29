@@ -1,9 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
-import { TrendingUp, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
+import { TrendingUp, Clock, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import type { HostMonthlyStats } from "@/lib/commission";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -19,239 +18,260 @@ export default function MyPerformancePage() {
   const [year, setYear] = useState(mY);
   const [stats, setStats] = useState<HostMonthlyStats | null>(null);
   const [loading, setLoading] = useState(false);
+  const [brandsOpen, setBrandsOpen] = useState(false);
 
-  async function load() {
+  useEffect(() => {
     setLoading(true);
-    const res = await fetch(`/api/performance?month=${month}&year=${year}`);
-    setStats(await res.json());
-    setLoading(false);
-  }
-  useEffect(() => { load(); }, [month, year]);
+    fetch(`/api/performance?month=${month}&year=${year}`)
+      .then(r => r.json())
+      .then(d => { setStats(d); setLoading(false); });
+  }, [month, year]);
 
   return (
-    <div className="space-y-6 animate-in">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-4 animate-in max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>My Performance</h1>
-          <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>KPI, hours, punctuality, and commission estimate</p>
+          <h1 className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>My Performance</h1>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>{MONTHS[month - 1]} {year}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="w-28">
-            {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+        <div className="flex items-center gap-1.5">
+          <Select value={month} onChange={e => setMonth(Number(e.target.value))} className="w-24 text-sm">
+            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </Select>
-          <Select value={year} onChange={(e) => setYear(Number(e.target.value))} className="w-24">
-            {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
+          <Select value={year} onChange={e => setYear(Number(e.target.value))} className="w-20 text-sm">
+            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
           </Select>
         </div>
       </div>
 
       {loading && (
-        <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
-          <div className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin mb-2" />
-          <div>Loading…</div>
+        <div className="section-card py-12 text-center" style={{ color: "var(--text-muted)" }}>
+          <div className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin" />
         </div>
       )}
 
       {!loading && !stats && (
-        <div className="section-card empty-state">No data for this period.</div>
+        <div className="section-card py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>No data for this period.</div>
       )}
 
-      {stats && (
-        <div className="space-y-5">
-          {/* Top cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatChip icon={TrendingUp} label="Total GMV" value={formatCurrency(stats.totalGMV)} colorVar="var(--accent)" />
-            <StatChip
+      {!loading && stats && (
+        <div className="space-y-3">
+
+          {/* 4 stat chips */}
+          <div className="grid grid-cols-2 gap-3">
+            <Chip
+              icon={TrendingUp}
+              label="Total GMV"
+              value={formatCurrency(stats.totalGMV)}
+              color="var(--accent)"
+            />
+            <Chip
               icon={Clock}
               label="Hours Done"
               value={`${stats.totalActualHours.toFixed(1)}h`}
               sub={`Required: ${stats.requiredHours.toFixed(1)}h`}
-              warn={stats.hoursDeficit > 5}
-              colorVar={stats.hoursDeficit > 5 ? "var(--danger)" : "var(--success)"}
+              color={stats.hoursDeficit > 5 ? "var(--danger)" : "var(--success)"}
             />
-            <StatChip
-              icon={AlertCircle}
+            <Chip
+              icon={AlertTriangle}
               label="Late Sessions"
               value={String(stats.lateSessions)}
-              sub={stats.lateSessions > 5 ? "⚠ Threshold exceeded" : `${5 - stats.lateSessions} remaining`}
-              warn={stats.lateSessions > 5}
-              colorVar={stats.lateSessions > 5 ? "var(--danger)" : "var(--warning)"}
+              sub={stats.lateSessions > 5 ? "Threshold exceeded" : `${5 - stats.lateSessions} remaining`}
+              color={stats.lateSessions > 5 ? "var(--danger)" : "var(--warning)"}
             />
-            <StatChip
+            <Chip
               icon={CheckCircle2}
               label="Completed"
               value={`${stats.totalCompletedSessions}/${stats.totalScheduledSessions}`}
-              sub="sessions this month"
-              colorVar="var(--accent)"
+              sub="sessions"
+              color="var(--accent)"
             />
           </div>
 
-          {/* Commission estimate — gradient card */}
-          <div className="metric-card-indigo rounded-xl p-5 text-white">
-            <div className="text-sm opacity-80 mb-1">Estimated Commission — {MONTHS[month-1]} {year}</div>
-            <div className="text-3xl font-bold mb-4">{formatCurrency(stats.netCommission)}</div>
-            <div className="grid grid-cols-3 gap-3 text-sm">
-              <div className="bg-white/10 rounded-lg p-2.5 text-center">
-                <div className="opacity-70 text-xs mb-0.5">Base</div>
-                <div className="font-semibold">{formatCurrency(stats.estimatedCommission)}</div>
+          {/* Commission card */}
+          <div className="section-card p-4">
+            <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>Estimated Commission</p>
+            <p className="text-3xl font-bold mb-4" style={{ color: "var(--text-primary)" }}>
+              {formatCurrency(stats.netCommission)}
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--bg-subtle)" }}>
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Base</p>
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(stats.estimatedCommission)}</p>
               </div>
-              <div className={`rounded-lg p-2.5 text-center ${stats.hoursDeduction > 0 ? "bg-red-500/30" : "bg-white/10"}`}>
-                <div className="opacity-70 text-xs mb-0.5">Hours Deduction</div>
-                <div className="font-semibold">{stats.hoursDeduction > 0 ? `-${formatCurrency(stats.hoursDeduction)}` : "–"}</div>
+              <div
+                className="rounded-lg p-2.5 text-center"
+                style={{ background: stats.hoursDeduction > 0 ? "rgba(239,68,68,0.1)" : "var(--bg-subtle)" }}
+              >
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Hours Deduction</p>
+                <p className="font-semibold" style={{ color: stats.hoursDeduction > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
+                  {stats.hoursDeduction > 0 ? `−${formatCurrency(stats.hoursDeduction)}` : "—"}
+                </p>
               </div>
-              <div className={`rounded-lg p-2.5 text-center ${stats.punctualityDeduction > 0 ? "bg-red-500/30" : "bg-white/10"}`}>
-                <div className="opacity-70 text-xs mb-0.5">Punctuality Deduction</div>
-                <div className="font-semibold">{stats.punctualityDeduction > 0 ? `-${formatCurrency(stats.punctualityDeduction)}` : "–"}</div>
+              <div
+                className="rounded-lg p-2.5 text-center"
+                style={{ background: stats.punctualityDeduction > 0 ? "rgba(239,68,68,0.1)" : "var(--bg-subtle)" }}
+              >
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Punctuality</p>
+                <p className="font-semibold" style={{ color: stats.punctualityDeduction > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
+                  {stats.punctualityDeduction > 0 ? `−${formatCurrency(stats.punctualityDeduction)}` : "—"}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Punctuality breakdown */}
-          <div className="section-card p-5">
-            <h2 className="font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Punctuality Breakdown</h2>
-            <div className="space-y-3">
-              {[
-                { label: "Early (5+ min early)", count: stats.earlySessions, colorVar: "var(--accent)" },
-                { label: "On Time", count: stats.onTimeSessions, colorVar: "var(--success)" },
-                { label: "Late", count: stats.lateSessions, colorVar: "var(--warning)" },
-                { label: "Missed", count: stats.missedSessions, colorVar: "var(--danger)" },
-              ].map((row) => {
-                const total = stats.totalScheduledSessions || 1;
-                return (
-                  <div key={row.label} className="flex items-center gap-3">
-                    <div className="w-36 text-sm flex-shrink-0" style={{ color: "var(--text-secondary)" }}>{row.label}</div>
+          {/* Hours + Punctuality side-by-side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Hours */}
+            <div className="section-card p-4">
+              <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>Hours Tracking</p>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: "var(--text-muted)" }}>Required</span>
+                  <span style={{ color: "var(--text-primary)" }}>{stats.requiredHours.toFixed(1)}h</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span style={{ color: "var(--text-muted)" }}>Completed</span>
+                  <span style={{ color: stats.hoursDeficit > 5 ? "var(--danger)" : "var(--success)", fontWeight: 600 }}>
+                    {stats.totalActualHours.toFixed(1)}h
+                  </span>
+                </div>
+                <div className="progress-track mt-2">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.min(100, (stats.totalActualHours / (stats.requiredHours || 1)) * 100)}%`,
+                      background: stats.hoursDeficit > 5 ? "var(--danger)" : "var(--success)",
+                    }}
+                  />
+                </div>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {((stats.totalActualHours / (stats.requiredHours || 1)) * 100).toFixed(0)}% completed
+                  {stats.hoursDeficit > 0 && ` · ${stats.hoursDeficit.toFixed(1)}h deficit`}
+                </p>
+                {stats.hoursDeficit > 5 && (
+                  <p className="text-xs" style={{ color: "var(--danger)" }}>
+                    ⚠ Deficit &gt;5h → −0.5% deduction
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Punctuality */}
+            <div className="section-card p-4">
+              <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>Punctuality</p>
+              <div className="space-y-2">
+                {[
+                  { label: "Early", count: stats.earlySessions, color: "var(--accent)" },
+                  { label: "On Time", count: stats.onTimeSessions, color: "var(--success)" },
+                  { label: "Late", count: stats.lateSessions, color: "var(--warning)" },
+                  { label: "Missed", count: stats.missedSessions, color: "var(--danger)" },
+                ].map(row => (
+                  <div key={row.label} className="flex items-center gap-2">
+                    <span className="text-xs w-14 flex-shrink-0" style={{ color: "var(--text-muted)" }}>{row.label}</span>
                     <div className="flex-1 progress-track">
                       <div
                         className="progress-fill"
-                        style={{ width: `${(row.count / total) * 100}%`, background: row.colorVar }}
+                        style={{
+                          width: `${(row.count / (stats.totalScheduledSessions || 1)) * 100}%`,
+                          background: row.color,
+                        }}
                       />
                     </div>
-                    <div className="w-6 text-sm font-semibold text-right" style={{ color: row.colorVar }}>{row.count}</div>
+                    <span className="text-xs font-semibold w-5 text-right" style={{ color: row.color }}>{row.count}</span>
                   </div>
-                );
-              })}
-            </div>
-            {stats.lateSessions > 5 && (
-              <div className="alert alert-danger mt-3">
-                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-                <span>{stats.lateSessions} late sessions exceeds the 5-session threshold → -0.5% commission deduction applied</span>
+                ))}
               </div>
-            )}
-          </div>
-
-          {/* Hours tracking */}
-          <div className="section-card p-5">
-            <h2 className="font-semibold mb-4" style={{ color: "var(--text-primary)" }}>Hours Tracking</h2>
-            <div className="space-y-3">
-              <div className="kv-row">
-                <span className="kv-label">Required hours this month</span>
-                <span className="kv-value">{stats.requiredHours.toFixed(1)}h</span>
-              </div>
-              <div className="kv-row">
-                <span className="kv-label">Actual hours completed</span>
-                <span
-                  className="kv-value"
-                  style={{ color: stats.hoursDeficit > 5 ? "var(--danger)" : "var(--success)" }}
-                >
-                  {stats.totalActualHours.toFixed(1)}h
-                </span>
-              </div>
-              <div className="progress-track" style={{ height: "10px" }}>
-                <div
-                  className="progress-fill"
-                  style={{
-                    width: `${Math.min(100, (stats.totalActualHours / (stats.requiredHours || 1)) * 100)}%`,
-                    background: stats.hoursDeficit > 5 ? "var(--danger)" : "var(--success)",
-                    height: "10px",
-                  }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
-                <span>{((stats.totalActualHours / (stats.requiredHours || 1)) * 100).toFixed(0)}% completed</span>
-                {stats.hoursDeficit > 0 && (
-                  <span style={{ color: stats.hoursDeficit > 5 ? "var(--danger)" : "var(--text-muted)", fontWeight: stats.hoursDeficit > 5 ? 600 : 400 }}>
-                    Deficit: {stats.hoursDeficit.toFixed(1)}h
-                  </span>
-                )}
-              </div>
-              {stats.hoursDeficit > 5 && (
-                <div className="alert alert-danger">
-                  <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-                  <span>Hours deficit exceeds 5h threshold → -0.5% commission deduction</span>
-                </div>
+              {stats.lateSessions > 5 && (
+                <p className="text-xs mt-2" style={{ color: "var(--danger)" }}>
+                  ⚠ {stats.lateSessions} late sessions → −0.5% deduction
+                </p>
               )}
             </div>
           </div>
 
-          {/* KPI by brand */}
+          {/* KPI by brand — collapsible */}
           {stats.byBrand.length > 0 && (
-            <div className="section-card p-5">
-              <h2 className="font-semibold mb-4" style={{ color: "var(--text-primary)" }}>KPI by Brand</h2>
-              <div className="space-y-3">
-                {stats.byBrand.map((b) => (
-                  <div
-                    key={b.brandId}
-                    className="rounded-lg p-4"
-                    style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)" }}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="font-medium" style={{ color: "var(--text-primary)" }}>{b.brandName}</div>
-                      <TierBadge tier={b.kpiAchievedTier} />
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>GMV/hr (Normal Days)</div>
-                        <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.normalDayGMVPerHour)}</div>
-                        {b.tier1KpiNormal > 0 && (
-                          <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                            T1: {formatCurrency(b.tier1KpiNormal)} · T2: {formatCurrency(b.tier2KpiNormal)}
+            <div className="section-card p-4">
+              <button
+                onClick={() => setBrandsOpen(o => !o)}
+                className="w-full flex items-center justify-between text-left"
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+              >
+                <p className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+                  Commission by Brand
+                </p>
+                {brandsOpen ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+              </button>
+
+              {brandsOpen && (
+                <div className="mt-3 space-y-2">
+                  {stats.byBrand.map(b => {
+                    const tierLabel = b.bauTier === 2 ? "Tier 2" : b.bauTier === 1 ? "Tier 1" : "—";
+                    const tierColor = b.bauTier === 2 ? "var(--success)" : b.bauTier === 1 ? "var(--warning)" : "var(--text-muted)";
+                    return (
+                      <div
+                        key={b.brandId}
+                        className="rounded-lg p-3 text-sm"
+                        style={{ background: "var(--bg-subtle)" }}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-xs" style={{ color: "var(--text-primary)" }}>{b.brandName}</span>
+                          <span className="text-xs font-semibold" style={{ color: tierColor }}>{tierLabel}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">GMV</p>
+                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.totalGMV)}</p>
                           </div>
+                          <div>
+                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Rate</p>
+                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                              {b.kpiConfigFound
+                                ? (b.bauTier === 2 ? `${b.kpi1Rate + b.kpi2Rate}%` : `${b.kpi1Rate}%`)
+                                : "—"}
+                            </p>
+                          </div>
+                          <div>
+                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Commission</p>
+                            <p className="font-semibold" style={{ color: b.estimatedCommission > 0 ? "var(--success)" : "var(--text-secondary)" }}>
+                              {formatCurrency(b.estimatedCommission)}
+                            </p>
+                          </div>
+                        </div>
+                        {!b.kpiConfigFound && (
+                          <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>No KPI config for this month</p>
                         )}
                       </div>
-                      <div>
-                        <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>Total GMV</div>
-                        <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(b.totalGMV)}</div>
-                        <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{b.completedSessions} sessions · {b.totalHours.toFixed(1)}h</div>
-                      </div>
-                      <div>
-                        <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>Est. Commission</div>
-                        <div className="font-semibold" style={{ color: "var(--success)" }}>{formatCurrency(b.estimatedCommission)}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
+
         </div>
       )}
     </div>
   );
 }
 
-function StatChip({ icon: Icon, label, value, sub, colorVar, warn }: {
-  icon: React.ElementType; label: string; value: string; sub?: string; colorVar: string; warn?: boolean;
+function Chip({ icon: Icon, label, value, sub, color }: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub?: string;
+  color: string;
 }) {
   return (
-    <div
-      className="section-card p-4"
-      style={warn ? { borderColor: "var(--danger)" } : {}}
-    >
-      <div
-        className="inline-flex p-2 rounded-lg mb-2"
-        style={{ background: colorVar + "18", color: colorVar }}
-      >
-        <Icon size={16} />
+    <div className="section-card p-3.5">
+      <div className="inline-flex p-1.5 rounded-lg mb-2" style={{ background: color + "18", color }}>
+        <Icon size={14} />
       </div>
-      <div className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</div>
-      <div className="text-xl font-bold mt-0.5" style={{ color: warn ? "var(--danger)" : colorVar }}>{value}</div>
-      {sub && <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</div>}
+      <p className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>{label}</p>
+      <p className="text-xl font-bold" style={{ color }}>{value}</p>
+      {sub && <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</p>}
     </div>
   );
-}
-
-function TierBadge({ tier }: { tier: 0 | 1 | 2 }) {
-  if (tier === 2) return <Badge variant="success">Tier 2 ✓</Badge>;
-  if (tier === 1) return <Badge variant="warning">Tier 1</Badge>;
-  return <Badge variant="secondary">Below KPI</Badge>;
 }
