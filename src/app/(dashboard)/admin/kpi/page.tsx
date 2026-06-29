@@ -96,14 +96,33 @@ function NumInput({
   onChange: (v: number) => void;
   className?: string;
 }) {
+  const [raw, setRaw] = useState(value === 0 ? "" : String(value));
+
+  useEffect(() => {
+    // Sync external value changes (e.g. after load/reset) without clobbering mid-type
+    const parsed = parseFloat(raw);
+    if (isNaN(parsed) ? value !== 0 : parsed !== value) {
+      setRaw(value === 0 ? "" : String(value));
+    }
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Input
       type="number"
       step="0.01"
-      value={value === 0 ? "" : value}
+      value={raw}
       placeholder="0"
       className={className}
-      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+      onChange={(e) => {
+        setRaw(e.target.value);
+        const n = parseFloat(e.target.value);
+        onChange(isNaN(n) ? 0 : n);
+      }}
+      onBlur={() => {
+        // Normalise display on blur: "1." → "1", "" stays ""
+        const n = parseFloat(raw);
+        setRaw(isNaN(n) || n === 0 ? "" : String(n));
+      }}
       style={{ width: "90px" }}
     />
   );
