@@ -76,13 +76,22 @@ function extractHost(
     if (norm && upper.includes(norm)) return h;
   }
 
-  // Suffix fallback: last segment after " - " (exact then normalized)
+  // Suffix fallback: last segment after " - " (exact, normalized, then prefix match)
+  // Prefix match handles cases like displayName "AYUNI (A)" or "AYUNI BINTI X"
+  // matching a title suffix of just "AYUNI".
   const parts = title.split(" - ");
   if (parts.length >= 2) {
     const suffix = parts[parts.length - 1].trim().toUpperCase();
-    for (const h of sorted) {
-      if (h.displayName.toUpperCase() === suffix) return h;
-      if (normalizeHostName(h.displayName) === suffix) return h;
+    if (suffix.length >= 3) {
+      for (const h of sorted) {
+        const dn = h.displayName.toUpperCase();
+        const norm = normalizeHostName(h.displayName);
+        if (dn === suffix) return h;
+        if (norm === suffix) return h;
+        // displayName starts with the suffix (e.g. "AYUNI (A)" starts with "AYUNI")
+        if (dn.startsWith(suffix + " ") || dn.startsWith(suffix + "(")) return h;
+        if (norm.startsWith(suffix + " ")) return h;
+      }
     }
   }
 
