@@ -38,13 +38,18 @@ export async function getGMVTargetsForRange(
   rangeStart: Date,
   rangeEnd: Date,
 ): Promise<{ brandId: string; month: number; year: number; target: number }[]> {
-  // Build the set of (year, month-1-based) pairs that overlap the range
+  // Build the set of (year, month-1-based) pairs that overlap the range.
+  // rangeStart/rangeEnd are stored as +08:00 offsets (MYT), so shift by +8h
+  // before extracting month/year to avoid UTC off-by-one on Vercel.
   const all = await prisma.monthlyGMVTarget.findMany();
   const monthSet = new Set<string>();
-  const cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
-  while (cursor <= rangeEnd) {
-    monthSet.add(`${cursor.getFullYear()}-${cursor.getMonth() + 1}`); // 1-based
-    cursor.setMonth(cursor.getMonth() + 1);
+  const toMyt = (d: Date) => new Date(d.getTime() + 8 * 3600 * 1000);
+  const s = toMyt(rangeStart);
+  const e = toMyt(rangeEnd);
+  const cursor = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), 1));
+  while (cursor <= e) {
+    monthSet.add(`${cursor.getUTCFullYear()}-${cursor.getUTCMonth() + 1}`); // 1-based
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
   return all.filter(t => monthSet.has(`${t.year}-${t.month}`));
 }

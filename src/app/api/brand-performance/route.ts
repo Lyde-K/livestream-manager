@@ -115,13 +115,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const activeBrandIds = new Set([
-    ...Object.keys(brandTotal).filter(id => brandTotal[id] > 0),
-    ...Object.keys(targetByBrand),
-  ]);
-
   const result = brands
-    .filter(b => activeBrandIds.has(b.id))
     .map(b => ({
       id: b.id, name: b.name, platform: b.platform, color: b.color,
       target:    targetByBrand[b.id] ?? 0,
