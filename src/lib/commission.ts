@@ -7,7 +7,7 @@ function countWorkingDays(year: number, month: number, offDowSet: Set<number>, p
   let count = 0;
   for (let d = 1; d <= days; d++) {
     const date = new Date(year, month - 1, d);
-    const dow = date.getDay(); // 0=Sun
+    const dow = date.getDay();
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     if (!offDowSet.has(dow) && !publicHolidayDates.has(dateStr)) {
       count++;
@@ -15,6 +15,8 @@ function countWorkingDays(year: number, month: number, offDowSet: Set<number>, p
   }
   return count;
 }
+
+const ENFAGROW_EXCLUDE_PATTERN = /enfagrow/i;
 
 export interface HostMonthlyStats {
   hostId: string;
@@ -53,7 +55,7 @@ export interface BrandStats {
   totalGMV: number;
   totalGrossRevenue: number;
   totalAdsCost: number;
-  adsCostRatio: number; // adsCost / grossRevenue (lower = better ROI)
+  adsCostRatio: number;
   gmvPerHour: number;
   normalDayGMVPerHour: number;
   campaignDayGMVPerHour: number;
@@ -61,8 +63,16 @@ export interface BrandStats {
   tier2KpiNormal: number;
   tier1KpiCampaign: number;
   tier2KpiCampaign: number;
-  kpiAchievedTier: 0 | 1 | 2;
+  kpiAchievedTier: 0 | 1 | 2;   // based on BAU tier for display
   estimatedCommission: number;
+  bauCommission: number;
+  campCommission: number;
+  // KPI config snapshot (null = no config saved for this month)
+  kpiConfigFound: boolean;
+  kpi1Rate: number;
+  kpi2Rate: number;
+  bauTier: 0 | 1 | 2;
+  campTier: 0 | 1 | 2;
   // Session-level detail for ads cost analysis
   sessions: SessionDetail[];
 }
@@ -74,7 +84,7 @@ export interface SessionDetail {
   gmv: number | null;
   grossRevenue: number | null;
   adsCost: number | null;
-  adsCostRatio: number | null; // adsCost / grossRevenue
+  adsCostRatio: number | null;
   punctuality: string | null;
   isCampaignDay: boolean;
 }
@@ -97,15 +107,15 @@ export async function getHostMonthlyStats(
     include: { brand: true },
   });
 
-  const [rule, preferences, publicHolidays] = await Promise.all([
+  const [rule, preferences, publicHolidays, kpiConfigs] = await Promise.all([
     prisma.commissionRule.findFirst({ where: { isDefault: true } }),
     prisma.hostPreference.findUnique({ where: { liveHostId: hostId } }),
     prisma.publicHoliday.findMany({ where: { year, month } }),
+    prisma.brandKPIConfig.findMany({ where: { month, year } }),
   ]);
+
   const lateThreshold = rule?.lateSessionsThreshold ?? 5;
-  const lateDeductionPct = rule?.lateDeductionPct ?? 0.5;
   const hoursDeficitThreshold = rule?.hoursDeficitThreshold ?? 5;
-  const hoursDeductionPct = rule?.hoursDeductionPct ?? 0.5;
 
   const completed = sessions.filter((s) => s.status === "COMPLETED");
   const missed = sessions.filter((s) => s.status === "MISSED");
@@ -119,7 +129,7 @@ export async function getHostMonthlyStats(
     return sum + diff;
   }, 0);
 
-  // Required hours: 6h × actual working days (excludes host off-days and public holidays)
+  // Required hours: 6h × actual working days (excluding host off-days and public holidays)
   const rawOffDays: unknown = preferences ? JSON.parse(preferences.offDays) : [];
   const offDowSet = new Set<number>(
     Array.isArray(rawOffDays) ? (rawOffDays as number[]).filter((x) => typeof x === "number") : []
@@ -129,7 +139,7 @@ export async function getHostMonthlyStats(
   const requiredHours = workingDaysCount * 6;
   const hoursDeficit = Math.max(0, requiredHours - totalActualHours);
 
-  // Group by brand
+  // Group sessions by brand
   const brandMap = new Map<string, typeof sessions>();
   for (const s of sessions) {
     const arr = brandMap.get(s.brandId) || [];
@@ -137,21 +147,23 @@ export async function getHostMonthlyStats(
     brandMap.set(s.brandId, arr);
   }
 
-  const kpiConfigs = await prisma.kPIConfig.findMany({
-    where: { liveHostId: hostId, month, year },
-  });
+  const kpiConfigMap = new Map(kpiConfigs.map((k) => [k.brandId, k]));
 
   const byBrand: BrandStats[] = [];
   let estimatedCommissionTotal = 0;
+  let deductionBaseGMV = 0; // GMV excluding Enfagrow brands
 
   for (const [brandId, brandSessions] of brandMap) {
     const comp = brandSessions.filter((s) => s.status === "COMPLETED");
+    const brandName = brandSessions[0].brand.name;
+
     const totalHours = comp.reduce((sum, s) => sum + (s.actualDurationMinutes || 0) / 60, 0);
     const totalGMV = comp.reduce((sum, s) => sum + (s.gmv || 0), 0);
     const totalGrossRevenue = comp.reduce((sum, s) => sum + ((s as any).grossRevenue || 0), 0);
     const totalAdsCost = comp.reduce((sum, s) => sum + ((s as any).adsCost || 0), 0);
     const adsCostRatio = totalGrossRevenue > 0 ? totalAdsCost / totalGrossRevenue : 0;
     const gmvPerHour = totalHours > 0 ? totalGMV / totalHours : 0;
+
     const normalSessions = comp.filter((s) => !s.isCampaignDay);
     const campaignSessions = comp.filter((s) => s.isCampaignDay);
     const normalHours = normalSessions.reduce((sum, s) => sum + (s.actualDurationMinutes || 0) / 60, 0);
@@ -161,7 +173,6 @@ export async function getHostMonthlyStats(
     const normalGMVPerHour = normalHours > 0 ? normalGMV / normalHours : 0;
     const campaignGMVPerHour = campaignHours > 0 ? campaignGMV / campaignHours : 0;
 
-    // Session-level detail
     const sessionDetails: SessionDetail[] = comp.map((s) => {
       const gr = (s as any).grossRevenue as number | null;
       const ac = (s as any).adsCost as number | null;
@@ -178,46 +189,81 @@ export async function getHostMonthlyStats(
       };
     });
 
-    const kpi = kpiConfigs.find((k) => k.brandId === brandId);
+    const kpi = kpiConfigMap.get(brandId);
     let kpiAchievedTier: 0 | 1 | 2 = 0;
-    let commission = 0;
+    let bauCommission = 0;
+    let campCommission = 0;
+    let resolvedBauTier: 0 | 1 | 2 = 0;
+    let resolvedCampTier: 0 | 1 | 2 = 0;
+    const kpi1Rate = kpi?.kpi1Rate ?? 0;
+    const kpi2Rate = kpi?.kpi2Rate ?? 0;
 
     if (kpi) {
-      // Determine KPI tier based on normal day GMV/hour
-      if (normalGMVPerHour >= (kpi.tier2KpiNormal || 0) && kpi.tier2KpiNormal > 0) {
-        kpiAchievedTier = 2;
-        commission = totalGMV * (kpi.tier2Rate / 100);
-      } else if (normalGMVPerHour >= (kpi.tier1KpiNormal || 0) && kpi.tier1KpiNormal > 0) {
-        kpiAchievedTier = 1;
-        commission = totalGMV * (kpi.tier1Rate / 100);
-      } else {
-        commission = totalGMV * (kpi.baseCommissionRate / 100);
+      const kpi1 = kpi1Rate;
+      const kpi2 = kpi2Rate;
+
+      // ── BAU commission ────────────────────────────────────────────────
+      if (kpi.bauTier1 > 0) {
+        if (kpi.bauTier2 > 0 && normalGMVPerHour >= kpi.bauTier2) {
+          resolvedBauTier = 2;
+          kpiAchievedTier = 2;
+        } else if (normalGMVPerHour >= kpi.bauTier1) {
+          resolvedBauTier = 1;
+          if (kpiAchievedTier < 1) kpiAchievedTier = 1;
+        }
+        const bauRate = resolvedBauTier === 2 ? kpi1 + kpi2 : resolvedBauTier === 1 ? kpi1 : 0;
+        bauCommission = normalGMV * (bauRate / 100);
+      }
+
+      // ── Campaign commission ────────────────────────────────────────────
+      if (kpi.campTier1 > 0 && campaignGMV > 0) {
+        if (kpi.campTier2 > 0 && campaignGMVPerHour >= kpi.campTier2) {
+          resolvedCampTier = 2;
+        } else if (campaignGMVPerHour >= kpi.campTier1) {
+          resolvedCampTier = 1;
+        }
+        const campRate = resolvedCampTier === 2 ? kpi1 + kpi2 : resolvedCampTier === 1 ? kpi1 : 0;
+        campCommission = campaignGMV * (campRate / 100);
       }
     }
 
-    estimatedCommissionTotal += commission;
+    const brandCommission = bauCommission + campCommission;
+    estimatedCommissionTotal += brandCommission;
+
+    // Accumulate GMV for deduction base — exclude Enfagrow brands
+    if (!ENFAGROW_EXCLUDE_PATTERN.test(brandName)) {
+      deductionBaseGMV += totalGMV;
+    }
 
     byBrand.push({
-      brandId, brandName: brandSessions[0].brand.name,
+      brandId, brandName,
       platform: brandSessions[0].brand.platform,
       completedSessions: comp.length,
       totalHours, totalGMV, totalGrossRevenue, totalAdsCost, adsCostRatio, gmvPerHour,
       normalDayGMVPerHour: normalGMVPerHour,
       campaignDayGMVPerHour: campaignGMVPerHour,
-      tier1KpiNormal: kpi?.tier1KpiNormal ?? 0,
-      tier2KpiNormal: kpi?.tier2KpiNormal ?? 0,
-      tier1KpiCampaign: kpi?.tier1KpiCampaign ?? 0,
-      tier2KpiCampaign: kpi?.tier2KpiCampaign ?? 0,
+      tier1KpiNormal: kpi?.bauTier1 ?? 0,
+      tier2KpiNormal: kpi?.bauTier2 ?? 0,
+      tier1KpiCampaign: kpi?.campTier1 ?? 0,
+      tier2KpiCampaign: kpi?.campTier2 ?? 0,
       kpiAchievedTier,
-      estimatedCommission: commission,
+      estimatedCommission: brandCommission,
+      bauCommission,
+      campCommission,
+      kpiConfigFound: !!kpi,
+      kpi1Rate,
+      kpi2Rate,
+      bauTier: resolvedBauTier,
+      campTier: resolvedCampTier,
       sessions: sessionDetails,
     });
   }
 
+  // Deductions applied to GMV base (0.5% of GMV excl. Enfagrow) not commission
   const hoursDeduction = hoursDeficit > hoursDeficitThreshold
-    ? estimatedCommissionTotal * (hoursDeductionPct / 100) : 0;
+    ? deductionBaseGMV * 0.005 : 0;
   const punctualityDeduction = late.length > lateThreshold
-    ? estimatedCommissionTotal * (lateDeductionPct / 100) : 0;
+    ? deductionBaseGMV * 0.005 : 0;
   const netCommission = Math.max(0, estimatedCommissionTotal - hoursDeduction - punctualityDeduction);
 
   return {

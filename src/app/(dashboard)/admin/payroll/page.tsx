@@ -327,54 +327,104 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                       )}
 
                       {/* Per-brand breakdown */}
-                      {s.byBrand.length > 0 && (
-                        <div>
-                          <div className="text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Commission by Brand</div>
+                      <div>
+                        <div className="text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Commission by Brand</div>
+                        {s.byBrand.length === 0 ? (
+                          <div className="text-sm py-3 px-4 rounded-lg" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>No sessions recorded this period.</div>
+                        ) : (
                           <div className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--border)" }}>
-                            <table className="data-table">
+                            <table className="data-table" style={{ minWidth: "820px" }}>
                               <thead>
                                 <tr>
                                   <th>Brand</th>
-                                  <th className="text-right">Sessions</th>
-                                  <th className="text-right">Hours</th>
+                                  <th>Type</th>
                                   <th className="text-right">GMV</th>
-                                  <th className="text-right">GMV/hr (Normal)</th>
-                                  <th className="text-right">KPI Tier</th>
+                                  <th className="text-right">Hrs</th>
+                                  <th className="text-right">GMV/hr</th>
+                                  <th className="text-right">T1 ≥</th>
+                                  <th className="text-right">T2 ≥</th>
+                                  <th className="text-right">Tier</th>
+                                  <th className="text-right">Rate</th>
                                   <th className="text-right">Commission</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {s.byBrand.map((b) => (
-                                  <tr key={b.brandId}>
-                                    <td className="font-medium">{b.brandName}</td>
-                                    <td className="text-right">{b.completedSessions}</td>
-                                    <td className="text-right">{b.totalHours.toFixed(1)}h</td>
-                                    <td className="text-right">{formatCurrency(b.totalGMV)}</td>
-                                    <td className="text-right">
-                                      <span style={{ color: b.kpiAchievedTier === 2 ? "var(--success)" : b.kpiAchievedTier === 1 ? "var(--warning)" : "var(--text-secondary)", fontWeight: 600 }}>
-                                        {formatCurrency(b.normalDayGMVPerHour)}
-                                      </span>
-                                    </td>
-                                    <td className="text-right">
-                                      <TierBadge tier={b.kpiAchievedTier} />
-                                    </td>
-                                    <td className="text-right font-semibold" style={{ color: "var(--success)" }}>
-                                      {formatCurrency(b.estimatedCommission)}
-                                    </td>
-                                  </tr>
-                                ))}
+                                {s.byBrand.map((b) => {
+                                  if (!b.kpiConfigFound) {
+                                    return (
+                                      <tr key={b.brandId}>
+                                        <td className="font-medium" colSpan={10}>
+                                          <span style={{ color: "var(--text-muted)" }}>{b.brandName}</span>
+                                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--danger-light)", color: "var(--danger-text)" }}>No KPI config for this month</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+                                  const bauHours = b.totalHours - (b.totalHours > 0 ? b.campaignDayGMVPerHour > 0 ? 0 : 0 : 0); // sessions split is in commission.ts
+                                  const k1 = b.kpi1Rate;
+                                  const k2 = b.kpi2Rate;
+                                  return (
+                                    <>
+                                      {/* BAU row */}
+                                      <tr key={`${b.brandId}-bau`}>
+                                        <td rowSpan={2} style={{ verticalAlign: "middle", fontWeight: 500 }}>{b.brandName}</td>
+                                        <td><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>BAU</span></td>
+                                        <td className="text-right">{formatCurrency(b.totalGMV - (b.campaignDayGMVPerHour > 0 ? 0 : 0))}</td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>{b.normalDayGMVPerHour > 0 || b.tier1KpiNormal > 0 ? "—" : "—"}</td>
+                                        <td className="text-right font-semibold" style={{ color: b.bauTier > 0 ? "var(--success)" : "var(--text-secondary)" }}>
+                                          {b.normalDayGMVPerHour > 0 ? formatCurrency(b.normalDayGMVPerHour) + "/h" : "—"}
+                                        </td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                                          {b.tier1KpiNormal > 0 ? formatCurrency(b.tier1KpiNormal) : <span style={{ color: "var(--danger-text)" }}>not set</span>}
+                                        </td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                                          {b.tier2KpiNormal > 0 ? formatCurrency(b.tier2KpiNormal) : "—"}
+                                        </td>
+                                        <td className="text-right"><TierBadge tier={b.bauTier} /></td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                                          {b.bauTier === 2 ? `${k1+k2}%` : b.bauTier === 1 ? `${k1}%` : "0%"}
+                                        </td>
+                                        <td className="text-right font-semibold" style={{ color: b.bauCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                                          {formatCurrency(b.bauCommission)}
+                                        </td>
+                                      </tr>
+                                      {/* Campaign row */}
+                                      <tr key={`${b.brandId}-camp`}>
+                                        <td><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Campaign</span></td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>—</td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>—</td>
+                                        <td className="text-right font-semibold" style={{ color: b.campTier > 0 ? "var(--success)" : "var(--text-secondary)" }}>
+                                          {b.campaignDayGMVPerHour > 0 ? formatCurrency(b.campaignDayGMVPerHour) + "/h" : "—"}
+                                        </td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                                          {b.tier1KpiCampaign > 0 ? formatCurrency(b.tier1KpiCampaign) : <span style={{ color: "var(--danger-text)" }}>not set</span>}
+                                        </td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                                          {b.tier2KpiCampaign > 0 ? formatCurrency(b.tier2KpiCampaign) : "—"}
+                                        </td>
+                                        <td className="text-right"><TierBadge tier={b.campTier} /></td>
+                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>
+                                          {b.campTier === 2 ? `${k1+k2}%` : b.campTier === 1 ? `${k1}%` : "0%"}
+                                        </td>
+                                        <td className="text-right font-semibold" style={{ color: b.campCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                                          {formatCurrency(b.campCommission)}
+                                        </td>
+                                      </tr>
+                                    </>
+                                  );
+                                })}
                               </tbody>
                               <tfoot>
                                 <tr style={{ borderTop: "2px solid var(--border)" }}>
-                                  <td colSpan={5} className="font-semibold" style={{ color: "var(--text-primary)" }}>Net Commission (after deductions)</td>
+                                  <td colSpan={8} className="font-semibold" style={{ color: "var(--text-primary)" }}>Net Commission (after deductions)</td>
                                   <td />
                                   <td className="text-right font-bold text-base" style={{ color: "var(--success)" }}>{formatCurrency(s.netCommission)}</td>
                                 </tr>
                               </tfoot>
                             </table>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
