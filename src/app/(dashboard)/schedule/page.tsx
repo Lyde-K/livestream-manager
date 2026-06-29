@@ -297,7 +297,7 @@ export default function SchedulePage() {
   const [gridDate, setGridDate] = useState(() => new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10));
 
   async function loadMeta() {
-    const [r, h, b] = await Promise.all([fetch("/api/rooms"), fetch("/api/hosts"), fetch("/api/brands")]);
+    const [r, h, b] = await Promise.all([fetch("/api/rooms"), fetch("/api/hosts"), fetch("/api/brands?hasLivestream=1")]);
     const roomData: Room[] = await r.json();
     setRooms(roomData.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })));
     setHosts(await h.json());

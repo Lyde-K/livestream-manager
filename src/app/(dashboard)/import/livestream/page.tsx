@@ -608,7 +608,7 @@ export default function LivestreamImportPage() {
   const adsCostRef  = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("/api/brands").then(r => r.json()).then((b: Brand[]) => setBrands(b.filter(x => x)));
+    fetch("/api/brands?hasLivestream=1").then(r => r.json()).then((b: Brand[]) => setBrands(b.filter(x => x)));
     fetch("/api/hosts").then(r => r.json()).then((d: (Host & { displayName: string })[]) => {
       setHosts(d.map(h => ({ id: h.id, displayName: h.displayName })));
     });

@@ -2,10 +2,15 @@ import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const { searchParams } = new URL(req.url);
+  const where: Record<string, unknown> = {};
+  if (searchParams.get("hasLivestream") === "1") where.hasLivestream = true;
+  if (searchParams.get("hasAffiliate") === "1") where.hasAffiliate = true;
   const brands = await prisma.brand.findMany({
+    where,
     include: { client: { include: { user: true } } },
     orderBy: { name: "asc" },
   });

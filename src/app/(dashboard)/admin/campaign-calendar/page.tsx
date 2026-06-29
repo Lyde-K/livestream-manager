@@ -42,7 +42,7 @@ export default function CampaignCalendarPage() {
   const year  = viewDate.getFullYear();
 
   useEffect(() => {
-    fetch("/api/brands").then(r => r.json()).then((d: Brand[]) => setBrands(d.filter(b => b.id)));
+    fetch("/api/brands?hasLivestream=1").then(r => r.json()).then((d: Brand[]) => setBrands(d.filter(b => b.id)));
   }, []);
 
   useEffect(() => { loadCampaigns(); }, [month, year]); // eslint-disable-line react-hooks/exhaustive-deps

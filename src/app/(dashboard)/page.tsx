@@ -33,7 +33,7 @@ async function fetchAdminStats(
     }),
     prisma.liveHost.count({ where: { isActive: true } }),
     prisma.room.count({ where: { isActive: true } }),
-    prisma.brand.count({ where: { isActive: true } }),
+    prisma.brand.count({ where: { isActive: true, hasLivestream: true } }),
   ]);
 
   const completedSessions = monthSessions.filter(s => s.status === "COMPLETED");

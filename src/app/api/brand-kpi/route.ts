@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
   // Fetch all active brands
   const brands = await prisma.brand.findMany({
-    where: { isActive: true },
+    where: { isActive: true, hasLivestream: true },
     select: { id: true, name: true, platform: true, color: true },
     orderBy: { name: "asc" },
   });
