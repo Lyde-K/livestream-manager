@@ -314,7 +314,12 @@ export async function POST(req: NextRequest) {
     }
 
     for (const p of unslottedRows) {
-      await prisma.session.create({ data: { ...p.insertData, brandId, liveHostId: p.hostId! } });
+      const data = { ...p.insertData, brandId, liveHostId: p.hostId! };
+      await prisma.session.upsert({
+        where:  { externalRef: p.insertData.externalRef as string },
+        create: data,
+        update: data,
+      });
       inserted++;
     }
 
@@ -363,9 +368,14 @@ export async function POST(req: NextRequest) {
     updated++;
   }
 
-  // 5. Create new SP- sessions for rows with no matching admin slot
+  // 5. Upsert new SP- sessions (handles duplicate externalRef from partial prior imports)
   for (const p of unslottedRows) {
-    await prisma.session.create({ data: { ...p.insertData, brandId, liveHostId: p.hostId! } });
+    const data = { ...p.insertData, brandId, liveHostId: p.hostId! };
+    await prisma.session.upsert({
+      where:  { externalRef: p.insertData.externalRef as string },
+      create: data,
+      update: data,
+    });
     inserted++;
   }
 
