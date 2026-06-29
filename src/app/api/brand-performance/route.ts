@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   const [sessions, brands, targets] = await Promise.all([
     prisma.session.findMany({
       where: { status: "COMPLETED", scheduledStart: { gte: rangeStart, lte: rangeEnd } },
-      select: { brandId: true, gmv: true, scheduledStart: true },
+      select: { brandId: true, gmv: true, actualDurationMinutes: true, scheduledStart: true },
     }),
     prisma.brand.findMany({
       where: { isActive: true, hasLivestream: true },
@@ -103,13 +103,15 @@ export async function GET(req: NextRequest) {
 
   const brandGMV: Record<string, number[]> = {};
   const brandTotal: Record<string, number> = {};
-  for (const b of brands) { brandGMV[b.id] = new Array(buckets.length).fill(0); brandTotal[b.id] = 0; }
+  const brandHours: Record<string, number> = {};
+  for (const b of brands) { brandGMV[b.id] = new Array(buckets.length).fill(0); brandTotal[b.id] = 0; brandHours[b.id] = 0; }
 
   for (const s of sessions) {
     if (!brandGMV[s.brandId]) continue;
     const st  = new Date(s.scheduledStart);
     const gmv = s.gmv ?? 0;
     brandTotal[s.brandId] += gmv;
+    brandHours[s.brandId] += (s.actualDurationMinutes ?? 0) / 60;
     for (let i = 0; i < buckets.length; i++) {
       if (st >= buckets[i].start && st <= buckets[i].end) { brandGMV[s.brandId][i] += gmv; break; }
     }
@@ -120,6 +122,7 @@ export async function GET(req: NextRequest) {
       id: b.id, name: b.name, platform: b.platform, color: b.color,
       target:    targetByBrand[b.id] ?? 0,
       totalGMV:  brandTotal[b.id]  ?? 0,
+      totalHours: brandHours[b.id] ?? 0,
       prevGMV:   prevGMVByBrand[b.id] ?? 0,
       bucketGMV: brandGMV[b.id] ?? new Array(buckets.length).fill(0),
     }));

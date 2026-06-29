@@ -778,7 +778,7 @@ function TierBadge({ tier }: { tier: 0|1|2 }) {
 
 // ─── Brand Performance Tab ────────────────────────────────────────────────────
 
-type BpBrand  = { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; bucketGMV: number[] };
+type BpBrand  = { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; totalHours: number; prevGMV: number; bucketGMV: number[] };
 type BpBucket = { label: string; sublabel?: string; start: string; end: string };
 
 function BrandPerformanceTab({
@@ -961,9 +961,10 @@ function BrandPerformanceTab({
 
             {/* Table header */}
             <div className="grid text-[10px] font-semibold uppercase tracking-wide px-4 py-2 border-b"
-              style={{ gridTemplateColumns: "1fr 170px 120px 100px 100px 100px", borderColor: "var(--border)", color: "var(--text-muted)" }}>
+              style={{ gridTemplateColumns: "1fr 170px 80px 120px 100px 100px 100px", borderColor: "var(--border)", color: "var(--text-muted)" }}>
               <div>Brand</div>
               <div className="text-center">{bpData?.groupBy === "month" ? "Month-on-month" : "Week-on-week"}</div>
+              <div className="text-center">Hours</div>
               <div className="text-center">Target</div>
               <div className="text-center">Actual</div>
               <div className="text-center">vs Prev</div>
@@ -981,7 +982,7 @@ function BrandPerformanceTab({
 
               return (
                 <div key={b.id} className="grid items-center px-4 py-3 border-b"
-                  style={{ gridTemplateColumns: "1fr 170px 120px 100px 100px 100px", borderColor: "var(--border)", background: rowBg }}>
+                  style={{ gridTemplateColumns: "1fr 170px 80px 120px 100px 100px 100px", borderColor: "var(--border)", background: rowBg }}>
                   {/* Brand name */}
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -992,6 +993,11 @@ function BrandPerformanceTab({
 
                   {/* Bucket bars */}
                   <div className="w-full px-1">{weekBars(b.bucketGMV)}</div>
+
+                  {/* Hours */}
+                  <div className="text-center text-sm" style={{ color: "var(--text-secondary)" }}>
+                    {b.totalHours > 0 ? `${b.totalHours.toFixed(1)}h` : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                  </div>
 
                   {/* Target (editable) */}
                   <div className="flex justify-center">
@@ -1058,9 +1064,12 @@ function BrandPerformanceTab({
 
             {/* Section total row */}
             <div className="grid items-center px-4 py-3"
-              style={{ gridTemplateColumns: "1fr 170px 120px 100px 100px 100px", background: "var(--bg-subtle)" }}>
+              style={{ gridTemplateColumns: "1fr 170px 80px 120px 100px 100px 100px", background: "var(--bg-subtle)" }}>
               <div className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>Total {secLabel}</div>
               <div />
+              <div className="text-center text-xs" style={{ color: "var(--text-secondary)" }}>
+                {brands.reduce((s, b) => s + b.totalHours, 0).toFixed(1)}h
+              </div>
               <div className="text-center text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
                 {secTarget > 0 ? formatCurrency(secTarget) : "—"}
               </div>
