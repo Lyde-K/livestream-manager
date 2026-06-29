@@ -19,7 +19,8 @@ interface BrandInfo {
 interface KPIConfigSaved {
   id: string;
   plannedHours: number;
-  kpiRate: number;
+  kpi1Rate: number;
+  kpi2Rate: number;
   bauTier1: number;
   bauTier2: number;
   campTier1: number;
@@ -51,7 +52,8 @@ interface BrandRow {
 
 interface EditState {
   plannedHours: number;
-  kpiRate: number;
+  kpi1Rate: number;
+  kpi2Rate: number;
   bauTier1: number;
   bauTier2: number;
   campTier1: number;
@@ -64,7 +66,8 @@ function initEdit(row: BrandRow): EditState {
   if (row.kpiConfig) {
     return {
       plannedHours: row.kpiConfig.plannedHours,
-      kpiRate: row.kpiConfig.kpiRate,
+      kpi1Rate: row.kpiConfig.kpi1Rate,
+      kpi2Rate: row.kpiConfig.kpi2Rate,
       bauTier1: row.kpiConfig.bauTier1,
       bauTier2: row.kpiConfig.bauTier2,
       campTier1: row.kpiConfig.campTier1,
@@ -74,7 +77,8 @@ function initEdit(row: BrandRow): EditState {
   }
   return {
     plannedHours: 0,
-    kpiRate: 1.0,
+    kpi1Rate: 1.0,
+    kpi2Rate: 0.5,
     bauTier1: row.recommended.bauTier1,
     bauTier2: row.recommended.bauTier2,
     campTier1: row.recommended.campTier1,
@@ -165,7 +169,8 @@ export default function BrandKPIPage() {
         return {
           brandId: row.brand.id,
           plannedHours: edit.plannedHours,
-          kpiRate: edit.kpiRate,
+          kpi1Rate: edit.kpi1Rate,
+          kpi2Rate: edit.kpi2Rate,
           bauTier1: edit.bauTier1,
           bauTier2: edit.bauTier2,
           campTier1: edit.campTier1,
@@ -193,34 +198,27 @@ export default function BrandKPIPage() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  const stdBrands = rows.filter((r) => (edits[r.brand.id]?.kpiRate ?? 1.0) >= 1.0);
-  const redBrands = rows.filter((r) => (edits[r.brand.id]?.kpiRate ?? 1.0) < 1.0);
-
-  function renderTable(section: BrandRow[], title: string, rateLabel: string) {
+  function renderTable(section: BrandRow[]) {
     if (section.length === 0) return null;
     return (
       <div className="section-card" style={{ marginBottom: "1.5rem" }}>
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>{title}</span>
-          <Badge variant="secondary">{rateLabel}</Badge>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>({section.length} brand{section.length !== 1 ? "s" : ""})</span>
-        </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="data-table" style={{ minWidth: "1100px" }}>
+          <table className="data-table" style={{ minWidth: "1200px" }}>
             <thead>
               <tr>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Brand</th>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Platform</th>
                 <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>Planned hrs</th>
-                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>KPI rate %</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>KPI 1 %</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>KPI 2 % <span style={{ fontSize: "0.7em", color: "var(--text-muted)", fontWeight: 400 }}>(+add)</span></th>
                 <th style={{ textAlign: "center" }}>Type</th>
                 <th style={{ textAlign: "right" }}>Prev GMV</th>
                 <th style={{ textAlign: "right" }}>Prev hrs</th>
                 <th style={{ textAlign: "right" }}>Avg/hr</th>
                 <th style={{ textAlign: "right", color: "var(--color-warning, #f59e0b)" }}>Rec T1</th>
                 <th style={{ textAlign: "right", color: "var(--color-warning, #f59e0b)" }}>Rec T2</th>
-                <th style={{ textAlign: "right" }}>T1 Target</th>
-                <th style={{ textAlign: "right" }}>T2 Target</th>
+                <th style={{ textAlign: "right" }}>T1 GMV/hr</th>
+                <th style={{ textAlign: "right" }}>T2 GMV/hr</th>
               </tr>
             </thead>
             <tbody>
@@ -250,14 +248,18 @@ export default function BrandKPIPage() {
                         />
                       </td>
                       <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
-                        <Select
-                          value={edit.kpiRate}
-                          onChange={(e) => updateEdit(row.brand.id, { kpiRate: Number(e.target.value) })}
-                          style={{ width: "70px" }}
-                        >
-                          <option value={1.0}>1.0%</option>
-                          <option value={0.5}>0.5%</option>
-                        </Select>
+                        <NumInput
+                          value={edit.kpi1Rate}
+                          onChange={(v) => updateEdit(row.brand.id, { kpi1Rate: v })}
+                          className="text-right"
+                        />
+                      </td>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
+                        <NumInput
+                          value={edit.kpi2Rate}
+                          onChange={(v) => updateEdit(row.brand.id, { kpi2Rate: v })}
+                          className="text-right"
+                        />
                       </td>
                       <td><Badge variant="secondary">BAU</Badge></td>
                       <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
@@ -350,10 +352,14 @@ export default function BrandKPIPage() {
   // Commission estimate table
   const commRows = rows.filter((r) => r.gmvTarget > 0);
   const totalKpi1 = commRows.reduce((s, r) => {
-    const kpiRate = edits[r.brand.id]?.kpiRate ?? 1.0;
-    return s + r.gmvTarget * (kpiRate / 100);
+    const k1 = edits[r.brand.id]?.kpi1Rate ?? 1.0;
+    return s + r.gmvTarget * (k1 / 100);
   }, 0);
-  const totalKpi2 = totalKpi1;
+  const totalKpi2 = commRows.reduce((s, r) => {
+    const k1 = edits[r.brand.id]?.kpi1Rate ?? 1.0;
+    const k2 = edits[r.brand.id]?.kpi2Rate ?? 0.5;
+    return s + r.gmvTarget * ((k1 + k2) / 100);
+  }, 0);
 
   return (
     <div className="space-y-5 animate-in">
@@ -418,8 +424,7 @@ export default function BrandKPIPage() {
         </div>
       ) : (
         <>
-          {renderTable(stdBrands, "Standard Tier", "1.0% KPI rate")}
-          {renderTable(redBrands, "Reduced Tier", "0.5% KPI rate")}
+          {renderTable(rows)}
 
           {/* Commission estimate */}
           {commRows.length > 0 && (
@@ -442,8 +447,10 @@ export default function BrandKPIPage() {
                 </thead>
                 <tbody>
                   {commRows.map((row) => {
-                    const kpiRate = edits[row.brand.id]?.kpiRate ?? 1.0;
-                    const est = row.gmvTarget * (kpiRate / 100);
+                    const k1 = edits[row.brand.id]?.kpi1Rate ?? 1.0;
+                    const k2 = edits[row.brand.id]?.kpi2Rate ?? 0.5;
+                    const estK1 = row.gmvTarget * (k1 / 100);
+                    const estK2 = row.gmvTarget * ((k1 + k2) / 100);
                     return (
                       <tr key={row.brand.id}>
                         <td className="font-medium">
@@ -453,9 +460,9 @@ export default function BrandKPIPage() {
                           </span>
                         </td>
                         <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(row.gmvTarget)}</td>
-                        <td className="text-right"><Badge variant="secondary">{kpiRate}%</Badge></td>
-                        <td className="text-right">{formatCurrency(est)}</td>
-                        <td className="text-right">{formatCurrency(est)}</td>
+                        <td className="text-right"><Badge variant="secondary">{k1}% + {k2}%</Badge></td>
+                        <td className="text-right">{formatCurrency(estK1)}</td>
+                        <td className="text-right">{formatCurrency(estK2)}</td>
                       </tr>
                     );
                   })}

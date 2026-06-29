@@ -221,6 +221,13 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS "PublicHoliday_year_month_idx" ON "PublicHoliday"("year", "month")`,
     ],
   },
+  {
+    name: "014_add_brand_kpi_rates",
+    statements: [
+      `ALTER TABLE "BrandKPIConfig" ADD COLUMN IF NOT EXISTS "kpi1Rate" DOUBLE PRECISION NOT NULL DEFAULT 1.0`,
+      `ALTER TABLE "BrandKPIConfig" ADD COLUMN IF NOT EXISTS "kpi2Rate" DOUBLE PRECISION NOT NULL DEFAULT 0.5`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {
