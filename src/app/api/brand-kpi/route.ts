@@ -99,10 +99,9 @@ export async function GET(req: NextRequest) {
 
     let estCommission: { kpi1: number; kpi2: number } | null = null;
     if (kpiConfig && gmvTarget > 0) {
-      const kpiRate = kpiConfig.kpiRate;
       estCommission = {
-        kpi1: gmvTarget * (kpiRate / 100),
-        kpi2: gmvTarget * (kpiRate / 100),
+        kpi1: gmvTarget * (kpiConfig.kpi1Rate / 100),
+        kpi2: gmvTarget * ((kpiConfig.kpi1Rate + kpiConfig.kpi2Rate) / 100),
       };
     }
 
@@ -113,7 +112,8 @@ export async function GET(req: NextRequest) {
         ? {
             id: kpiConfig.id,
             plannedHours: kpiConfig.plannedHours,
-            kpiRate: kpiConfig.kpiRate,
+            kpi1Rate: kpiConfig.kpi1Rate,
+            kpi2Rate: kpiConfig.kpi2Rate,
             bauTier1: kpiConfig.bauTier1,
             bauTier2: kpiConfig.bauTier2,
             campTier1: kpiConfig.campTier1,
@@ -141,7 +141,8 @@ export async function POST(req: NextRequest) {
     brands: {
       brandId: string;
       plannedHours: number;
-      kpiRate: number;
+      kpi1Rate: number;
+      kpi2Rate: number;
       bauTier1: number;
       bauTier2: number;
       campTier1: number;
@@ -157,7 +158,8 @@ export async function POST(req: NextRequest) {
         where: { brandId_month_year: { brandId: b.brandId, month, year } },
         update: {
           plannedHours: b.plannedHours,
-          kpiRate: b.kpiRate,
+          kpi1Rate: b.kpi1Rate,
+          kpi2Rate: b.kpi2Rate,
           bauTier1: b.bauTier1,
           bauTier2: b.bauTier2,
           campTier1: b.campTier1,
@@ -168,7 +170,8 @@ export async function POST(req: NextRequest) {
           month,
           year,
           plannedHours: b.plannedHours,
-          kpiRate: b.kpiRate,
+          kpi1Rate: b.kpi1Rate,
+          kpi2Rate: b.kpi2Rate,
           bauTier1: b.bauTier1,
           bauTier2: b.bauTier2,
           campTier1: b.campTier1,

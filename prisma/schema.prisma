@@ -646,7 +646,8 @@ model BrandKPIConfig {
   month        Int     // 1-based
   year         Int
   plannedHours Int     @default(0)
-  kpiRate      Float   @default(1.0)   // commission % rate per tier (e.g. 1.0 = 1%, 0.5 = 0.5%)
+  kpi1Rate     Float   @default(1.0)   // KPI 1 commission % (e.g. 1.0 = 1%)
+  kpi2Rate     Float   @default(0.5)   // KPI 2 additive commission % (effective = kpi1Rate + kpi2Rate)
 
   bauTier1     Float   @default(0)     // BAU GMV/hr tier1 threshold
   bauTier2     Float   @default(0)     // BAU GMV/hr tier2 threshold

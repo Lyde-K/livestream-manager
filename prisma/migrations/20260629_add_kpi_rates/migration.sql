@@ -1,0 +1,3 @@
+-- Add kpi1Rate and kpi2Rate to BrandKPIConfig, replacing the old kpiRate column
+ALTER TABLE "BrandKPIConfig" ADD COLUMN IF NOT EXISTS "kpi1Rate" DOUBLE PRECISION NOT NULL DEFAULT 1.0;
+ALTER TABLE "BrandKPIConfig" ADD COLUMN IF NOT EXISTS "kpi2Rate" DOUBLE PRECISION NOT NULL DEFAULT 0.5;
