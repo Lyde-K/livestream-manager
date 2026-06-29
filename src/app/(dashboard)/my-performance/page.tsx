@@ -238,25 +238,50 @@ export default function MyPerformancePage() {
                         className="rounded-lg p-3"
                         style={{ background: "var(--bg-subtle)" }}
                       >
-                        <div className="flex items-center justify-between mb-2">
+                        {/* Brand header */}
+                        <div className="flex items-center justify-between mb-2.5">
                           <span className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
                             {b.brandName}
+                            <span className="ml-1.5 font-normal" style={{ color: "var(--text-muted)" }}>· {b.platform}</span>
                           </span>
                           <span className="text-xs font-bold" style={{ color: b.estimatedCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
                             {formatCurrency(b.estimatedCommission)}
                           </span>
                         </div>
-                        <div className="flex gap-4 text-xs" style={{ color: "var(--text-muted)" }}>
-                          <span>GMV: <strong style={{ color: "var(--text-secondary)" }}>{formatCurrency(b.totalGMV)}</strong></span>
+
+                        {/* GMV + sessions row */}
+                        <div className="flex gap-3 text-xs mb-2" style={{ color: "var(--text-muted)" }}>
+                          <span>GMV <strong style={{ color: "var(--text-secondary)" }}>{formatCurrency(b.totalGMV)}</strong></span>
                           <span>{b.completedSessions} sessions · {b.totalHours.toFixed(1)}h</span>
-                          {effectiveRate !== null && (
-                            <span>Rate: <strong style={{ color: "var(--text-secondary)" }}>{effectiveRate.toFixed(2)}%</strong></span>
-                          )}
                         </div>
-                        {!b.kpiConfigFound && (
-                          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                            Commission rate not set for this brand
-                          </p>
+
+                        {/* GMV/hour grid */}
+                        <div className="grid grid-cols-2 gap-1.5 mb-2">
+                          <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
+                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">BAU GMV/hr</p>
+                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                              {b.normalDayGMVPerHour > 0 ? formatCurrency(b.normalDayGMVPerHour) : "—"}
+                            </p>
+                          </div>
+                          <div className="rounded p-2 text-xs" style={{ background: "var(--bg-card)" }}>
+                            <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Campaign GMV/hr</p>
+                            <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                              {b.campaignDayGMVPerHour > 0 ? formatCurrency(b.campaignDayGMVPerHour) : "—"}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* KPI rates row */}
+                        {b.kpiConfigFound ? (
+                          <div className="flex gap-3 text-xs" style={{ color: "var(--text-muted)" }}>
+                            <span>KPI 1 <strong style={{ color: "var(--accent)" }}>{b.kpi1Rate}%</strong></span>
+                            <span>KPI 2 <strong style={{ color: "var(--accent)" }}>{b.kpi2Rate}%</strong></span>
+                            {effectiveRate !== null && (
+                              <span>Effective <strong style={{ color: "var(--text-secondary)" }}>{effectiveRate.toFixed(2)}%</strong></span>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-xs" style={{ color: "var(--text-muted)" }}>Commission rate not set for this month</p>
                         )}
                       </div>
                     );
