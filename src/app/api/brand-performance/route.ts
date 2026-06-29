@@ -25,19 +25,25 @@ export async function GET(req: NextRequest) {
   if (!startStr || !endStr)
     return Response.json({ error: "start and end required" }, { status: 400 });
 
+  // MYT-offset dates for DB queries (Vercel runs UTC; +08:00 ensures correct MYT range)
   const rangeStart = new Date(startStr + "T00:00:00+08:00");
   const rangeEnd   = new Date(endStr   + "T23:59:59+08:00");
+
+  // UTC-midnight dates for bucket building — date-fns runs in server-local (UTC) time,
+  // so parsing without offset gives the correct calendar date for labels/arithmetic.
+  const bucketStart = new Date(startStr + "T00:00:00Z");
+  const bucketEnd   = new Date(endStr   + "T23:59:59Z");
 
   // Build time buckets
   type Bucket = { label: string; sublabel?: string; start: Date; end: Date };
   const buckets: Bucket[] = [];
 
   if (groupBy === "month") {
-    let cursor = startOfMonth(rangeStart);
-    while (isBefore(cursor, rangeEnd)) {
+    let cursor = startOfMonth(bucketStart);
+    while (isBefore(cursor, bucketEnd)) {
       const mEnd = endOfMonth(cursor);
-      const clippedStart = isAfter(cursor, rangeStart) ? cursor : rangeStart;
-      const clippedEnd   = isBefore(mEnd, rangeEnd)   ? mEnd   : rangeEnd;
+      const clippedStart = isAfter(cursor, bucketStart) ? cursor : bucketStart;
+      const clippedEnd   = isBefore(mEnd, bucketEnd)   ? mEnd   : bucketEnd;
       buckets.push({
         label:    format(cursor, "MMM"),
         sublabel: format(cursor, "MMM yyyy"),
@@ -47,12 +53,12 @@ export async function GET(req: NextRequest) {
       cursor = addMonths(cursor, 1);
     }
   } else {
-    let cursor = startOfWeek(rangeStart, { weekStartsOn: 1 });
+    let cursor = startOfWeek(bucketStart, { weekStartsOn: 1 });
     let idx = 1;
-    while (isBefore(cursor, rangeEnd)) {
+    while (isBefore(cursor, bucketEnd)) {
       const wEnd = endOfWeek(cursor, { weekStartsOn: 1 });
-      const clippedStart = isAfter(cursor, rangeStart) ? cursor : rangeStart;
-      const clippedEnd   = isBefore(wEnd, rangeEnd)   ? wEnd   : rangeEnd;
+      const clippedStart = isAfter(cursor, bucketStart) ? cursor : bucketStart;
+      const clippedEnd   = isBefore(wEnd, bucketEnd)   ? wEnd   : bucketEnd;
       buckets.push({
         label:    `W${idx}`,
         sublabel: `W${idx} (${format(clippedStart, "d MMM")}–${format(clippedEnd, "d MMM")})`,
