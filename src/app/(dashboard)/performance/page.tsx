@@ -899,6 +899,11 @@ function BrandPerformanceTab({
         </div>
       )}
 
+      {/* Cumulative week-on-week chart */}
+      {!bpLoading && bpData && bpData.weeks.length > 1 && (
+        <BpCumulativeChart brands={bpData.brands} weeks={bpData.weeks} />
+      )}
+
       {/* Platform sections */}
       {!bpLoading && bpData && PLATFORM_SECTIONS.map(({ key, label: secLabel }) => {
         const brands = bpData.brands.filter(b => b.platform === key);
@@ -1059,6 +1064,191 @@ function BrandPerformanceTab({
           No completed sessions found for this period.
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Cumulative Week-on-Week Line Chart ───────────────────────────────────────
+
+function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek[] }) {
+  const [hovered, setHovered] = useState<{ weekIdx: number; x: number; y: number } | null>(null);
+
+  // Group brands by platform and compute cumulative GMV per week
+  const SERIES: { key: string; label: string; color: string; dash?: string }[] = [
+    { key: "SHOPEE", label: "Shopee",  color: "#f97316" },
+    { key: "TIKTOK", label: "TikTok",  color: "#fb7185" },
+    { key: "BOTH",   label: "Other",   color: "#818cf8" },
+  ];
+
+  type SeriesItem = typeof SERIES[number] & { cumActual: number[]; cumTarget: (number | null)[]; cumPrev: (number | null)[]; totalTarget: number; prevTotal: number };
+  const seriesData = (SERIES.map(s => {
+    const sb = brands.filter(b => b.platform === s.key);
+    if (sb.length === 0) return null;
+    const weekly = weeks.map((_, wi) => sb.reduce((sum, b) => sum + (b.weeklyGMV[wi] ?? 0), 0));
+    const cumActual   = weekly.reduce<number[]>((acc, v) => [...acc, (acc[acc.length - 1] ?? 0) + v], []);
+    const totalTarget = sb.reduce((sum, b) => sum + b.target, 0);
+    const cumTarget   = weeks.map((_, i) => totalTarget > 0 ? (totalTarget / weeks.length) * (i + 1) : null);
+    const prevTotal   = sb.reduce((sum, b) => sum + b.prevGMV, 0);
+    const cumPrev     = weeks.map((_, i) => prevTotal > 0 ? (prevTotal / weeks.length) * (i + 1) : null);
+    return { ...s, cumActual, cumTarget, cumPrev, totalTarget, prevTotal };
+  }).filter(Boolean)) as SeriesItem[];
+
+  if (seriesData.length === 0) return null;
+
+  // SVG dimensions
+  const W = 800, H = 180, padL = 64, padR = 16, padT = 16, padB = 36;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Find global max across all actual + target series
+  const allVals = seriesData.flatMap(s => [...s.cumActual, ...(s.cumTarget.filter(Boolean) as number[]), ...(s.cumPrev.filter(Boolean) as number[])]);
+  const maxVal = Math.max(...allVals, 1);
+
+  function toX(wi: number) { return padL + (wi / (weeks.length - 1)) * chartW; }
+  function toY(v: number)  { return padT + chartH - (v / maxVal) * chartH; }
+  function pts(vals: (number | null)[]) {
+    return vals.map((v, i) => v != null ? `${toX(i)},${toY(v)}` : null).filter(Boolean).join(" ");
+  }
+  function linePath(vals: (number | null)[]) {
+    const points = vals.map((v, i) => ({ x: toX(i), y: v != null ? toY(v) : null }));
+    return points.reduce((path, p, i) => {
+      if (p.y == null) return path;
+      return path + (i === 0 || points[i - 1].y == null ? `M${p.x},${p.y}` : ` L${p.x},${p.y}`);
+    }, "");
+  }
+
+  // Y-axis ticks
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ v: maxVal * f, y: toY(maxVal * f) }));
+
+  // Tooltip data at hovered week
+  const tooltipData = hovered != null ? seriesData.map(s => ({
+    label: s.label,
+    color: s.color,
+    actual: s.cumActual[hovered.weekIdx] ?? 0,
+    target: s.cumTarget[hovered.weekIdx],
+    prev:   s.cumPrev[hovered.weekIdx],
+  })) : null;
+
+  return (
+    <div className="section-card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          Cumulative GMV — Week on Week
+        </p>
+        <div className="flex items-center gap-4 flex-wrap">
+          {seriesData.map(s => (
+            <div key={s.key} className="flex items-center gap-1.5">
+              <div className="w-3 h-0.5 rounded" style={{ background: s.color }} />
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>{s.label} actual</span>
+              <div className="w-3 h-0.5 rounded opacity-40" style={{ background: s.color, borderTop: "2px dashed" }} />
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>target</span>
+            </div>
+          ))}
+          {seriesData.some(s => s.prevTotal > 0) && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-0.5 rounded" style={{ background: "rgba(148,163,184,.4)" }} />
+              <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>prev period</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="relative">
+        {/* Tooltip */}
+        {tooltipData && hovered && (
+          <div className="absolute z-10 rounded-lg px-3 py-2 text-xs shadow-md pointer-events-none"
+            style={{
+              left: Math.min(hovered.x + 12, W - 160),
+              top: Math.max(hovered.y - 10, 0),
+              background: "var(--bg-card)",
+              border: "1px solid var(--border)",
+              color: "var(--text-primary)",
+            }}>
+            <div className="font-semibold mb-1" style={{ color: "var(--text-secondary)" }}>{weeks[hovered.weekIdx]?.label}</div>
+            {tooltipData.map(t => (
+              <div key={t.label} className="space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ background: t.color }} />
+                  <span style={{ color: "var(--text-muted)" }}>{t.label}:</span>
+                  <strong>{formatCurrency(t.actual)}</strong>
+                </div>
+                {t.target != null && (
+                  <div className="pl-3.5 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                    Target: {formatCurrency(t.target)} · {t.actual > 0 && t.target > 0 ? `${((t.actual / t.target) * 100).toFixed(0)}%` : "—"}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
+          {/* Grid lines + Y labels */}
+          {ticks.map((t, i) => (
+            <g key={i}>
+              <line x1={padL} y1={t.y} x2={W - padR} y2={t.y} stroke="var(--border)" strokeWidth="1" strokeDasharray={i === 0 ? "none" : "3,4"} />
+              <text x={padL - 4} y={t.y + 3.5} textAnchor="end" fontSize="9" fill="var(--text-muted)">
+                {t.v >= 1000 ? `${(t.v / 1000).toFixed(0)}K` : t.v.toFixed(0)}
+              </text>
+            </g>
+          ))}
+
+          {/* X axis week labels */}
+          {weeks.map((w, i) => (
+            <text key={i} x={toX(i)} y={H - 4} textAnchor="middle" fontSize="9" fill="var(--text-muted)">
+              {`W${i + 1}`}
+            </text>
+          ))}
+
+          {/* Prev period lines (faint, behind) */}
+          {seriesData.map(s => s.prevTotal > 0 && (
+            <polyline key={`prev-${s.key}`} points={pts(s.cumPrev)} fill="none"
+              stroke="rgba(148,163,184,.25)" strokeWidth="1.5" strokeDasharray="3,4" />
+          ))}
+
+          {/* Target dashed lines */}
+          {seriesData.map(s => s.totalTarget > 0 && (
+            <path key={`target-${s.key}`} d={linePath(s.cumTarget)} fill="none"
+              stroke={s.color} strokeWidth="1.5" strokeDasharray="5,4" strokeOpacity="0.4" />
+          ))}
+
+          {/* Actual lines */}
+          {seriesData.map(s => (
+            <g key={`actual-${s.key}`}>
+              <path d={linePath(s.cumActual)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+              {/* Data points */}
+              {s.cumActual.map((v, wi) => (
+                <circle key={wi} cx={toX(wi)} cy={toY(v)} r={hovered?.weekIdx === wi ? 5 : 3}
+                  fill={s.color} stroke="var(--bg-card)" strokeWidth="2"
+                  style={{ transition: "r 0.1s" }} />
+              ))}
+            </g>
+          ))}
+
+          {/* Hover interaction overlay */}
+          {weeks.map((_, wi) => (
+            <rect key={wi}
+              x={toX(wi) - chartW / weeks.length / 2}
+              y={padT}
+              width={chartW / weeks.length}
+              height={chartH}
+              fill="transparent"
+              onMouseEnter={e => {
+                const svgEl = (e.target as SVGElement).closest("svg")!;
+                const rect = svgEl.getBoundingClientRect();
+                setHovered({ weekIdx: wi, x: toX(wi) * (rect.width / W), y: padT * (rect.height / H) });
+              }}
+              onMouseLeave={() => setHovered(null)}
+            />
+          ))}
+
+          {/* Hovered week vertical line */}
+          {hovered && (
+            <line x1={toX(hovered.weekIdx)} y1={padT} x2={toX(hovered.weekIdx)} y2={padT + chartH}
+              stroke="var(--border)" strokeWidth="1" strokeDasharray="3,3" />
+          )}
+        </svg>
+      </div>
     </div>
   );
 }
