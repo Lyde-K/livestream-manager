@@ -9,7 +9,7 @@ import { PlatformBadge, CountryFlag, stripCountry, detectCountry } from "@/compo
 import {
   TrendingUp, Clock, AlertCircle, CheckCircle2, Download,
   ChevronDown, ChevronRight, DollarSign, Zap, TrendingDown,
-  Eye, ShoppingCart, ChevronLeft, Users, MousePointer2,
+  Eye, ShoppingCart, ChevronLeft, Users, MousePointer2, Target, Pencil, Check,
 } from "lucide-react";
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
@@ -23,7 +23,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type MainTab = "analytics" | "hosts" | "adscost";
+type MainTab = "analytics" | "brands" | "hosts" | "adscost";
 type Period = "day" | "week" | "month" | "quarter" | "year" | "last30" | "last90" | "custom";
 type Breakdown = "brand" | "host" | "platform" | "country";
 
@@ -148,6 +148,60 @@ export default function PerformancePage() {
   const [hostTypeFilter, setHostTypeFilter] = useState<"all"|"full"|"part">("all");
   const [sessionType, setSessionType] = useState<SessionTypeFilter>("ALL");
 
+  // ── Brand Performance state ───────────────────────────────────────────────
+  const [bpPeriod, setBpPeriod] = useState<Period>("month");
+  const [bpAnchor, setBpAnchor] = useState(now);
+  const [bpCustomStart, setBpCustomStart] = useState("");
+  const [bpCustomEnd, setBpCustomEnd]     = useState("");
+  const [bpData, setBpData] = useState<{
+    brands: { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; weeklyGMV: number[] }[];
+    weeks: { label: string; start: string; end: string }[];
+  } | null>(null);
+  const [bpLoading, setBpLoading] = useState(false);
+  // pendingTargets: brandId → { year, month, value } — edits before save
+  const [pendingTargets, setPendingTargets] = useState<Record<string, { year: number; month: number; value: string }>>({});
+  const [savingTarget, setSavingTarget] = useState<string | null>(null);
+
+  const { start: bpStart, end: bpEnd, label: bpLabel } = useMemo(
+    () => getDateRange(bpPeriod, bpAnchor, bpCustomStart, bpCustomEnd),
+    [bpPeriod, bpAnchor, bpCustomStart, bpCustomEnd]
+  );
+
+  // Determine previous period for MoM comparison
+  const bpPrevRange = useMemo(() => {
+    const diffMs = bpEnd.getTime() - bpStart.getTime();
+    const ps = new Date(bpStart.getTime() - diffMs - 86_400_000);
+    const pe = new Date(bpStart.getTime() - 86_400_000);
+    return { start: format(ps, "yyyy-MM-dd"), end: format(pe, "yyyy-MM-dd") };
+  }, [bpStart.toISOString(), bpEnd.toISOString()]);
+
+  useEffect(() => {
+    if (mainTab !== "brands") return;
+    setBpLoading(true);
+    const s = format(bpStart, "yyyy-MM-dd"), e = format(bpEnd, "yyyy-MM-dd");
+    fetch(`/api/brand-performance?start=${s}&end=${e}&prevStart=${bpPrevRange.start}&prevEnd=${bpPrevRange.end}`)
+      .then(r => r.json())
+      .then(d => { setBpData(d); setBpLoading(false); })
+      .catch(() => setBpLoading(false));
+  }, [mainTab, bpStart.toISOString(), bpEnd.toISOString()]);
+
+  async function saveTarget(brandId: string, year: number, month: number, value: string) {
+    const target = parseFloat(value.replace(/,/g, ""));
+    if (isNaN(target)) return;
+    setSavingTarget(brandId);
+    await fetch("/api/brand-performance", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId, year, month, target }),
+    });
+    setSavingTarget(null);
+    // Refresh
+    const s = format(bpStart, "yyyy-MM-dd"), e = format(bpEnd, "yyyy-MM-dd");
+    fetch(`/api/brand-performance?start=${s}&end=${e}&prevStart=${bpPrevRange.start}&prevEnd=${bpPrevRange.end}`)
+      .then(r => r.json()).then(d => setBpData(d));
+    setPendingTargets(prev => { const n = { ...prev }; delete n[brandId]; return n; });
+  }
+
   // ── Host performance state (existing) ────────────────────────────────────
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -220,7 +274,7 @@ export default function PerformancePage() {
 
       {/* ── Main tabs ── */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--bg-subtle)" }}>
-        {([["analytics","Analytics"],["hosts","Host Performance"],["adscost","Sessions Ads Cost"]] as [MainTab,string][]).map(([t,l]) => (
+        {([["analytics","Analytics"],["brands","Brand Performance"],["hosts","Host Performance"],["adscost","Sessions Ads Cost"]] as [MainTab,string][]).map(([t,l]) => (
           <button key={t} onClick={()=>setMainTab(t)} className="px-4 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
             style={{ background: mainTab===t?"var(--sidebar-active)":"transparent", color: mainTab===t?"#fff":"var(--text-secondary)" }}>
             {l}
@@ -435,6 +489,23 @@ export default function PerformancePage() {
             </>
           )}
         </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── BRAND PERFORMANCE TAB ── */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {mainTab === "brands" && (
+        <BrandPerformanceTab
+          period={bpPeriod} setPeriod={setBpPeriod}
+          anchor={bpAnchor} setAnchor={setBpAnchor}
+          customStart={bpCustomStart} setCustomStart={setBpCustomStart}
+          customEnd={bpCustomEnd}   setCustomEnd={setBpCustomEnd}
+          label={bpLabel}
+          canNavigate={!["last30","last90","custom"].includes(bpPeriod)}
+          bpData={bpData} bpLoading={bpLoading}
+          pendingTargets={pendingTargets} setPendingTargets={setPendingTargets}
+          savingTarget={savingTarget} saveTarget={saveTarget}
+        />
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
@@ -698,4 +769,296 @@ function TierBadge({ tier }: { tier: 0|1|2 }) {
   if (tier===2) return <Badge variant="success">Tier 2 ✓</Badge>;
   if (tier===1) return <Badge variant="warning">Tier 1</Badge>;
   return <Badge variant="secondary">Below KPI</Badge>;
+}
+
+// ─── Brand Performance Tab ────────────────────────────────────────────────────
+
+type BpBrand = { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; weeklyGMV: number[] };
+type BpWeek  = { label: string; start: string; end: string };
+
+function BrandPerformanceTab({
+  period, setPeriod, anchor, setAnchor,
+  customStart, setCustomStart, customEnd, setCustomEnd,
+  label, canNavigate,
+  bpData, bpLoading,
+  pendingTargets, setPendingTargets,
+  savingTarget, saveTarget,
+}: {
+  period: Period; setPeriod: (p: Period) => void;
+  anchor: Date;   setAnchor: (d: Date) => void;
+  customStart: string; setCustomStart: (s: string) => void;
+  customEnd: string;   setCustomEnd: (s: string) => void;
+  label: string; canNavigate: boolean;
+  bpData: { brands: BpBrand[]; weeks: BpWeek[] } | null;
+  bpLoading: boolean;
+  pendingTargets: Record<string, { year: number; month: number; value: string }>;
+  setPendingTargets: React.Dispatch<React.SetStateAction<Record<string, { year: number; month: number; value: string }>>>;
+  savingTarget: string | null;
+  saveTarget: (brandId: string, year: number, month: number, value: string) => void;
+}) {
+  const PLATFORM_SECTIONS: { key: string; label: string }[] = [
+    { key: "SHOPEE", label: "Shopee" },
+    { key: "TIKTOK", label: "TikTok" },
+    { key: "BOTH",   label: "Multi-platform" },
+  ];
+
+  function achieveBadge(pct: number, hasTarget: boolean) {
+    if (!hasTarget) return null;
+    const cls = pct >= 90 ? "text-green-400 bg-green-400/10" : pct >= 60 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10";
+    return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{pct.toFixed(1)}%</span>;
+  }
+
+  function weekBars(weeklyGMV: number[]) {
+    const max = Math.max(...weeklyGMV, 1);
+    return (
+      <div className="flex gap-1 items-end h-8">
+        {weeklyGMV.map((v, i) => {
+          const h = Math.max(2, Math.round((v / max) * 28));
+          const isLatest = i === weeklyGMV.length - 1;
+          return (
+            <div key={i} className="flex flex-col items-center gap-0.5 flex-1 group relative">
+              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[var(--bg-card)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[9px] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10 shadow-sm">
+                {bpData?.weeks[i]?.label ?? `W${i+1}`}<br/>RM {v.toLocaleString("en-MY", { maximumFractionDigits: 0 })}
+              </div>
+              <div className="w-full rounded-sm" style={{ height: h, background: isLatest ? "var(--sidebar-active)" : "rgba(148,163,184,.25)" }} />
+              <span className="text-[8px]" style={{ color: "var(--text-muted)" }}>W{i + 1}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Total KPIs
+  const totalActual  = bpData?.brands.reduce((s, b) => s + b.totalGMV, 0) ?? 0;
+  const totalTarget  = bpData?.brands.reduce((s, b) => s + b.target,   0) ?? 0;
+  const totalPrev    = bpData?.brands.reduce((s, b) => s + b.prevGMV,  0) ?? 0;
+  const totalAchieve = totalTarget > 0 ? (totalActual / totalTarget) * 100 : null;
+  const totalGrowth  = totalPrev  > 0 ? ((totalActual - totalPrev) / totalPrev) * 100 : null;
+
+  return (
+    <div className="space-y-5">
+      {/* Period picker — same style as Analytics */}
+      <div className="section-card p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 p-0.5 rounded-md" style={{ background: "var(--bg-subtle)" }}>
+            {(["month","quarter","year","custom"] as Period[]).map(p => (
+              <button key={p} onClick={() => setPeriod(p)}
+                className="px-3 py-1 rounded text-xs font-medium transition-all cursor-pointer"
+                style={{ background: period===p?"var(--sidebar-active)":"transparent", color: period===p?"#fff":"var(--text-secondary)" }}>
+                {p === "month" ? "Monthly" : p === "quarter" ? "Quarterly" : p === "year" ? "Yearly" : "Custom"}
+              </button>
+            ))}
+          </div>
+
+          {period !== "custom" && (
+            <div className="flex items-center gap-1">
+              <button disabled={!canNavigate} onClick={() => setAnchor(navigateAnchor(period, anchor, -1))}
+                className="p-1 rounded-md cursor-pointer hover:bg-[var(--bg-hover)]">
+                <ChevronLeft size={16} style={{ color: "var(--text-secondary)" }} />
+              </button>
+              <span className="text-sm font-semibold px-1" style={{ color: "var(--text-primary)", minWidth: 120, textAlign: "center" }}>{label}</span>
+              <button disabled={!canNavigate} onClick={() => setAnchor(navigateAnchor(period, anchor, 1))}
+                className="p-1 rounded-md cursor-pointer hover:bg-[var(--bg-hover)]">
+                <ChevronRight size={16} style={{ color: "var(--text-secondary)" }} />
+              </button>
+            </div>
+          )}
+
+          {period === "custom" && (
+            <div className="flex items-center gap-2">
+              <DatePicker value={customStart} onChange={setCustomStart} placeholder="Start" />
+              <span style={{ color: "var(--text-muted)" }}>–</span>
+              <DatePicker value={customEnd} onChange={setCustomEnd} placeholder="End" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* KPI summary row */}
+      {!bpLoading && bpData && (
+        <div className="grid grid-cols-4 gap-3">
+          {[
+            { label: "Total GMV", value: formatCurrency(totalActual), sub: totalTarget > 0 ? `vs ${formatCurrency(totalTarget)} target` : "No target set" },
+            { label: "Achievement", value: totalAchieve != null ? `${totalAchieve.toFixed(1)}%` : "—", sub: totalAchieve == null ? "Set targets below" : totalAchieve >= 90 ? "On track ✓" : totalAchieve >= 60 ? "Needs attention" : "Below target" },
+            { label: "vs Previous", value: totalGrowth != null ? `${totalGrowth >= 0 ? "+" : ""}${totalGrowth.toFixed(1)}%` : "—", sub: `Prev: ${formatCurrency(totalPrev)}` },
+            { label: "Active Brands", value: String(bpData.brands.length), sub: `${bpData.weeks.length} week${bpData.weeks.length !== 1 ? "s" : ""} in range` },
+          ].map(k => (
+            <div key={k.label} className="section-card p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-muted)" }}>{k.label}</p>
+              <p className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>{k.value}</p>
+              <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{k.sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {bpLoading && (
+        <div className="section-card p-8 flex items-center justify-center">
+          <span style={{ color: "var(--text-muted)" }}>Loading…</span>
+        </div>
+      )}
+
+      {/* Platform sections */}
+      {!bpLoading && bpData && PLATFORM_SECTIONS.map(({ key, label: secLabel }) => {
+        const brands = bpData.brands.filter(b => b.platform === key);
+        if (brands.length === 0) return null;
+        const secTotal  = brands.reduce((s, b) => s + b.totalGMV, 0);
+        const secTarget = brands.reduce((s, b) => s + b.target,   0);
+        const secPrev   = brands.reduce((s, b) => s + b.prevGMV,  0);
+        const secPct    = secTarget > 0 ? (secTotal / secTarget) * 100 : null;
+        const secGrowth = secPrev > 0 ? ((secTotal - secPrev) / secPrev) * 100 : null;
+        const badgeColor = key === "SHOPEE" ? "#f97316" : key === "TIKTOK" ? "#fb7185" : "#818cf8";
+
+        // Determine the single year-month to use for target editing when period is "month"
+        const editMonth = anchor.getMonth(); // 0-indexed
+        const editYear  = anchor.getFullYear();
+
+        return (
+          <div key={key} className="section-card overflow-hidden">
+            {/* Section header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "var(--border)" }}>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm" style={{ color: "var(--text-primary)" }}>{secLabel}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${badgeColor}18`, color: badgeColor }}>
+                  {key === "BOTH" ? "ALL" : key}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs" style={{ color: "var(--text-muted)" }}>
+                {secGrowth != null && (
+                  <span style={{ color: secGrowth >= 0 ? "var(--success)" : "var(--danger)" }}>
+                    {secGrowth >= 0 ? "+" : ""}{secGrowth.toFixed(1)}% vs prev
+                  </span>
+                )}
+                <span className="font-semibold" style={{ color: "var(--text-primary)" }}>{formatCurrency(secTotal)}</span>
+                {secPct != null && achieveBadge(secPct, true)}
+              </div>
+            </div>
+
+            {/* Table header */}
+            <div className="grid text-[10px] font-semibold uppercase tracking-wide px-4 py-2 border-b"
+              style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", borderColor: "var(--border)", color: "var(--text-muted)" }}>
+              <div>Brand</div>
+              <div>Week-on-week</div>
+              <div className="text-right">Target</div>
+              <div className="text-right">Actual</div>
+              <div className="text-right">vs Prev</div>
+              <div className="text-right">Achievement</div>
+            </div>
+
+            {/* Brand rows */}
+            {brands.map(b => {
+              const pct = b.target > 0 ? (b.totalGMV / b.target) * 100 : null;
+              const growth = b.prevGMV > 0 ? ((b.totalGMV - b.prevGMV) / b.prevGMV * 100) : null;
+              const pending = pendingTargets[b.id];
+              const isEditing = pending !== undefined;
+              const displayTarget = isEditing ? pending.value : b.target > 0 ? b.target.toFixed(0) : "";
+              const rowBg = pct != null && pct < 50 ? "rgba(239,68,68,.03)" : undefined;
+
+              return (
+                <div key={b.id} className="grid items-center px-4 py-3 border-b"
+                  style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", borderColor: "var(--border)", background: rowBg }}>
+                  {/* Brand name */}
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
+                      <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{b.name}</span>
+                    </div>
+                  </div>
+
+                  {/* Week bars */}
+                  <div className="pr-2">{weekBars(b.weeklyGMV)}</div>
+
+                  {/* Target (editable) */}
+                  <div className="text-right">
+                    {isEditing ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <Input
+                          value={pending.value}
+                          onChange={e => setPendingTargets(prev => ({ ...prev, [b.id]: { ...prev[b.id], value: e.target.value } }))}
+                          onKeyDown={e => { if (e.key === "Enter") saveTarget(b.id, pending.year, pending.month, pending.value); if (e.key === "Escape") setPendingTargets(prev => { const n={...prev}; delete n[b.id]; return n; }); }}
+                          className="w-24 text-right text-xs h-7"
+                          autoFocus
+                        />
+                        <button onClick={() => saveTarget(b.id, pending.year, pending.month, pending.value)}
+                          disabled={savingTarget === b.id}
+                          className="p-1 rounded cursor-pointer hover:bg-[var(--bg-hover)]">
+                          <Check size={13} style={{ color: "var(--success)" }} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-1 group">
+                        <span className="text-sm" style={{ color: b.target > 0 ? "var(--text-primary)" : "var(--text-muted)" }}>
+                          {b.target > 0 ? formatCurrency(b.target) : "—"}
+                        </span>
+                        <button
+                          onClick={() => setPendingTargets(prev => ({ ...prev, [b.id]: { year: editYear, month: editMonth, value: b.target > 0 ? b.target.toFixed(0) : "" } }))}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded cursor-pointer hover:bg-[var(--bg-hover)] transition-opacity">
+                          <Pencil size={11} style={{ color: "var(--text-muted)" }} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actual */}
+                  <div className="text-right text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    {formatCurrency(b.totalGMV)}
+                  </div>
+
+                  {/* vs Prev */}
+                  <div className="text-right text-xs">
+                    {growth != null ? (
+                      <span style={{ color: growth >= 0 ? "var(--success)" : "var(--danger)" }}>
+                        {growth >= 0 ? "+" : ""}{growth.toFixed(1)}%
+                      </span>
+                    ) : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                  </div>
+
+                  {/* Achievement */}
+                  <div className="text-right">
+                    {pct != null ? achieveBadge(pct, true) : (
+                      <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>No target</span>
+                    )}
+                    {pct != null && b.target > 0 && (
+                      <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)" }}>
+                        <div className="h-full rounded-full" style={{
+                          width: `${Math.min(100, pct)}%`,
+                          background: pct >= 90 ? "var(--success)" : pct >= 60 ? "#f59e0b" : "var(--danger)",
+                        }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Section total row */}
+            <div className="grid items-center px-4 py-3"
+              style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", background: "var(--bg-subtle)" }}>
+              <div className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>Total {secLabel}</div>
+              <div />
+              <div className="text-right text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+                {secTarget > 0 ? formatCurrency(secTarget) : "—"}
+              </div>
+              <div className="text-right text-sm font-bold" style={{ color: "var(--text-primary)" }}>{formatCurrency(secTotal)}</div>
+              <div className="text-right text-xs">
+                {secGrowth != null && (
+                  <span style={{ color: secGrowth >= 0 ? "var(--success)" : "var(--danger)" }}>
+                    {secGrowth >= 0 ? "+" : ""}{secGrowth.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              <div className="text-right">{secPct != null && achieveBadge(secPct, true)}</div>
+            </div>
+          </div>
+        );
+      })}
+
+      {!bpLoading && bpData?.brands.length === 0 && (
+        <div className="section-card p-10 text-center" style={{ color: "var(--text-muted)" }}>
+          No completed sessions found for this period.
+        </div>
+      )}
+    </div>
+  );
 }
