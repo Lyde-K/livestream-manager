@@ -3,6 +3,8 @@
  * GET  ?start=YYYY-MM-DD&end=YYYY-MM-DD&prevStart=...&prevEnd=...&groupBy=week|month
  * PUT  { brandId, year, month, target }  — month is 1-based
  */
+export const dynamic = "force-dynamic";
+
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
