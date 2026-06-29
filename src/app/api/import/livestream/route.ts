@@ -244,6 +244,10 @@ export async function POST(req: NextRequest) {
 
   // ── Build preview rows ────────────────────────────────────────────────────
 
+  // SGD → MYR: SG brands (name contains "\bSG\b") have GMV in SGD; multiply by 3.2
+  const SGD_TO_MYR = 3.2;
+  const isSGBrand  = /\bSG\b/.test(brand.name);
+
   let preview: ReturnType<typeof buildTikTokPreview> | ReturnType<typeof buildShopeePreview>;
   try {
     preview = platform === "TIKTOK"
@@ -252,6 +256,18 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return Response.json({ error: `Preview failed: ${msg}` }, { status: 500 });
+  }
+
+  if (isSGBrand) {
+    for (const row of preview) {
+      row.gmv = row.gmv * SGD_TO_MYR;
+      (row.insertData as Record<string, unknown>).gmv = row.gmv;
+      // Shopee also stores salesPlaced in a separate field
+      if ((row.insertData as Record<string, unknown>).salesPlaced != null) {
+        (row.insertData as Record<string, unknown>).salesPlaced =
+          ((row.insertData as Record<string, unknown>).salesPlaced as number) * SGD_TO_MYR;
+      }
+    }
   }
 
   if (action === "preview") {
