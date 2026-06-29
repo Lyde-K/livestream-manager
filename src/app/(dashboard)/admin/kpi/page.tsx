@@ -79,10 +79,10 @@ function initEdit(row: BrandRow): EditState {
     plannedHours: 0,
     kpi1Rate: 1.0,
     kpi2Rate: 0.5,
-    bauTier1: row.recommended.bauTier1,
-    bauTier2: row.recommended.bauTier2,
-    campTier1: row.recommended.campTier1,
-    campTier2: row.recommended.campTier2,
+    bauTier1: Math.round(row.recommended.bauTier1 * 100) / 100,
+    bauTier2: Math.round(row.recommended.bauTier2 * 100) / 100,
+    campTier1: Math.round(row.recommended.campTier1 * 100) / 100,
+    campTier2: Math.round(row.recommended.campTier2 * 100) / 100,
     isRecommended: true,
   };
 }
@@ -150,10 +150,10 @@ export default function BrandKPIPage() {
       for (const row of rows) {
         next[row.brand.id] = {
           ...next[row.brand.id],
-          bauTier1: row.recommended.bauTier1,
-          bauTier2: row.recommended.bauTier2,
-          campTier1: row.recommended.campTier1,
-          campTier2: row.recommended.campTier2,
+          bauTier1: Math.round(row.recommended.bauTier1 * 100) / 100,
+          bauTier2: Math.round(row.recommended.bauTier2 * 100) / 100,
+          campTier1: Math.round(row.recommended.campTier1 * 100) / 100,
+          campTier2: Math.round(row.recommended.campTier2 * 100) / 100,
           isRecommended: true,
         };
       }
@@ -208,17 +208,17 @@ export default function BrandKPIPage() {
               <tr>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Brand</th>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Platform</th>
-                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>Planned hrs</th>
-                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>KPI 1 %</th>
-                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "right" }}>KPI 2 % <span style={{ fontSize: "0.7em", color: "var(--text-muted)", fontWeight: 400 }}>(+add)</span></th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "center" }}>Planned hrs</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "center" }}>KPI 1 %</th>
+                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "center" }}>KPI 2 % <span style={{ fontSize: "0.7em", color: "var(--text-muted)", fontWeight: 400 }}>(+add)</span></th>
                 <th style={{ textAlign: "center" }}>Type</th>
-                <th style={{ textAlign: "right" }}>Prev GMV</th>
-                <th style={{ textAlign: "right" }}>Prev hrs</th>
-                <th style={{ textAlign: "right" }}>Avg/hr</th>
-                <th style={{ textAlign: "right", color: "var(--color-warning, #f59e0b)" }}>Rec T1</th>
-                <th style={{ textAlign: "right", color: "var(--color-warning, #f59e0b)" }}>Rec T2</th>
-                <th style={{ textAlign: "right" }}>T1 GMV/hr</th>
-                <th style={{ textAlign: "right" }}>T2 GMV/hr</th>
+                <th style={{ textAlign: "center" }}>Prev GMV</th>
+                <th style={{ textAlign: "center" }}>Prev hrs</th>
+                <th style={{ textAlign: "center" }}>Avg/hr</th>
+                <th style={{ textAlign: "center", color: "var(--color-warning, #f59e0b)" }}>Rec T1</th>
+                <th style={{ textAlign: "center", color: "var(--color-warning, #f59e0b)" }}>Rec T2</th>
+                <th style={{ textAlign: "center" }}>T1 GMV/hr</th>
+                <th style={{ textAlign: "center" }}>T2 GMV/hr</th>
               </tr>
             </thead>
             <tbody>
@@ -240,102 +240,102 @@ export default function BrandKPIPage() {
                       <td rowSpan={2} style={{ verticalAlign: "middle", color: "var(--text-secondary)" }}>
                         {row.brand.platform}
                       </td>
-                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "center" }}>
                         <NumInput
                           value={edit.plannedHours}
                           onChange={(v) => updateEdit(row.brand.id, { plannedHours: v })}
-                          className="text-right"
+                          className="text-center"
                         />
                       </td>
-                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "center" }}>
                         <NumInput
                           value={edit.kpi1Rate}
                           onChange={(v) => updateEdit(row.brand.id, { kpi1Rate: v })}
-                          className="text-right"
+                          className="text-center"
                         />
                       </td>
-                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "right" }}>
+                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "center" }}>
                         <NumInput
                           value={edit.kpi2Rate}
                           onChange={(v) => updateEdit(row.brand.id, { kpi2Rate: v })}
-                          className="text-right"
+                          className="text-center"
                         />
                       </td>
-                      <td><Badge variant="secondary">BAU</Badge></td>
-                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                      <td style={{ textAlign: "center" }}><Badge variant="secondary">BAU</Badge></td>
+                      <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                         {row.prevMonth.bauGMV > 0 ? formatCurrency(row.prevMonth.bauGMV) : "—"}
                       </td>
-                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                      <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                         {row.prevMonth.bauHours > 0 ? row.prevMonth.bauHours.toFixed(1) + "h" : "—"}
                       </td>
-                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                      <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                         {bauAvg > 0 ? formatCurrency(bauAvg) + "/h" : "—"}
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "center" }}>
                         <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
                           {row.recommended.bauTier1 > 0 ? formatCurrency(row.recommended.bauTier1) : "—"}
                         </span>
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "center" }}>
                         <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
                           {row.recommended.bauTier2 > 0 ? formatCurrency(row.recommended.bauTier2) : "—"}
                         </span>
                       </td>
-                      <td style={{ textAlign: "right" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "flex-end" }}>
+                      <td style={{ textAlign: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center" }}>
                           {edit.isRecommended && <span style={{ fontSize: "0.65em", padding: "1px 4px", background: "var(--color-warning, #f59e0b)", color: "#fff", borderRadius: "4px", fontWeight: 600 }}>Rec</span>}
                           <NumInput
                             value={edit.bauTier1}
                             onChange={(v) => updateEdit(row.brand.id, { bauTier1: v })}
-                            className="text-right"
+                            className="text-center"
                           />
                         </div>
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "center" }}>
                         <NumInput
                           value={edit.bauTier2}
                           onChange={(v) => updateEdit(row.brand.id, { bauTier2: v })}
-                          className="text-right"
+                          className="text-center"
                         />
                       </td>
                     </tr>
                     {/* Campaign row */}
                     <tr key={`${row.brand.id}-camp`}>
-                      <td><Badge variant="warning">Campaign</Badge></td>
-                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                      <td style={{ textAlign: "center" }}><Badge variant="warning">Campaign</Badge></td>
+                      <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                         {row.prevMonth.campGMV > 0 ? formatCurrency(row.prevMonth.campGMV) : "—"}
                       </td>
-                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                      <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                         {row.prevMonth.campHours > 0 ? row.prevMonth.campHours.toFixed(1) + "h" : "—"}
                       </td>
-                      <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                      <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>
                         {campAvg > 0 ? formatCurrency(campAvg) + "/h" : "—"}
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "center" }}>
                         <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
                           {row.recommended.campTier1 > 0 ? formatCurrency(row.recommended.campTier1) : "—"}
                         </span>
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "center" }}>
                         <span style={{ color: "var(--color-warning, #f59e0b)", fontSize: "0.82em", whiteSpace: "nowrap" }}>
                           {row.recommended.campTier2 > 0 ? formatCurrency(row.recommended.campTier2) : "—"}
                         </span>
                       </td>
-                      <td style={{ textAlign: "right" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "flex-end" }}>
+                      <td style={{ textAlign: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: "center" }}>
                           {edit.isRecommended && <span style={{ fontSize: "0.65em", padding: "1px 4px", background: "var(--color-warning, #f59e0b)", color: "#fff", borderRadius: "4px", fontWeight: 600 }}>Rec</span>}
                           <NumInput
                             value={edit.campTier1}
                             onChange={(v) => updateEdit(row.brand.id, { campTier1: v })}
-                            className="text-right"
+                            className="text-center"
                           />
                         </div>
                       </td>
-                      <td style={{ textAlign: "right" }}>
+                      <td style={{ textAlign: "center" }}>
                         <NumInput
                           value={edit.campTier2}
                           onChange={(v) => updateEdit(row.brand.id, { campTier2: v })}
-                          className="text-right"
+                          className="text-center"
                         />
                       </td>
                     </tr>
