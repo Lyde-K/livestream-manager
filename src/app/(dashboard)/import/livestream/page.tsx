@@ -496,8 +496,9 @@ export default function LivestreamImportPage() {
   const [preview, setPreview]         = useState<PreviewRow[]>([]);
   const [hostOverrides, setHostOverrides]         = useState<Record<string, string>>({});
   const [campaignOverrides, setCampaignOverrides] = useState<Record<string, boolean>>({});
-  const [excludeTests, setExcludeTests]   = useState(true);
-  const [selectedKeys, setSelectedKeys]   = useState<Set<string>>(new Set());
+  const [excludeTests, setExcludeTests]       = useState(true);
+  const [showUnmatchedOnly, setShowUnmatchedOnly] = useState(false);
+  const [selectedKeys, setSelectedKeys]       = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
   const [result, setResult]           = useState<{ inserted: number; updated?: number; skipped: number; unmatched: number; adsCostMatched?: number } | null>(null);
@@ -616,8 +617,9 @@ export default function LivestreamImportPage() {
   const brandsForPlatform = (p: string) =>
     brands.filter(b => b.platform === p || b.platform === "BOTH");
 
-  const visiblePreview = excludeTests ? preview.filter(p => !p.likelyTest) : preview;
-  const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId ?? ""));
+  const basePreview    = excludeTests ? preview.filter(p => !p.likelyTest) : preview;
+  const unmatchedRows  = basePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId ?? ""));
+  const visiblePreview = showUnmatchedOnly ? unmatchedRows : basePreview;
   const testCount      = preview.filter(p => p.likelyTest).length;
 
   const allVisibleKeys = visiblePreview.map(p => p.key);
@@ -821,7 +823,22 @@ export default function LivestreamImportPage() {
             <StatStr label="Raw Hours" value={`${(preview.reduce((s, p) => s + (p.duration ?? 0), 0) / 60).toFixed(1)}h`} />
             <div style={{ width: 1, height: 24, background: "var(--border)", flexShrink: 0 }} />
             <Stat label="Host matched" value={preview.filter(p => p.hostId).length} color="#22c55e" />
-            <Stat label="Unmatched" value={unmatchedRows.length} color={unmatchedRows.length > 0 ? "#ef4444" : undefined} />
+            <div className="flex items-center gap-1.5">
+              <Stat label="Unmatched" value={unmatchedRows.length} color={unmatchedRows.length > 0 ? "#ef4444" : undefined} />
+              {unmatchedRows.length > 0 && (
+                <button
+                  onClick={() => setShowUnmatchedOnly(v => !v)}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer transition-all"
+                  style={{
+                    background: showUnmatchedOnly ? "rgba(239,68,68,.2)" : "rgba(239,68,68,.08)",
+                    color: "#ef4444",
+                    border: `1px solid ${showUnmatchedOnly ? "rgba(239,68,68,.5)" : "rgba(239,68,68,.2)"}`,
+                  }}
+                >
+                  {showUnmatchedOnly ? "Show all" : "Filter"}
+                </button>
+              )}
+            </div>
             <Stat label="Campaign days" value={visiblePreview.filter(p => p.isCampaign).length} color="#a855f7" />
             {testCount > 0 && <Stat label="Test sessions (<15min)" value={testCount} color="#f59e0b" />}
             <div className="ml-auto flex items-center gap-2">
