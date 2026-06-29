@@ -161,6 +161,105 @@ async function parseTikTokFile(file: File) {
   return rows;
 }
 
+// ── Parse 13Media internal Shopee xlsx format ────────────────────────────────
+// Columns: BRAND(0) Host(1) Hours(2) Campaign(3) Date(4) Month(5)
+//          Punctuality(6) Slot(7) Livestream Name(8) Start Time(9) Duration(10)
+//          Engaged Viewers(11) Comments(12) ATC(13) Avg View Duration(14)
+//          Viewers(15) Orders Placed(16) Orders Confirmed(17) Conv%(18)
+//          Items Sold Placed(19) Items Sold Confirmed(20) Sales Placed(21) Sales Confirmed(22)
+// Start Time is stored as UTC datetime; Slot is MYT local time.
+// Returns parsed rows + autoOverrides (host display name → host ID mappings).
+
+function excelTimeToHMS(val: unknown): string {
+  if (val instanceof Date) {
+    // ExcelJS returns duration cells as Date objects anchored at the Excel epoch (1899-12-30)
+    const epochMs = Date.UTC(1899, 11, 30);
+    const totalSecs = Math.round((val.getTime() - epochMs) / 1000);
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  }
+  if (typeof val === "number") {
+    const totalSecs = Math.round(val * 86400);
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+  }
+  return String(val ?? "");
+}
+
+async function parseShopeeXlsxFile(file: File, hosts: Host[]) {
+  const ExcelJS = await import("exceljs");
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  const ws = wb.worksheets[0];
+  if (!ws) throw new Error("No sheet found in xlsx");
+
+  type ShopeeRowData = { no: string; title: string; startTime: string; duration: string; engagedViewers: string; comments: string; atc: string; avgViewDuration: string; viewers: string; ordersPlaced: string; ordersConfirmed: string; itemsSoldPlaced: string; itemsSoldConfirmed: string; salesPlaced: string; salesConfirmed: string };
+  const rows: ShopeeRowData[] = [];
+  const autoOverrides: Record<string, string> = {};
+  let rowIdx = 0;
+
+  ws.eachRow({ includeEmpty: false }, (row, n) => {
+    if (n === 1) return; // skip header row
+    const vals = (row.values as unknown[]).slice(1); // convert 1-based to 0-based
+    const title = String(vals[8] ?? "").trim();
+    const startTimeRaw = vals[9];
+    if (!title || !startTimeRaw) return;
+
+    rowIdx++;
+
+    // Start Time is UTC datetime → convert to MYT "DD-MM-YYYY HH:MM"
+    let startTimeMYT = "";
+    if (startTimeRaw instanceof Date) {
+      const myt = new Date(startTimeRaw.getTime() + 8 * 3600 * 1000);
+      const dd   = String(myt.getUTCDate()).padStart(2, "0");
+      const mm   = String(myt.getUTCMonth() + 1).padStart(2, "0");
+      const yyyy = myt.getUTCFullYear();
+      const hh   = String(myt.getUTCHours()).padStart(2, "0");
+      const min  = String(myt.getUTCMinutes()).padStart(2, "0");
+      startTimeMYT = `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+    } else {
+      return;
+    }
+
+    const no  = String(rowIdx);
+    const key = `SP-${no}-${startTimeMYT.replace(/[^0-9]/g, "")}`;
+
+    // Resolve host name (col 1) → host ID for autoOverrides
+    const hostName = String(vals[1] ?? "").trim().toUpperCase();
+    if (hostName) {
+      const matched = hosts.find(h =>
+        h.displayName.toUpperCase() === hostName ||
+        h.displayName.toUpperCase().replace(/[()]/g, "").replace(/\s+/g, " ").trim() === hostName
+      );
+      if (matched) autoOverrides[key] = matched.id;
+    }
+
+    rows.push({
+      no,
+      title,
+      startTime:         startTimeMYT,
+      duration:          excelTimeToHMS(vals[10]),
+      engagedViewers:    String(vals[11] ?? ""),
+      comments:          String(vals[12] ?? ""),
+      atc:               String(vals[13] ?? ""),
+      avgViewDuration:   excelTimeToHMS(vals[14]),
+      viewers:           String(vals[15] ?? ""),
+      ordersPlaced:      String(vals[16] ?? ""),
+      ordersConfirmed:   String(vals[17] ?? ""),
+      itemsSoldPlaced:   String(vals[19] ?? ""),
+      itemsSoldConfirmed:String(vals[20] ?? ""),
+      salesPlaced:       String(vals[21] ?? ""),
+      salesConfirmed:    String(vals[22] ?? ""),
+    });
+  });
+
+  return { rows, autoOverrides };
+}
+
 // ── Parse Shopee export CSV client-side ──────────────────────────────────────
 
 async function parseShopeeFile(file: File) {
@@ -535,18 +634,28 @@ export default function LivestreamImportPage() {
     if (adsCostRef.current) adsCostRef.current.value = "";
   }
 
+  const isShopeeXlsx = platform === "SHOPEE" && (sessionsFile?.name.toLowerCase().endsWith(".xlsx") ?? false);
+
   async function handlePreview() {
     if (!brandId || !month || !sessionsFile) { setError("Select brand, month, and session file"); return; }
     setError(""); setLoading(true);
     try {
-      const rows = platform === "TIKTOK"
-        ? await parseTikTokFile(sessionsFile)
-        : await parseShopeeFile(sessionsFile);
+      let rows: unknown[];
+      let mergedOverrides = { ...hostOverrides };
+      if (platform === "TIKTOK") {
+        rows = await parseTikTokFile(sessionsFile);
+      } else if (isShopeeXlsx) {
+        const parsed = await parseShopeeXlsxFile(sessionsFile, hosts);
+        rows = parsed.rows;
+        mergedOverrides = { ...parsed.autoOverrides, ...hostOverrides }; // user overrides win
+      } else {
+        rows = await parseShopeeFile(sessionsFile);
+      }
 
       const res = await fetch("/api/import/livestream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "preview", platform, brandId, month, rows, hostOverrides, campaignOverrides }),
+        body: JSON.stringify({ action: "preview", platform, brandId, month, rows, hostOverrides: mergedOverrides, campaignOverrides }),
       });
       const rawText = await res.text();
       let data: Record<string, unknown>;
@@ -555,7 +664,7 @@ export default function LivestreamImportPage() {
       }
       if (!res.ok) { setError((data.error as string) ?? "Preview failed"); return; }
       setPreview(data.preview as PreviewRow[]);
-      setHostOverrides({});
+      setHostOverrides(isShopeeXlsx ? mergedOverrides : {});
       setCampaignOverrides({});
       setStep("preview");
     } catch (e) {
@@ -566,14 +675,22 @@ export default function LivestreamImportPage() {
   async function handleConfirm() {
     setError(""); setLoading(true);
     try {
-      const rows = platform === "TIKTOK"
-        ? await parseTikTokFile(sessionsFile!)
-        : await parseShopeeFile(sessionsFile!);
+      let rows: unknown[];
+      let mergedOverrides = { ...hostOverrides };
+      if (platform === "TIKTOK") {
+        rows = await parseTikTokFile(sessionsFile!);
+      } else if (isShopeeXlsx) {
+        const parsed = await parseShopeeXlsxFile(sessionsFile!, hosts);
+        rows = parsed.rows;
+        mergedOverrides = { ...parsed.autoOverrides, ...hostOverrides };
+      } else {
+        rows = await parseShopeeFile(sessionsFile!);
+      }
 
       const res = await fetch("/api/import/livestream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "confirm", platform, brandId, month, rows, hostOverrides, campaignOverrides }),
+        body: JSON.stringify({ action: "confirm", platform, brandId, month, rows, hostOverrides: mergedOverrides, campaignOverrides }),
       });
       const rawText2 = await res.text();
       let data: Record<string, unknown>;
@@ -847,7 +964,7 @@ export default function LivestreamImportPage() {
             file={sessionsFile}
             onPick={setSessionsFile}
             inputRef={sessionsRef}
-            accept={platform === "TIKTOK" ? ".xlsx" : ".csv"}
+            accept={platform === "TIKTOK" ? ".xlsx" : ".csv,.xlsx"}
             required
           />
 
