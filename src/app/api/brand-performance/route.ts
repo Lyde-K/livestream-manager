@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfWeek, endOfWeek, addWeeks, parseISO, format, isBefore, isAfter } from "date-fns";
+import { startOfWeek, endOfWeek, addWeeks, format, isBefore, isAfter } from "date-fns";
+import { getGMVTargetsForRange, upsertGMVTarget } from "@/lib/gmv-targets";
 
 // GET /api/brand-performance?start=YYYY-MM-DD&end=YYYY-MM-DD&prevStart=...&prevEnd=...
 // Returns per-brand weekly GMV breakdown + targets
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
       select: { id: true, name: true, platform: true, color: true },
       orderBy: { name: "asc" },
     }),
-    prisma.monthlyGMVTarget.findMany(),
+    getGMVTargetsForRange(rangeStart, rangeEnd),
   ]);
 
   // Fetch prev-period sessions for MoM growth
@@ -69,21 +70,10 @@ export async function GET(req: NextRequest) {
   }
 
   // Build target lookup: brandId → total target for the range
-  // We sum targets for all year-month combos within [start, end]
+  // getGMVTargetsForRange already filtered to correct months (1-based, via gmv-targets lib)
   const targetByBrand: Record<string, number> = {};
-  // Determine which year-month pairs fall in the range
-  // Targets are stored with 1-based month (same as /api/gmv-target used by the Overview)
-  const monthSet = new Set<string>();
-  let mc = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
-  while (mc <= rangeEnd) {
-    monthSet.add(`${mc.getFullYear()}-${mc.getMonth() + 1}`); // 1-based
-    mc = new Date(mc.getFullYear(), mc.getMonth() + 1, 1);
-  }
   for (const t of targets) {
-    const key = `${t.year}-${t.month}`; // t.month is already 1-based
-    if (monthSet.has(key)) {
-      targetByBrand[t.brandId] = (targetByBrand[t.brandId] ?? 0) + t.target;
-    }
+    targetByBrand[t.brandId] = (targetByBrand[t.brandId] ?? 0) + t.target;
   }
 
   // Prev GMV by brand
@@ -160,11 +150,6 @@ export async function PUT(req: NextRequest) {
   if (!brandId || year == null || month == null || target == null)
     return Response.json({ error: "brandId, year, month, target required" }, { status: 400 });
 
-  const record = await prisma.monthlyGMVTarget.upsert({
-    where: { brandId_month_year: { brandId, month, year } },
-    update: { target },
-    create: { brandId, month, year, target },
-  });
-
+  const record = await upsertGMVTarget(brandId, month, year, target);
   return Response.json({ ok: true, record });
 }

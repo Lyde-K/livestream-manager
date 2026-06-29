@@ -129,8 +129,9 @@ export function BrandDashboardPanel({
 
   // ── Run-rate ───────────────────────────────────────────────────────────────
   const now           = new Date();
-  const isCurrentMonth = now.getMonth() === month && now.getFullYear() === year;
-  const daysInMonth   = new Date(year, month + 1, 0).getDate();
+  // month prop is 1-based — compare against getMonth()+1 and convert for Date constructor
+  const isCurrentMonth = now.getMonth() + 1 === month && now.getFullYear() === year;
+  const daysInMonth   = new Date(year, month, 0).getDate(); // new Date(y, m, 0) = last day of month m-1 (0-based)
   const daysPassed    = isCurrentMonth ? now.getDate() : daysInMonth;
   const runRateGMV    = daysPassed > 0 ? (currentGMV / daysPassed) * daysInMonth : 0;
 
@@ -154,7 +155,7 @@ export function BrandDashboardPanel({
           <div className="section-card-header">
             <h2 className="flex items-center gap-1.5 text-sm">
               <Target size={13} style={{ color: brandColor }} />
-              GMV Target — {format(new Date(year, month, 1), "MMM yyyy")}
+              GMV Target — {format(new Date(year, month - 1, 1), "MMM yyyy")}
             </h2>
             <button
               onClick={() => { setEditTarget(true); setTargetInput(target > 0 ? String(target) : ""); }}
@@ -388,7 +389,7 @@ export function BrandDashboardPanel({
               Top Hosts — {brandName}
             </h2>
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {format(new Date(year, month, 1), "MMMM yyyy")}
+              {format(new Date(year, month - 1, 1), "MMMM yyyy")}
             </span>
           </div>
           <div className="overflow-x-auto">

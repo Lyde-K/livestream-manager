@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
       const hours    = rows.reduce((sum, s) => sum + (s.actualDurationMinutes ?? 0) / 60, 0);
       const adsCost  = rows.reduce((sum, s) => sum + (s.adsCost            ?? 0), 0);
       return {
-        month:    m - 1,
+        month:    m,   // 1-based — matches month prop received by BrandDashboardPanel
         year:     y,
         label:    format(d, "MMM"),
         gmv,
