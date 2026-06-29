@@ -182,6 +182,29 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "title" TEXT`,
     ],
   },
+  {
+    name: "012_add_brand_kpi_config",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS "BrandKPIConfig" (
+        "id"           TEXT NOT NULL,
+        "brandId"      TEXT NOT NULL,
+        "month"        INTEGER NOT NULL,
+        "year"         INTEGER NOT NULL,
+        "plannedHours" INTEGER NOT NULL DEFAULT 0,
+        "kpiRate"      DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+        "bauTier1"     DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "bauTier2"     DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "campTier1"    DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "campTier2"    DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "createdAt"    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "updatedAt"    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT "BrandKPIConfig_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "BrandKPIConfig_brandId_month_year_key" ON "BrandKPIConfig"("brandId", "month", "year")`,
+      `CREATE INDEX IF NOT EXISTS "BrandKPIConfig_month_year_idx" ON "BrandKPIConfig"("month", "year")`,
+      `ALTER TABLE "BrandKPIConfig" ADD CONSTRAINT "BrandKPIConfig_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {
