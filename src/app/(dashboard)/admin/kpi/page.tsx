@@ -448,20 +448,24 @@ export default function BrandKPIPage() {
           {/* Commission estimate */}
           {commRows.length > 0 && (
             <div className="section-card">
-              <div className="text-sm font-semibold mb-3" style={{ color: "var(--text-primary)" }}>
-                Estimated Commission (if KPI achieved)
+              <div style={{ marginBottom: "4px" }}>
+                <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Estimated Commission (if KPI achieved)
+                </div>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  Based on GMV targets for {MONTHS[month - 1]} {year}. Rates and commission update live as you edit — save to persist.
+                </p>
               </div>
-              <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-                Based on GMV targets for {MONTHS[month - 1]} {year}. Commission = GMV Target × KPI rate.
-              </p>
+              <div style={{ height: "1px", background: "var(--border)", margin: "12px 0" }} />
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Brand</th>
-                    <th className="text-right">GMV Target</th>
-                    <th className="text-right">KPI Rate</th>
-                    <th className="text-right">Est. Commission (KPI1)</th>
-                    <th className="text-right">Est. Commission (KPI2)</th>
+                    <th style={{ paddingTop: "10px", paddingBottom: "10px" }}>Brand</th>
+                    <th className="text-right" style={{ paddingTop: "10px", paddingBottom: "10px" }}>GMV Target</th>
+                    <th className="text-center" style={{ paddingTop: "10px", paddingBottom: "10px" }}>KPI 1%</th>
+                    <th className="text-center" style={{ paddingTop: "10px", paddingBottom: "10px" }}>KPI 2% (+add)</th>
+                    <th className="text-right" style={{ paddingTop: "10px", paddingBottom: "10px" }}>Est. Commission (KPI 1 only)</th>
+                    <th className="text-right" style={{ paddingTop: "10px", paddingBottom: "10px" }}>Est. Commission (KPI 1+2)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -479,7 +483,8 @@ export default function BrandKPIPage() {
                           </span>
                         </td>
                         <td className="text-right" style={{ color: "var(--text-secondary)" }}>{formatCurrency(row.gmvTarget)}</td>
-                        <td className="text-right"><Badge variant="secondary">{k1}% + {k2}%</Badge></td>
+                        <td className="text-center"><Badge variant="secondary">{k1}%</Badge></td>
+                        <td className="text-center"><Badge variant="secondary">{k2}%</Badge></td>
                         <td className="text-right">{formatCurrency(estK1)}</td>
                         <td className="text-right">{formatCurrency(estK2)}</td>
                       </tr>
@@ -488,7 +493,7 @@ export default function BrandKPIPage() {
                   <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
                     <td>Total</td>
                     <td className="text-right">{formatCurrency(commRows.reduce((s, r) => s + r.gmvTarget, 0))}</td>
-                    <td />
+                    <td /><td />
                     <td className="text-right">{formatCurrency(totalKpi1)}</td>
                     <td className="text-right">{formatCurrency(totalKpi2)}</td>
                   </tr>
