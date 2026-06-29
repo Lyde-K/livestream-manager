@@ -3,7 +3,13 @@ import { useState, useEffect } from "react";
 import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import { TrendingUp, Clock, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import type { HostMonthlyStats } from "@/lib/commission";
+
+type StatsWithViolations = HostMonthlyStats & {
+  violations?: { id: string; violationType: string; date: string; deductionAmount: number; brand: { name: string } | null }[];
+  violationDeduction?: number;
+};
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -16,7 +22,7 @@ export default function MyPerformancePage() {
   const { month: mM, year: mY } = mytMonthYear();
   const [month, setMonth] = useState(mM);
   const [year, setYear] = useState(mY);
-  const [stats, setStats] = useState<HostMonthlyStats | null>(null);
+  const [stats, setStats] = useState<StatsWithViolations | null>(null);
   const [loading, setLoading] = useState(false);
   const [brandsOpen, setBrandsOpen] = useState(false);
 
@@ -95,11 +101,11 @@ export default function MyPerformancePage() {
           <div className="section-card p-4">
             <p className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>My Estimated Earnings — {monthLabel}</p>
             <p className="text-3xl font-bold mb-4" style={{ color: "var(--text-primary)" }}>
-              {formatCurrency(stats.netCommission)}
+              {formatCurrency(stats.netCommission - (stats.violationDeduction ?? 0))}
             </p>
 
             {/* Breakdown row */}
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg p-2.5 text-center" style={{ background: "var(--bg-subtle)" }}>
                 <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Base Commission</p>
                 <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -114,6 +120,11 @@ export default function MyPerformancePage() {
                 <p className="font-semibold" style={{ color: stats.attendanceCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
                   {stats.attendanceCommission > 0 ? `+${formatCurrency(stats.attendanceCommission)}` : "—"}
                 </p>
+                {stats.attendanceCommission === 0 && (
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                    {stats.hoursDeficit.toFixed(1)}h short
+                  </p>
+                )}
               </div>
               <div
                 className="rounded-lg p-2.5 text-center"
@@ -123,21 +134,29 @@ export default function MyPerformancePage() {
                 <p className="font-semibold" style={{ color: stats.punctualityCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
                   {stats.punctualityCommission > 0 ? `+${formatCurrency(stats.punctualityCommission)}` : "—"}
                 </p>
+                {stats.punctualityCommission === 0 && (
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                    {stats.lateSessions} late sessions
+                  </p>
+                )}
               </div>
-            </div>
-
-            {/* Bonus explanations */}
-            <div className="mt-3 space-y-1">
-              {stats.attendanceCommission === 0 && (
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Complete {stats.requiredHours.toFixed(1)}h to unlock +0.5% attendance bonus
+              {/* Violation Deduction — always visible */}
+              <div
+                className="rounded-lg p-2.5 text-center"
+                style={{ background: (stats.violationDeduction ?? 0) > 0 ? "rgba(239,68,68,0.1)" : "var(--bg-subtle)" }}
+              >
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5 flex items-center justify-center gap-1">
+                  <ShieldAlert size={10} /> Violation Deduction
                 </p>
-              )}
-              {stats.punctualityCommission === 0 && (
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Keep late sessions ≤ 5 to unlock +0.5% punctuality bonus
+                <p className="font-semibold" style={{ color: (stats.violationDeduction ?? 0) > 0 ? "var(--danger)" : "var(--text-muted)" }}>
+                  {(stats.violationDeduction ?? 0) > 0 ? `−${formatCurrency(stats.violationDeduction!)}` : formatCurrency(0)}
                 </p>
-              )}
+                {(stats.violationDeduction ?? 0) > 0 && (
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--danger)" }}>
+                    {(stats.violations?.length ?? 0)} violation{(stats.violations?.length ?? 0) !== 1 ? "s" : ""}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

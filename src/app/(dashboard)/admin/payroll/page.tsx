@@ -543,12 +543,13 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                             )}
                           </div>
                         </div>
-                        {violationTotal > 0 && (
-                          <div className="mt-3 rounded-lg p-2.5 text-center text-sm bg-red-500/25">
-                            <div className="opacity-70 text-xs mb-0.5">Violation Deductions</div>
-                            <div className="font-semibold">−{formatCurrency(violationTotal)}</div>
-                          </div>
-                        )}
+                        <div className={`mt-3 rounded-lg p-2.5 text-center text-sm ${violationTotal > 0 ? "bg-red-500/25" : "bg-white/10"}`}>
+                          <div className="opacity-70 text-xs mb-0.5">Violation Deductions</div>
+                          <div className="font-semibold">{violationTotal > 0 ? `−${formatCurrency(violationTotal)}` : formatCurrency(0)}</div>
+                          {violationTotal > 0 && (
+                            <div className="text-[10px] opacity-60 mt-0.5">{violations.length} violation{violations.length !== 1 ? "s" : ""}</div>
+                          )}
+                        </div>
                       </div>
 
                       {/* ── Stats grid ── */}

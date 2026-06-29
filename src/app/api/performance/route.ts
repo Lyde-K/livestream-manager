@@ -18,8 +18,16 @@ export async function GET(req: NextRequest) {
   if (user.role === "LIVE_HOST") {
     const host = await prisma.liveHost.findUnique({ where: { userId: user.id } });
     if (!host) return Response.json({ error: "No host profile" }, { status: 404 });
-    const stats = await getHostMonthlyStats(host.id, month, year);
-    return Response.json(stats);
+    const [stats, violations] = await Promise.all([
+      getHostMonthlyStats(host.id, month, year),
+      prisma.hostViolation.findMany({
+        where: { hostId: host.id, month, year },
+        include: { brand: { select: { id: true, name: true } } },
+        orderBy: { date: "asc" },
+      }),
+    ]);
+    const violationDeduction = violations.reduce((s, v) => s + v.deductionAmount, 0);
+    return Response.json({ ...stats, violations, violationDeduction });
   }
 
   if (hostId) {
