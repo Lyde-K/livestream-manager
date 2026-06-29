@@ -49,8 +49,9 @@ export function AllBrandsAnalyticsPanel({ month, year }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const start = format(startOfMonth(new Date(year, month, 1)), "yyyy-MM-dd");
-      const end   = format(endOfMonth(new Date(year, month, 1)), "yyyy-MM-dd");
+      // month prop is 1-based; Date constructor takes 0-based month
+      const start = format(startOfMonth(new Date(year, month - 1, 1)), "yyyy-MM-dd");
+      const end   = format(endOfMonth(new Date(year, month - 1, 1)), "yyyy-MM-dd");
       const res   = await fetch(`/api/analytics?start=${start}&end=${end}&type=ALL`);
       const json  = await res.json() as { success?: boolean } & Partial<AnalyticsData>;
       if (json.totalGMV !== undefined) setData(json as AnalyticsData);
@@ -82,7 +83,7 @@ export function AllBrandsAnalyticsPanel({ month, year }: Props) {
       <div className="section-card-header">
         <h2 className="flex items-center gap-1.5 text-sm">
           <TrendingUp size={13} style={{ color: "var(--accent)" }} />
-          Analytics — {format(new Date(year, month, 1), "MMMM yyyy")}
+          Analytics — {format(new Date(year, month - 1, 1), "MMMM yyyy")}
         </h2>
         <Link
           href="/performance"
