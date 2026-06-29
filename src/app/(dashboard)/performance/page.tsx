@@ -9,7 +9,7 @@ import { PlatformBadge, CountryFlag, stripCountry, detectCountry } from "@/compo
 import {
   TrendingUp, Clock, AlertCircle, CheckCircle2, Download,
   ChevronDown, ChevronRight, DollarSign, Zap, TrendingDown,
-  Eye, ShoppingCart, ChevronLeft, Users, MousePointer2, Target, Pencil, Check,
+  Eye, ShoppingCart, ChevronLeft, Users, MousePointer2, Target, Pencil, Check, RefreshCw,
 } from "lucide-react";
 import {
   format, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
@@ -159,6 +159,7 @@ export default function PerformancePage() {
     groupBy: "week" | "month";
   } | null>(null);
   const [bpLoading, setBpLoading] = useState(false);
+  const [bpRefreshKey, setBpRefreshKey] = useState(0);
   // pendingTargets: brandId → { year, month, value } — edits before save
   const [pendingTargets, setPendingTargets] = useState<Record<string, { year: number; month: number; value: string }>>({});
   const [savingTarget, setSavingTarget] = useState<string | null>(null);
@@ -185,7 +186,7 @@ export default function PerformancePage() {
       .then(r => r.json())
       .then(d => { setBpData(d); setBpLoading(false); })
       .catch(() => setBpLoading(false));
-  }, [mainTab, bpStart.toISOString(), bpEnd.toISOString()]);
+  }, [mainTab, bpStart.toISOString(), bpEnd.toISOString(), bpRefreshKey]);
 
   async function saveTarget(brandId: string, year: number, month: number, value: string) {
     const target = parseFloat(value.replace(/,/g, ""));
@@ -506,6 +507,7 @@ export default function PerformancePage() {
           label={bpLabel}
           canNavigate={!["last30","last90","custom"].includes(bpPeriod)}
           bpData={bpData} bpLoading={bpLoading}
+          onRefresh={() => setBpRefreshKey(k => k + 1)}
           pendingTargets={pendingTargets} setPendingTargets={setPendingTargets}
           savingTarget={savingTarget} saveTarget={saveTarget}
         />
@@ -783,7 +785,7 @@ function BrandPerformanceTab({
   period, setPeriod, anchor, setAnchor,
   customStart, setCustomStart, customEnd, setCustomEnd,
   label, canNavigate,
-  bpData, bpLoading,
+  bpData, bpLoading, onRefresh,
   pendingTargets, setPendingTargets,
   savingTarget, saveTarget,
 }: {
@@ -794,6 +796,7 @@ function BrandPerformanceTab({
   label: string; canNavigate: boolean;
   bpData: { brands: BpBrand[]; buckets: BpBucket[]; groupBy: "week" | "month" } | null;
   bpLoading: boolean;
+  onRefresh: () => void;
   pendingTargets: Record<string, { year: number; month: number; value: string }>;
   setPendingTargets: React.Dispatch<React.SetStateAction<Record<string, { year: number; month: number; value: string }>>>;
   savingTarget: string | null;
@@ -879,6 +882,15 @@ function BrandPerformanceTab({
               <DatePicker value={customEnd} onChange={setCustomEnd} placeholder="End" />
             </div>
           )}
+          <button
+            onClick={onRefresh}
+            disabled={bpLoading}
+            title="Refresh data"
+            className="ml-auto p-1.5 rounded-md cursor-pointer hover:bg-[var(--bg-hover)] transition-all"
+            style={{ color: "var(--text-muted)" }}
+          >
+            <RefreshCw size={14} className={bpLoading ? "animate-spin" : ""} />
+          </button>
         </div>
       </div>
 
