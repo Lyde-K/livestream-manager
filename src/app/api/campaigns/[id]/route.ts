@@ -19,6 +19,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { name, platform, startDate, endDate, brandId, notes } = await req.json();
   const start = new Date(startDate);
   const end   = new Date(endDate);
+  const startMYT = new Date(start.getTime() + 8 * 3600_000);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const old = await (prisma as any).campaign.findUnique({ where: { id }, select: { startDate: true, name: true } });
@@ -30,8 +31,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       name, platform,
       startDate: start,
       endDate:   end,
-      month: start.getMonth() + 1,
-      year:  start.getFullYear(),
+      month: startMYT.getUTCMonth() + 1,
+      year:  startMYT.getUTCFullYear(),
       brandId: brandId || null,
       notes: notes || null,
       updatedAt: new Date(),

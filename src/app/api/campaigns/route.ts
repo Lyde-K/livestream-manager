@@ -80,14 +80,17 @@ export async function POST(req: NextRequest) {
   const user = session.user as { id: string };
   const start = new Date(startDate);
   const end   = new Date(endDate);
+  // Extract month/year in MYT (UTC+8) so campaigns created from +08:00 timestamps
+  // get the correct month/year integer, not UTC month (which can be off by one day).
+  const startMYT = new Date(start.getTime() + 8 * 3600_000);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const campaign = await (prisma as any).campaign.create({
     data: {
       name, platform,
       startDate: start,
       endDate:   end,
-      month: start.getMonth() + 1,
-      year:  start.getFullYear(),
+      month: startMYT.getUTCMonth() + 1,
+      year:  startMYT.getUTCFullYear(),
       brandId: brandId || null,
       notes: notes || null,
     },
