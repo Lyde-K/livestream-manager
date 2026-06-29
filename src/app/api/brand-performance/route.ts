@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
       select: { brandId: true, gmv: true, scheduledStart: true },
     }),
     prisma.brand.findMany({
-      where: { isActive: true, hasLivestream: true },
+      where: { isActive: true },
       select: { id: true, name: true, platform: true, color: true },
       orderBy: { name: "asc" },
     }),
