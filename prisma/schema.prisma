@@ -659,3 +659,15 @@ model BrandKPIConfig {
   @@unique([brandId, month, year])
   @@index([month, year])
 }
+
+model PublicHoliday {
+  id        String   @id @default(cuid())
+  date      String   // "YYYY-MM-DD"
+  name      String
+  year      Int
+  month     Int      // 1-based
+  createdAt DateTime @default(now())
+
+  @@unique([date])
+  @@index([year, month])
+}

@@ -2,6 +2,20 @@ import { prisma } from "@/lib/prisma";
 import { getDaysInMonth } from "date-fns";
 import { mytMonthRange } from "@/lib/utils";
 
+function countWorkingDays(year: number, month: number, offDowSet: Set<number>, publicHolidayDates: Set<string>): number {
+  const days = getDaysInMonth(new Date(year, month - 1, 1));
+  let count = 0;
+  for (let d = 1; d <= days; d++) {
+    const date = new Date(year, month - 1, d);
+    const dow = date.getDay(); // 0=Sun
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    if (!offDowSet.has(dow) && !publicHolidayDates.has(dateStr)) {
+      count++;
+    }
+  }
+  return count;
+}
+
 export interface HostMonthlyStats {
   hostId: string;
   hostName: string;
@@ -83,7 +97,11 @@ export async function getHostMonthlyStats(
     include: { brand: true },
   });
 
-  const rule = await prisma.commissionRule.findFirst({ where: { isDefault: true } });
+  const [rule, preferences, publicHolidays] = await Promise.all([
+    prisma.commissionRule.findFirst({ where: { isDefault: true } }),
+    prisma.hostPreference.findUnique({ where: { liveHostId: hostId } }),
+    prisma.publicHoliday.findMany({ where: { year, month } }),
+  ]);
   const lateThreshold = rule?.lateSessionsThreshold ?? 5;
   const lateDeductionPct = rule?.lateDeductionPct ?? 0.5;
   const hoursDeficitThreshold = rule?.hoursDeficitThreshold ?? 5;
@@ -101,11 +119,14 @@ export async function getHostMonthlyStats(
     return sum + diff;
   }, 0);
 
-  // Required hours: workingDays per week × 6h × (weeks in month approximation)
-  // More accurate: count working days in the specific month
-  const daysInMonth = getDaysInMonth(monthStart);
-  const weeksApprox = daysInMonth / 7;
-  const requiredHours = host.workingDays * weeksApprox * 6;
+  // Required hours: 6h × actual working days (excludes host off-days and public holidays)
+  const rawOffDays: unknown = preferences ? JSON.parse(preferences.offDays) : [];
+  const offDowSet = new Set<number>(
+    Array.isArray(rawOffDays) ? (rawOffDays as number[]).filter((x) => typeof x === "number") : []
+  );
+  const publicHolidayDates = new Set<string>(publicHolidays.map((h) => h.date));
+  const workingDaysCount = countWorkingDays(year, month, offDowSet, publicHolidayDates);
+  const requiredHours = workingDaysCount * 6;
   const hoursDeficit = Math.max(0, requiredHours - totalActualHours);
 
   // Group by brand

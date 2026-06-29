@@ -6,7 +6,7 @@ import {
   CalendarOff, CheckCircle2, XCircle, Clock, Plus, ChevronDown, ChevronUp,
   Info, TrendingUp, CircleCheck, Sparkles, Users, AlertCircle,
   Download, Calendar, ChevronLeft, ChevronRight, Ban, History,
-  BarChart3, Target, Zap, Hourglass,
+  BarChart3, Target, Zap, Hourglass, Sun, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -653,6 +653,138 @@ function HostView() {
   );
 }
 
+// ── Public Holidays Section ───────────────────────────────────────────────────
+
+interface PublicHoliday { id: string; date: string; name: string; year: number; month: number; }
+
+function PublicHolidaySection() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [holidays, setHolidays] = useState<PublicHoliday[]>([]);
+  const [showPanel, setShowPanel] = useState(false);
+  const [newDate, setNewDate] = useState("");
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const MONTHS_LABEL = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  async function load() {
+    const res = await fetch(`/api/public-holidays?year=${year}&month=${month}`);
+    if (res.ok) setHolidays(await res.json());
+  }
+
+  useEffect(() => { load(); }, [year, month]);
+
+  async function addHoliday() {
+    if (!newDate || !newName.trim()) { setError("Date and name are required."); return; }
+    setSaving(true); setError("");
+    const res = await fetch("/api/public-holidays", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: newDate, name: newName.trim() }),
+    });
+    setSaving(false);
+    if (res.ok) { setNewDate(""); setNewName(""); load(); }
+    else { const d = await res.json(); setError(d.error ?? "Failed to add"); }
+  }
+
+  async function removeHoliday(id: string) {
+    await fetch("/api/public-holidays", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    load();
+  }
+
+  return (
+    <div className="section-card overflow-hidden">
+      <div
+        className="w-full flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: showPanel ? "1px solid var(--border)" : "none" }}>
+        <div className="flex items-center gap-2 flex-1 cursor-pointer" onClick={() => setShowPanel(v => !v)}>
+          <Sun size={14} style={{ color: "#f59e0b" }} />
+          <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Public Holidays</span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {holidays.length > 0 ? `${holidays.length} this month` : "None set for this month"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={month} onChange={e => setMonth(Number(e.target.value))}
+            className="px-2 py-1 rounded-lg text-xs"
+            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+            {MONTHS_LABEL.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+          </select>
+          <select value={year} onChange={e => setYear(Number(e.target.value))}
+            className="px-2 py-1 rounded-lg text-xs"
+            style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)" }}>
+            {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <div className="cursor-pointer" onClick={() => setShowPanel(v => !v)}>
+            {showPanel ? <ChevronUp size={14} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={14} style={{ color: "var(--text-muted)" }} />}
+          </div>
+        </div>
+      </div>
+
+      {showPanel && (
+        <div className="p-4 space-y-3">
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            Public holidays are excluded from required working hours when calculating full-time host commission.
+          </p>
+
+          {/* Add new */}
+          <div className="flex gap-2 flex-wrap">
+            <DatePicker value={newDate} onChange={v => { setNewDate(v); setError(""); }} placeholder="Select date…" className="w-36" />
+            <input
+              type="text"
+              value={newName}
+              onChange={e => { setNewName(e.target.value); setError(""); }}
+              placeholder="Holiday name (e.g. Hari Raya)"
+              className="flex-1 px-3 py-2 rounded-lg text-sm"
+              style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-primary)", minWidth: 180 }}
+            />
+            <button
+              onClick={addHoliday}
+              disabled={saving}
+              className="px-3 py-2 rounded-lg text-sm font-medium cursor-pointer"
+              style={{ background: "var(--accent)", color: "#fff", opacity: saving ? 0.7 : 1 }}>
+              <Plus size={14} className="inline mr-1" />Add
+            </button>
+          </div>
+          {error && <div className="text-xs font-medium" style={{ color: "var(--danger)" }}>{error}</div>}
+
+          {/* List */}
+          {holidays.length === 0 ? (
+            <p className="text-sm text-center py-3" style={{ color: "var(--text-muted)" }}>
+              No public holidays set for {MONTHS_LABEL[month-1]} {year}.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {holidays.map(h => (
+                <div key={h.id} className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                  <Sun size={12} style={{ color: "#f59e0b", flexShrink: 0 }} />
+                  <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                    {format(parseISO(h.date), "d MMM yyyy (EEE)")}
+                  </span>
+                  <span className="flex-1 text-xs truncate" style={{ color: "var(--text-secondary)" }}>{h.name}</span>
+                  <button onClick={() => removeHoliday(h.id)}
+                    className="p-1 rounded cursor-pointer flex-shrink-0"
+                    style={{ color: "#ef4444" }}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Admin View ────────────────────────────────────────────────────────────────
 
 interface AdminHostSummary {
@@ -1254,6 +1386,9 @@ function AdminView() {
           </div>
         )}
       </div>
+
+      {/* Public Holidays */}
+      <PublicHolidaySection />
 
       {/* All Hosts RL Balance */}
       <div className="section-card overflow-hidden">
