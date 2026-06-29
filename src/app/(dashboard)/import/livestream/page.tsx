@@ -497,6 +497,7 @@ export default function LivestreamImportPage() {
   const [hostOverrides, setHostOverrides]         = useState<Record<string, string>>({});
   const [campaignOverrides, setCampaignOverrides] = useState<Record<string, boolean>>({});
   const [excludeTests, setExcludeTests]   = useState(true);
+  const [selectedKeys, setSelectedKeys]   = useState<Set<string>>(new Set());
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
   const [result, setResult]           = useState<{ inserted: number; updated?: number; skipped: number; unmatched: number; adsCostMatched?: number } | null>(null);
@@ -606,7 +607,7 @@ export default function LivestreamImportPage() {
   }
 
   function reset() {
-    setStep("upload"); setPreview([]); setHostOverrides({}); setCampaignOverrides({});
+    setStep("upload"); setPreview([]); setHostOverrides({}); setCampaignOverrides({}); setSelectedKeys(new Set());
     setSessionsFile(null); setAdsCostFile(null); setResult(null); setError("");
     if (sessionsRef.current) sessionsRef.current.value = "";
     if (adsCostRef.current) adsCostRef.current.value = "";
@@ -618,6 +619,27 @@ export default function LivestreamImportPage() {
   const visiblePreview = excludeTests ? preview.filter(p => !p.likelyTest) : preview;
   const unmatchedRows  = visiblePreview.filter(p => !(hostOverrides[p.key] ?? p.hostId ?? ""));
   const testCount      = preview.filter(p => p.likelyTest).length;
+
+  const allVisibleKeys = visiblePreview.map(p => p.key);
+  const allSelected    = allVisibleKeys.length > 0 && allVisibleKeys.every(k => selectedKeys.has(k));
+  const someSelected   = allVisibleKeys.some(k => selectedKeys.has(k));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedKeys(prev => { const n = new Set(prev); allVisibleKeys.forEach(k => n.delete(k)); return n; });
+    } else {
+      setSelectedKeys(prev => new Set([...prev, ...allVisibleKeys]));
+    }
+  }
+
+  function toggleSelectRow(key: string) {
+    setSelectedKeys(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+
+  function removeSelected() {
+    setPreview(prev => prev.filter(p => !selectedKeys.has(p.key)));
+    setSelectedKeys(new Set());
+  }
 
   return (
     <div className="space-y-6 animate-in max-w-5xl">
@@ -825,10 +847,40 @@ export default function LivestreamImportPage() {
 
           {/* Preview table */}
           <div className="section-card overflow-hidden">
+            {someSelected && (
+              <div className="flex items-center gap-3 px-4 py-2 border-b" style={{ borderColor: "var(--border)", background: "rgba(239,68,68,.06)" }}>
+                <span className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
+                  {selectedKeys.size} row{selectedKeys.size !== 1 ? "s" : ""} selected
+                </span>
+                <button
+                  onClick={removeSelected}
+                  className="text-xs font-semibold px-3 py-1 rounded"
+                  style={{ background: "rgba(239,68,68,.15)", color: "#ef4444" }}
+                >
+                  Remove selected
+                </button>
+                <button
+                  onClick={() => setSelectedKeys(new Set())}
+                  className="text-xs"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr style={{ background: "var(--bg-subtle)", borderBottom: "1px solid var(--border)" }}>
+                    <th className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                        onChange={toggleSelectAll}
+                        className="cursor-pointer"
+                      />
+                    </th>
                     {["Title","Start (MYT)","End (MYT)","Duration","Host","Campaign","GMV","Slot"].map(h => (
                       <th key={h} className="px-3 py-2 text-left font-semibold" style={{ color: "var(--text-secondary)" }}>{h}</th>
                     ))}
@@ -840,16 +892,22 @@ export default function LivestreamImportPage() {
                     const assignedHostName = assignedHostId
                       ? (hosts.find(h => h.id === assignedHostId)?.displayName ?? p.hostName)
                       : null;
+                    const isSelected = selectedKeys.has(p.key);
 
                     return (
                       <tr key={p.key}
                         className="border-b"
                         style={{
                           borderColor: "var(--border)",
-                          background: !(hostOverrides[p.key] ?? p.hostId)
+                          background: isSelected
+                            ? "rgba(99,102,241,.08)"
+                            : !(hostOverrides[p.key] ?? p.hostId)
                             ? "rgba(239,68,68,.06)"
                             : p.likelyTest ? "rgba(245,158,11,.04)" : undefined,
                         }}>
+                        <td className="px-3 py-2">
+                          <input type="checkbox" checked={isSelected} onChange={() => toggleSelectRow(p.key)} className="cursor-pointer" />
+                        </td>
                         <td className="px-3 py-2 max-w-[200px]">
                           <p className="truncate font-medium" style={{ color: "var(--text-primary)" }}>{p.roomTitle}</p>
                         </td>
