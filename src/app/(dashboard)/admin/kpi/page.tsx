@@ -222,16 +222,21 @@ export default function BrandKPIPage() {
   function renderTable(section: BrandRow[]) {
     if (section.length === 0) return null;
     return (
-      <div className="section-card" style={{ marginBottom: "1.5rem" }}>
+      <div className="section-card">
+        <div style={{ marginBottom: "12px" }}>
+          <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>KPI Tier Thresholds</div>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+            Set GMV/hr targets for Tier 1 and Tier 2. When no thresholds are set (0), Rate 1 applies to all GMV as a flat rate.
+            Values in <span style={{ color: "var(--color-warning, #f59e0b)", fontWeight: 600 }}>amber</span> are auto-recommended from last month.
+          </p>
+        </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="data-table" style={{ minWidth: "1200px" }}>
+          <table className="data-table" style={{ minWidth: "900px" }}>
             <thead>
               <tr>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Brand</th>
                 <th rowSpan={2} style={{ verticalAlign: "bottom" }}>Platform</th>
                 <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "center" }}>Planned hrs</th>
-                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "center" }}>KPI 1 %</th>
-                <th rowSpan={2} style={{ verticalAlign: "bottom", textAlign: "center" }}>KPI 2 % <span style={{ fontSize: "0.7em", color: "var(--text-muted)", fontWeight: 400 }}>(+add)</span></th>
                 <th style={{ textAlign: "center" }}>Type</th>
                 <th style={{ textAlign: "center" }}>Prev GMV</th>
                 <th style={{ textAlign: "center" }}>Prev hrs</th>
@@ -265,20 +270,6 @@ export default function BrandKPIPage() {
                         <NumInput
                           value={edit.plannedHours}
                           onChange={(v) => updateEdit(row.brand.id, { plannedHours: v })}
-                          className="text-center"
-                        />
-                      </td>
-                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "center" }}>
-                        <NumInput
-                          value={edit.kpi1Rate}
-                          onChange={(v) => updateEdit(row.brand.id, { kpi1Rate: v })}
-                          className="text-center"
-                        />
-                      </td>
-                      <td rowSpan={2} style={{ verticalAlign: "middle", textAlign: "center" }}>
-                        <NumInput
-                          value={edit.kpi2Rate}
-                          onChange={(v) => updateEdit(row.brand.id, { kpi2Rate: v })}
                           className="text-center"
                         />
                       </td>
@@ -370,17 +361,6 @@ export default function BrandKPIPage() {
     );
   }
 
-  // Commission estimate table — show all brands; only sum rows with a GMV target
-  const commRows = rows;
-  const totalKpi1 = rows.filter(r => r.gmvTarget > 0).reduce((s, r) => {
-    const k1 = edits[r.brand.id]?.kpi1Rate ?? 1.0;
-    return s + r.gmvTarget * (k1 / 100);
-  }, 0);
-  const totalKpi2 = rows.filter(r => r.gmvTarget > 0).reduce((s, r) => {
-    const k1 = edits[r.brand.id]?.kpi1Rate ?? 1.0;
-    const k2 = edits[r.brand.id]?.kpi2Rate ?? 0.5;
-    return s + r.gmvTarget * ((k1 + k2) / 100);
-  }, 0);
 
   return (
     <div className="space-y-5 animate-in">
@@ -429,88 +409,98 @@ export default function BrandKPIPage() {
         </div>
       </div>
 
-      {/* Info banner */}
-      <div className="alert alert-info">
-        <Info size={15} className="flex-shrink-0 mt-0.5" />
-        <div>
-          <strong>How it works:</strong> Recommended T1 = last month avg/hr × 1.3, T2 = × 1.8.
-          KPI rate % is the commission paid on total GMV when the tier is achieved.
-          Values shown in <span style={{ color: "var(--color-warning, #f59e0b)", fontWeight: 600 }}>amber</span> are auto-recommended and not yet saved.
-        </div>
-      </div>
-
       {loading ? (
         <div className="section-card" style={{ textAlign: "center", padding: "2rem", color: "var(--text-muted)" }}>
           Loading…
         </div>
       ) : (
         <>
-          {renderTable(rows)}
-
-          {/* Commission estimate */}
+          {/* ── Commission Rates ─────────────────────────────────── */}
           {rows.length > 0 && (
             <div className="section-card">
-              <div style={{ marginBottom: "4px" }}>
-                <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Estimated Commission (if KPI achieved)
-                </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>Commission Rates</div>
                 <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                  Based on GMV targets for {MONTHS[month - 1]} {year}. Rates and commission update live as you edit — save to persist.
+                  Commission % paid to the livehost on total GMV for {MONTHS[month - 1]} {year}.
+                  Rate 1 is the base commission; Rate 2 is an additional bonus at higher performance (0.5 – 2% each).
+                  Changes reflect live in the estimate below — click <strong>Save all</strong> to persist.
                 </p>
               </div>
-              <div style={{ height: "1px", background: "var(--border)", margin: "12px 0" }} />
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th style={{ paddingTop: "10px", paddingBottom: "10px" }}>Brand</th>
-                    <th className="text-right" style={{ paddingTop: "10px", paddingBottom: "10px" }}>GMV Target</th>
-                    <th className="text-center" style={{ paddingTop: "10px", paddingBottom: "10px" }}>KPI 1%</th>
-                    <th className="text-center" style={{ paddingTop: "10px", paddingBottom: "10px" }}>KPI 2% (+add)</th>
-                    <th className="text-right" style={{ paddingTop: "10px", paddingBottom: "10px" }}>Est. Commission (KPI 1 only)</th>
-                    <th className="text-right" style={{ paddingTop: "10px", paddingBottom: "10px" }}>Est. Commission (KPI 1+2)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {commRows.map((row) => {
-                    const edit = edits[row.brand.id];
-                    const k1 = edit?.kpi1Rate ?? 1.0;
-                    const k2 = edit?.kpi2Rate ?? 0.5;
-                    const hasTarget = row.gmvTarget > 0;
-                    const estK1 = hasTarget ? row.gmvTarget * (k1 / 100) : null;
-                    const estK2 = hasTarget ? row.gmvTarget * ((k1 + k2) / 100) : null;
-                    return (
-                      <tr key={row.brand.id}>
-                        <td className="font-medium">
-                          <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: row.brand.color, flexShrink: 0, display: "inline-block" }} />
-                            {row.brand.name}
-                          </span>
-                        </td>
-                        <td className="text-right" style={{ color: hasTarget ? "var(--text-secondary)" : "var(--text-muted)" }}>
-                          {hasTarget ? formatCurrency(row.gmvTarget) : <span style={{ fontSize: "0.8em" }}>No target</span>}
-                        </td>
-                        <td className="text-center"><Badge variant="secondary">{k1}%</Badge></td>
-                        <td className="text-center"><Badge variant="secondary">{k2}%</Badge></td>
-                        <td className="text-right" style={{ color: hasTarget ? undefined : "var(--text-muted)" }}>
-                          {estK1 !== null ? formatCurrency(estK1) : "—"}
-                        </td>
-                        <td className="text-right" style={{ color: hasTarget ? undefined : "var(--text-muted)" }}>
-                          {estK2 !== null ? formatCurrency(estK2) : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
-                    <td>Total</td>
-                    <td className="text-right">{formatCurrency(commRows.reduce((s, r) => s + r.gmvTarget, 0))}</td>
-                    <td /><td />
-                    <td className="text-right">{formatCurrency(totalKpi1)}</td>
-                    <td className="text-right">{formatCurrency(totalKpi2)}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div style={{ overflowX: "auto" }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Brand</th>
+                      <th style={{ textAlign: "center" }}>Platform</th>
+                      <th style={{ textAlign: "center" }}>Rate 1 (%)</th>
+                      <th style={{ textAlign: "center" }}>Rate 2 (% additional)</th>
+                      <th style={{ textAlign: "right" }}>GMV Target</th>
+                      <th style={{ textAlign: "right" }}>Est. Commission (Rate 1)</th>
+                      <th style={{ textAlign: "right" }}>Est. Commission (Rate 1+2)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => {
+                      const edit = edits[row.brand.id];
+                      if (!edit) return null;
+                      const k1 = edit.kpi1Rate;
+                      const k2 = edit.kpi2Rate;
+                      const hasTarget = row.gmvTarget > 0;
+                      return (
+                        <tr key={row.brand.id}>
+                          <td className="font-medium">
+                            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: row.brand.color, flexShrink: 0, display: "inline-block" }} />
+                              {row.brand.name}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: "center", color: "var(--text-secondary)", fontSize: "0.85em" }}>{row.brand.platform}</td>
+                          <td style={{ textAlign: "center" }}>
+                            <NumInput
+                              value={edit.kpi1Rate}
+                              onChange={(v) => updateEdit(row.brand.id, { kpi1Rate: v })}
+                              className="text-center"
+                            />
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <NumInput
+                              value={edit.kpi2Rate}
+                              onChange={(v) => updateEdit(row.brand.id, { kpi2Rate: v })}
+                              className="text-center"
+                            />
+                          </td>
+                          <td style={{ textAlign: "right", color: "var(--text-secondary)", fontSize: "0.85em" }}>
+                            {hasTarget ? formatCurrency(row.gmvTarget) : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                          </td>
+                          <td style={{ textAlign: "right", fontWeight: 500 }}>
+                            {hasTarget ? <span style={{ color: "var(--success, #22c55e)" }}>{formatCurrency(row.gmvTarget * k1 / 100)}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                          </td>
+                          <td style={{ textAlign: "right", fontWeight: 500 }}>
+                            {hasTarget ? <span style={{ color: "var(--accent)" }}>{formatCurrency(row.gmvTarget * (k1 + k2) / 100)}</span> : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
+                      <td colSpan={4}>Total</td>
+                      <td style={{ textAlign: "right" }}>{formatCurrency(rows.filter(r => r.gmvTarget > 0).reduce((s, r) => s + r.gmvTarget, 0))}</td>
+                      <td style={{ textAlign: "right", color: "var(--success, #22c55e)" }}>
+                        {formatCurrency(rows.filter(r => r.gmvTarget > 0).reduce((s, r) => s + r.gmvTarget * (edits[r.brand.id]?.kpi1Rate ?? 0) / 100, 0))}
+                      </td>
+                      <td style={{ textAlign: "right", color: "var(--accent)" }}>
+                        {formatCurrency(rows.filter(r => r.gmvTarget > 0).reduce((s, r) => {
+                          const e = edits[r.brand.id];
+                          return s + r.gmvTarget * ((e?.kpi1Rate ?? 0) + (e?.kpi2Rate ?? 0)) / 100;
+                        }, 0))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
+
+          {renderTable(rows)}
 
           {/* Link to old host-level page */}
           <div style={{ textAlign: "right" }}>
