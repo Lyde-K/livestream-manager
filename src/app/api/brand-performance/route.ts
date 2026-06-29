@@ -54,11 +54,7 @@ export async function GET(req: NextRequest) {
       select: { id: true, name: true, platform: true, color: true },
       orderBy: { name: "asc" },
     }),
-    prisma.monthlyGMVTarget.findMany({
-      where: {
-        // Fetch targets overlapping the range — by year+month combos in range
-      },
-    }),
+    prisma.monthlyGMVTarget.findMany(),
   ]);
 
   // Fetch prev-period sessions for MoM growth
@@ -76,14 +72,15 @@ export async function GET(req: NextRequest) {
   // We sum targets for all year-month combos within [start, end]
   const targetByBrand: Record<string, number> = {};
   // Determine which year-month pairs fall in the range
+  // Targets are stored with 1-based month (same as /api/gmv-target used by the Overview)
   const monthSet = new Set<string>();
   let mc = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
   while (mc <= rangeEnd) {
-    monthSet.add(`${mc.getFullYear()}-${mc.getMonth()}`);
+    monthSet.add(`${mc.getFullYear()}-${mc.getMonth() + 1}`); // 1-based
     mc = new Date(mc.getFullYear(), mc.getMonth() + 1, 1);
   }
   for (const t of targets) {
-    const key = `${t.year}-${t.month}`;
+    const key = `${t.year}-${t.month}`; // t.month is already 1-based
     if (monthSet.has(key)) {
       targetByBrand[t.brandId] = (targetByBrand[t.brandId] ?? 0) + t.target;
     }

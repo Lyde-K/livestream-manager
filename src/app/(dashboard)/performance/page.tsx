@@ -910,8 +910,8 @@ function BrandPerformanceTab({
         const secGrowth = secPrev > 0 ? ((secTotal - secPrev) / secPrev) * 100 : null;
         const badgeColor = key === "SHOPEE" ? "#f97316" : key === "TIKTOK" ? "#fb7185" : "#818cf8";
 
-        // Determine the single year-month to use for target editing when period is "month"
-        const editMonth = anchor.getMonth(); // 0-indexed
+        // Use 1-based month to match /api/gmv-target convention used by Overview
+        const editMonth = anchor.getMonth() + 1;
         const editYear  = anchor.getFullYear();
 
         return (
