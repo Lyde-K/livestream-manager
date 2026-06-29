@@ -143,11 +143,12 @@ export default async function DashboardPage(props: {
       endDate   = sp.end;
       rangeStart = new Date(`${sp.start}T00:00:00+08:00`);
       rangeEnd   = new Date(`${sp.end}T23:59:59+08:00`);
-      // Derive month/year from start for display fallback
-      month = rangeStart.getMonth();
+      // Derive month/year from start for display fallback (getMonth() is 0-based → +1 for 1-based)
+      month = rangeStart.getMonth() + 1;
       year  = rangeStart.getFullYear();
     } else {
-      month = sp.month !== undefined ? parseInt(sp.month) : mM;
+      // RangeSelector writes 0-based months to URL → convert to 1-based for mytMonthRange
+      month = sp.month !== undefined ? parseInt(sp.month) + 1 : mM;
       year  = sp.year  !== undefined ? parseInt(sp.year)  : mY;
       const { start, end } = mytMonthRange(month, year);
       rangeStart = start;
@@ -168,7 +169,7 @@ export default async function DashboardPage(props: {
 
     const rangeLabel = isCustomRange
       ? `${format(rangeStart, "d MMM yyyy")} – ${format(rangeEnd, "d MMM yyyy")}`
-      : format(new Date(year, month, 1), "MMMM yyyy");
+      : format(new Date(year, month - 1, 1), "MMMM yyyy");
 
     const medals = ["🥇", "🥈", "🥉"];
 
@@ -185,7 +186,7 @@ export default async function DashboardPage(props: {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <RangeSelector
-              month={month} year={year} isMTD={isMTD}
+              month={month - 1} year={year} isMTD={isMTD}
               brand={selectedBrandId ?? undefined}
               startDate={startDate}
               endDate={endDate}
