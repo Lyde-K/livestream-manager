@@ -23,7 +23,18 @@ export async function GET(req: NextRequest) {
 
   const results = await Promise.all(
     hosts.map(async (h) => {
-      const stats = await getHostMonthlyStats(h.id, month, year);
+      const [stats, violations, bonusOverride] = await Promise.all([
+        getHostMonthlyStats(h.id, month, year),
+        prisma.hostViolation.findMany({
+          where: { hostId: h.id, month, year },
+          include: { brand: { select: { id: true, name: true } } },
+          orderBy: { date: "asc" },
+        }),
+        prisma.hostBonusOverride.findUnique({
+          where: { hostId_month_year: { hostId: h.id, month, year } },
+        }),
+      ]);
+
       return {
         hostId: h.id,
         displayName: h.displayName,
@@ -33,6 +44,8 @@ export async function GET(req: NextRequest) {
         bankName: h.bankName,
         bankAccount: h.bankAccount,
         stats,
+        violations,
+        bonusOverride: bonusOverride ?? { attendanceGranted: null, punctualityGranted: null },
       };
     })
   );

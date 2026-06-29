@@ -228,6 +228,39 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `ALTER TABLE "BrandKPIConfig" ADD COLUMN IF NOT EXISTS "kpi2Rate" DOUBLE PRECISION NOT NULL DEFAULT 0.5`,
     ],
   },
+  {
+    name: "015_add_violations_and_bonus_overrides",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS "HostViolation" (
+        "id" TEXT NOT NULL,
+        "hostId" TEXT NOT NULL,
+        "brandId" TEXT,
+        "violationType" TEXT NOT NULL,
+        "date" TEXT NOT NULL,
+        "month" INTEGER NOT NULL,
+        "year" INTEGER NOT NULL,
+        "deductionAmount" DOUBLE PRECISION NOT NULL DEFAULT 50,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT "HostViolation_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "HostViolation_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "LiveHost"("id") ON DELETE CASCADE,
+        CONSTRAINT "HostViolation_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE SET NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS "HostViolation_hostId_month_year_idx" ON "HostViolation"("hostId", "month", "year")`,
+      `CREATE TABLE IF NOT EXISTS "HostBonusOverride" (
+        "id" TEXT NOT NULL,
+        "hostId" TEXT NOT NULL,
+        "month" INTEGER NOT NULL,
+        "year" INTEGER NOT NULL,
+        "attendanceGranted" BOOLEAN,
+        "punctualityGranted" BOOLEAN,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT "HostBonusOverride_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "HostBonusOverride_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "LiveHost"("id") ON DELETE CASCADE
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "HostBonusOverride_hostId_month_year_key" ON "HostBonusOverride"("hostId", "month", "year")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {

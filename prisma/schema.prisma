@@ -59,6 +59,8 @@ model LiveHost {
 
   rlAdjustments RLCreditAdjustment[]
   rlApplications RLApplication[]
+  violations    HostViolation[]
+  bonusOverrides HostBonusOverride[]
 }
 
 model Client {
@@ -103,6 +105,7 @@ model Brand {
   gmvTargets            MonthlyGMVTarget[]
   campaigns             Campaign[]
   brandKpiConfigs       BrandKPIConfig[]
+  violations            HostViolation[]
 }
 
 model Campaign {
@@ -671,4 +674,34 @@ model PublicHoliday {
 
   @@unique([date])
   @@index([year, month])
+}
+
+model HostViolation {
+  id              String   @id @default(cuid())
+  hostId          String
+  host            LiveHost @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  brandId         String?
+  brand           Brand?   @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  violationType   String
+  date            String   // "YYYY-MM-DD"
+  month           Int
+  year            Int
+  deductionAmount Float    @default(50)
+  createdAt       DateTime @default(now())
+
+  @@index([hostId, month, year])
+}
+
+model HostBonusOverride {
+  id                  String   @id @default(cuid())
+  hostId              String
+  host                LiveHost @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  month               Int
+  year                Int
+  attendanceGranted   Boolean? // null = auto, true = force grant, false = force deny
+  punctualityGranted  Boolean? // null = auto, true = force grant, false = force deny
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([hostId, month, year])
 }

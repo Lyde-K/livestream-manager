@@ -5,13 +5,15 @@ import { format } from "date-fns";
 import {
   Clock, DollarSign, User, ChevronDown, ChevronRight,
   Banknote, Phone, CreditCard, TrendingUp, AlertCircle, CheckCircle2,
+  Plus, Trash2, ShieldAlert, ToggleLeft, ToggleRight,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import type { HostMonthlyStats } from "@/lib/commission";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const FULL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-// ─── Part-Time types ──────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PayrollSession {
   id: string; brandName: string; platform: string;
@@ -27,14 +29,29 @@ interface HostPayroll {
   sessions: PayrollSession[];
 }
 
-// ─── FT Commission types ──────────────────────────────────────────────────────
+interface Violation {
+  id: string; hostId: string;
+  brandId: string | null;
+  brand: { id: string; name: string } | null;
+  violationType: string; date: string; month: number; year: number;
+  deductionAmount: number;
+}
+
+interface BonusOverride {
+  attendanceGranted: boolean | null;
+  punctualityGranted: boolean | null;
+}
 
 interface FTHostPayroll {
   hostId: string; displayName: string; hostName: string;
   contactNo: string | null; icNo: string | null;
   bankName: string | null; bankAccount: string | null;
   stats: HostMonthlyStats | null;
+  violations: Violation[];
+  bonusOverride: BonusOverride;
 }
+
+interface Brand { id: string; name: string; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,8 +60,11 @@ function fmtMin(min: number | null) {
   const h = Math.floor(min / 60), m = min % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
-
 function fmtMYR(val: number) { return `RM ${val.toFixed(2)}`; }
+
+function resolveBonus(autoValue: boolean, override: boolean | null): boolean {
+  return override !== null ? override : autoValue;
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -86,7 +106,163 @@ function BankDetail({ icon: Icon, label, value }: { icon: React.ElementType; lab
   );
 }
 
-// ─── Part-Time Tab ────────────────────────────────────────────────────────────
+function LoadingSpinner() {
+  return (
+    <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
+      <div className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin mb-2" />
+      <div>Loading…</div>
+    </div>
+  );
+}
+
+function KVCard({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
+  return (
+    <div className="rounded-lg p-3" style={{ background: warn ? "var(--danger-light)" : "var(--bg-subtle)", border: warn ? "1px solid var(--danger)" : "1px solid var(--border)" }}>
+      <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>{label}</div>
+      <div className="text-lg font-bold" style={{ color: warn ? "var(--danger-text)" : "var(--text-primary)" }}>{value}</div>
+      {sub && <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</div>}
+    </div>
+  );
+}
+
+function TierBadge({ tier }: { tier: 0 | 1 | 2 }) {
+  if (tier === 2) return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#22c55e20", color: "#22c55e" }}>Tier 2 ✓</span>;
+  if (tier === 1) return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Tier 1</span>;
+  return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>Below KPI</span>;
+}
+
+// ─── Bonus toggle button (3-state: auto / force-on / force-off) ───────────────
+function BonusToggle({ label, autoEarned, value, onChange }: {
+  label: string; autoEarned: boolean;
+  value: boolean | null; onChange: (v: boolean | null) => void;
+}) {
+  const effective = resolveBonus(autoEarned, value);
+  const isOverridden = value !== null;
+
+  return (
+    <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--bg-subtle)", border: `1px solid ${effective ? "var(--success)" : "var(--border)"}` }}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold" style={{ color: "var(--text)" }}>{label}</span>
+        {isOverridden && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Admin override</span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 text-sm font-bold" style={{ color: effective ? "var(--success)" : "var(--danger)" }}>
+          {effective ? "Granted" : "Not granted"}
+          {!isOverridden && <span className="ml-1 text-[10px] font-normal" style={{ color: "var(--text-muted)" }}>(auto)</span>}
+        </div>
+        <div className="flex gap-1">
+          <button
+            onClick={() => onChange(true)}
+            title="Force grant"
+            className="px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+            style={{ background: value === true ? "#22c55e" : "var(--bg-card)", color: value === true ? "#fff" : "var(--text-muted)", border: "1px solid var(--border)" }}>
+            Grant
+          </button>
+          <button
+            onClick={() => onChange(false)}
+            title="Force deny"
+            className="px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+            style={{ background: value === false ? "var(--danger)" : "var(--bg-card)", color: value === false ? "#fff" : "var(--text-muted)", border: "1px solid var(--border)" }}>
+            Deny
+          </button>
+          {isOverridden && (
+            <button
+              onClick={() => onChange(null)}
+              title="Reset to auto"
+              className="px-2 py-1 rounded text-[10px] font-semibold transition-colors"
+              style={{ background: "var(--bg-card)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+              Auto
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Violation row ─────────────────────────────────────────────────────────────
+function ViolationRow({ v, onDelete }: { v: Violation; onDelete: () => void }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+      <ShieldAlert size={13} style={{ color: "var(--danger)", flexShrink: 0 }} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium" style={{ color: "var(--text)" }}>{v.violationType}</div>
+        <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+          {v.brand?.name ?? "—"} · {v.date}
+        </div>
+      </div>
+      <div className="text-sm font-semibold" style={{ color: "var(--danger)" }}>-RM{v.deductionAmount.toFixed(0)}</div>
+      <button onClick={onDelete} className="p-1 rounded hover:bg-red-500/10 transition-colors">
+        <Trash2 size={13} style={{ color: "var(--danger)" }} />
+      </button>
+    </div>
+  );
+}
+
+// ─── Add Violation Form ────────────────────────────────────────────────────────
+function AddViolationForm({ hostId, month, year, brands, onAdded }: {
+  hostId: string; month: number; year: number;
+  brands: Brand[];
+  onAdded: (v: Violation) => void;
+}) {
+  const [brandId, setBrandId]       = useState("");
+  const [type, setType]             = useState("");
+  const [date, setDate]             = useState("");
+  const [saving, setSaving]         = useState(false);
+
+  async function submit() {
+    if (!type || !date) return;
+    setSaving(true);
+    const res = await fetch("/api/payroll/violations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostId, brandId: brandId || null, violationType: type, date, month, year }),
+    });
+    if (res.ok) {
+      const v = await res.json();
+      onAdded(v);
+      setType(""); setDate(""); setBrandId("");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="rounded-lg p-3 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}>
+      <div className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>Add Violation (−RM50 per entry)</div>
+      <div className="grid grid-cols-3 gap-2">
+        <select
+          value={brandId}
+          onChange={e => setBrandId(e.target.value)}
+          className="rounded px-2 py-1.5 text-xs border w-full"
+          style={{ background: "var(--bg-input, var(--bg-subtle))", borderColor: "var(--border)", color: "var(--text)" }}>
+          <option value="">Brand (optional)</option>
+          {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <input
+          type="text" placeholder="Violation type"
+          value={type} onChange={e => setType(e.target.value)}
+          className="rounded px-2 py-1.5 text-xs border w-full"
+          style={{ background: "var(--bg-input, var(--bg-subtle))", borderColor: "var(--border)", color: "var(--text)" }}
+        />
+        <input
+          type="date" value={date} onChange={e => setDate(e.target.value)}
+          className="rounded px-2 py-1.5 text-xs border w-full"
+          style={{ background: "var(--bg-input, var(--bg-subtle))", borderColor: "var(--border)", color: "var(--text)" }}
+        />
+      </div>
+      <button
+        onClick={submit} disabled={saving || !type || !date}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-50 transition-opacity"
+        style={{ background: "var(--danger)" }}>
+        <Plus size={12} /> {saving ? "Adding…" : "Add Violation"}
+      </button>
+    </div>
+  );
+}
+
+// ─── Part-Time Tab ─────────────────────────────────────────────────────────────
 
 function PartTimeTab({ month, year }: { month: number; year: number }) {
   const [data, setData] = useState<HostPayroll[]>([]);
@@ -115,7 +291,6 @@ function PartTimeTab({ month, year }: { month: number; year: number }) {
         <SummaryCard label="Total Hours" value={`${totalHours.toFixed(1)}h`} icon={Clock} />
         <SummaryCard label="Total Payroll" value={fmtMYR(grandTotal)} icon={DollarSign} accent />
       </div>
-
       <div className="space-y-3">
         {data.map((host) => (
           <div key={host.hostId} className="section-card overflow-hidden">
@@ -140,7 +315,6 @@ function PartTimeTab({ month, year }: { month: number; year: number }) {
               </div>
               {expanded === host.hostId ? <ChevronDown size={16} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" /> : <ChevronRight size={16} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />}
             </div>
-
             {expanded === host.hostId && (
               <div style={{ borderTop: "1px solid var(--border)" }}>
                 <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-3 gap-3" style={{ background: "var(--bg-subtle)" }}>
@@ -192,31 +366,79 @@ function PartTimeTab({ month, year }: { month: number; year: number }) {
   );
 }
 
-// ─── Full-Time Commission Tab ─────────────────────────────────────────────────
+// ─── Full-Time Commission Tab ──────────────────────────────────────────────────
 
 function FullTimeTab({ month, year }: { month: number; year: number }) {
   const [data, setData] = useState<FTHostPayroll[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  // per-host local state for violations and overrides (to avoid full reload)
+  const [violationsMap, setViolationsMap] = useState<Record<string, Violation[]>>({});
+  const [overridesMap,  setOverridesMap]  = useState<Record<string, BonusOverride>>({});
+  const [savingOverride, setSavingOverride] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/payroll/fulltime?month=${month}&year=${year}`)
-      .then(r => r.json())
-      .then(j => { setData(Array.isArray(j) ? j : []); setLoading(false); })
-      .catch(() => setLoading(false));
+    Promise.all([
+      fetch(`/api/payroll/fulltime?month=${month}&year=${year}`).then(r => r.json()),
+      fetch("/api/brands").then(r => r.json()),
+    ]).then(([ft, br]) => {
+      const ftArr: FTHostPayroll[] = Array.isArray(ft) ? ft : [];
+      setData(ftArr);
+      const vm: Record<string, Violation[]> = {};
+      const om: Record<string, BonusOverride> = {};
+      for (const h of ftArr) {
+        vm[h.hostId] = h.violations ?? [];
+        om[h.hostId] = h.bonusOverride ?? { attendanceGranted: null, punctualityGranted: null };
+      }
+      setViolationsMap(vm);
+      setOverridesMap(om);
+      setBrands(Array.isArray(br) ? br : (br.brands ?? []));
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [month, year]);
 
-  const hostsWithStats = data.filter(h => h.stats);
-  const totalCommission = hostsWithStats.reduce((s, h) => s + (h.stats?.netCommission ?? 0), 0);
-  const totalGMV = hostsWithStats.reduce((s, h) => s + (h.stats?.totalGMV ?? 0), 0);
+  async function saveOverride(hostId: string, attendanceGranted: boolean | null, punctualityGranted: boolean | null) {
+    setSavingOverride(hostId);
+    await fetch("/api/payroll/bonus-override", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostId, month, year, attendanceGranted, punctualityGranted }),
+    });
+    setOverridesMap(m => ({ ...m, [hostId]: { attendanceGranted, punctualityGranted } }));
+    setSavingOverride(null);
+  }
+
+  async function deleteViolation(hostId: string, id: string) {
+    await fetch(`/api/payroll/violations?id=${id}`, { method: "DELETE" });
+    setViolationsMap(m => ({ ...m, [hostId]: (m[hostId] ?? []).filter(v => v.id !== id) }));
+  }
 
   if (loading) return <LoadingSpinner />;
   if (data.length === 0) return <div className="section-card empty-state">No full-time hosts found.</div>;
 
+  const hostsWithStats = data.filter(h => h.stats);
+  const totalGMV = hostsWithStats.reduce((s, h) => s + (h.stats?.totalGMV ?? 0), 0);
+
+  // Compute final net commission per host (with overrides + violations)
+  function computeNet(h: FTHostPayroll): number {
+    const s = h.stats;
+    if (!s) return 0;
+    const overrides = overridesMap[h.hostId] ?? h.bonusOverride;
+    const violations = violationsMap[h.hostId] ?? h.violations ?? [];
+    const autoAttendance   = s.hoursDeficit <= 0;
+    const autoPunctuality  = s.lateSessions <= 5;
+    const attBonus  = resolveBonus(autoAttendance,  overrides.attendanceGranted  ?? null) ? s.attendanceCommission  : 0;
+    const punctBonus = resolveBonus(autoPunctuality, overrides.punctualityGranted ?? null) ? s.punctualityCommission : 0;
+    const violationDeduction = violations.reduce((sum, v) => sum + v.deductionAmount, 0);
+    return s.estimatedCommission + attBonus + punctBonus - violationDeduction;
+  }
+
+  const totalCommission = hostsWithStats.reduce((s, h) => s + computeNet(h), 0);
+
   return (
     <div className="space-y-4">
-      {/* Summary strip */}
       <div className="grid grid-cols-3 gap-3">
         <SummaryCard label="Full-Time Hosts" value={String(data.length)} icon={User} />
         <SummaryCard label="Total GMV" value={formatCurrency(totalGMV)} icon={TrendingUp} />
@@ -226,7 +448,14 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
       <div className="space-y-3">
         {data.map((host) => {
           const s = host.stats;
-          const hasDeductions = s && (s.hoursDeduction + s.punctualityDeduction) > 0;
+          const overrides  = overridesMap[host.hostId]  ?? host.bonusOverride;
+          const violations = violationsMap[host.hostId] ?? host.violations ?? [];
+          const netCommission = computeNet(host);
+          const autoAttendance  = s ? s.hoursDeficit <= 0 : false;
+          const autoPunctuality = s ? s.lateSessions <= 5  : false;
+          const attEarned   = s ? resolveBonus(autoAttendance,  overrides.attendanceGranted  ?? null) : false;
+          const punctEarned = s ? resolveBonus(autoPunctuality, overrides.punctualityGranted ?? null) : false;
+          const violationTotal = violations.reduce((sum, v) => sum + v.deductionAmount, 0);
 
           return (
             <div key={host.hostId} className="section-card overflow-hidden">
@@ -245,7 +474,6 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                   <div className="font-semibold" style={{ color: "var(--text-primary)" }}>{host.displayName}</div>
                   <div className="text-xs" style={{ color: "var(--text-muted)" }}>Full-time · {MONTHS[month-1]} {year}</div>
                 </div>
-
                 {s ? (
                   <div className="hidden sm:flex items-center gap-4 text-xs">
                     <Chip label="GMV" value={formatCurrency(s.totalGMV)} />
@@ -253,16 +481,15 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                     <Chip label="Late" value={String(s.lateSessions)} />
                     <div className="flex flex-col items-end">
                       <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Commission</div>
-                      <div className="font-semibold text-sm" style={{ color: "var(--success)" }}>{formatCurrency(s.netCommission)}</div>
-                      {hasDeductions && (
-                        <div className="text-[10px]" style={{ color: "var(--danger)" }}>-{formatCurrency(s.hoursDeduction + s.punctualityDeduction)}</div>
+                      <div className="font-semibold text-sm" style={{ color: "var(--success)" }}>{formatCurrency(netCommission)}</div>
+                      {violationTotal > 0 && (
+                        <div className="text-[10px]" style={{ color: "var(--danger)" }}>−{formatCurrency(violationTotal)} violations</div>
                       )}
                     </div>
                   </div>
                 ) : (
                   <span className="text-xs" style={{ color: "var(--text-muted)" }}>No data</span>
                 )}
-
                 {expanded === host.hostId ? <ChevronDown size={16} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" /> : <ChevronRight size={16} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />}
               </div>
 
@@ -280,27 +507,51 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                     <div className="px-5 py-4 text-sm" style={{ color: "var(--text-muted)" }}>No performance data for this period.</div>
                   ) : (
                     <div className="px-5 py-5 space-y-5">
-                      {/* Commission summary card */}
+
+                      {/* ── Commission summary card ── */}
                       <div className="metric-card-indigo rounded-xl p-5 text-white">
-                        <div className="text-sm opacity-80 mb-1">Estimated Commission — {MONTHS[month-1]} {year}</div>
-                        <div className="text-3xl font-bold mb-4">{formatCurrency(s.netCommission)}</div>
+                        <div className="text-sm opacity-80 mb-1">Estimated Commission — {FULL_MONTHS[month-1]} {year}</div>
+                        <div className="text-3xl font-bold mb-4">{formatCurrency(netCommission)}</div>
                         <div className="grid grid-cols-3 gap-3 text-sm">
+                          {/* Base */}
                           <div className="bg-white/10 rounded-lg p-2.5 text-center">
                             <div className="opacity-70 text-xs mb-0.5">Base Commission</div>
                             <div className="font-semibold">{formatCurrency(s.estimatedCommission)}</div>
                           </div>
-                          <div className={`rounded-lg p-2.5 text-center ${s.hoursDeduction > 0 ? "bg-red-500/30" : "bg-white/10"}`}>
-                            <div className="opacity-70 text-xs mb-0.5">Hours Deduction</div>
-                            <div className="font-semibold">{s.hoursDeduction > 0 ? `-${formatCurrency(s.hoursDeduction)}` : "—"}</div>
+                          {/* Attendance Bonus */}
+                          <div className={`rounded-lg p-2.5 text-center ${attEarned ? "bg-green-500/25" : "bg-white/10"}`}>
+                            <div className="opacity-70 text-xs mb-0.5">Attendance Bonus</div>
+                            <div className="font-semibold">
+                              {attEarned ? `+${formatCurrency(s.attendanceCommission)}` : "—"}
+                            </div>
+                            {!attEarned && !autoAttendance && overrides.attendanceGranted === null && (
+                              <div className="text-[10px] opacity-60 mt-0.5">
+                                {s.hoursDeficit.toFixed(1)}h short
+                              </div>
+                            )}
                           </div>
-                          <div className={`rounded-lg p-2.5 text-center ${s.punctualityDeduction > 0 ? "bg-red-500/30" : "bg-white/10"}`}>
-                            <div className="opacity-70 text-xs mb-0.5">Punctuality Deduction</div>
-                            <div className="font-semibold">{s.punctualityDeduction > 0 ? `-${formatCurrency(s.punctualityDeduction)}` : "—"}</div>
+                          {/* Punctuality Bonus */}
+                          <div className={`rounded-lg p-2.5 text-center ${punctEarned ? "bg-green-500/25" : "bg-white/10"}`}>
+                            <div className="opacity-70 text-xs mb-0.5">Punctuality Bonus</div>
+                            <div className="font-semibold">
+                              {punctEarned ? `+${formatCurrency(s.punctualityCommission)}` : "—"}
+                            </div>
+                            {!punctEarned && !autoPunctuality && overrides.punctualityGranted === null && (
+                              <div className="text-[10px] opacity-60 mt-0.5">
+                                {s.lateSessions} late sessions
+                              </div>
+                            )}
                           </div>
                         </div>
+                        {violationTotal > 0 && (
+                          <div className="mt-3 rounded-lg p-2.5 text-center text-sm bg-red-500/25">
+                            <div className="opacity-70 text-xs mb-0.5">Violation Deductions</div>
+                            <div className="font-semibold">−{formatCurrency(violationTotal)}</div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Stats grid */}
+                      {/* ── Stats grid ── */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <KVCard label="Sessions" value={`${s.totalCompletedSessions}/${s.totalScheduledSessions}`} sub="completed" />
                         <KVCard
@@ -318,15 +569,51 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                         <KVCard label="Total GMV" value={formatCurrency(s.totalGMV)} sub={`${s.totalCompletedSessions} sessions`} />
                       </div>
 
-                      {/* Deduction alerts */}
-                      {s.hoursDeficit > 5 && (
-                        <div className="alert alert-danger"><AlertCircle size={14} className="flex-shrink-0 mt-0.5" /><span>Hours deficit <strong>{s.hoursDeficit.toFixed(1)}h</strong> &gt; 5h → <strong>-0.5% deduction</strong></span></div>
-                      )}
-                      {s.lateSessions > 5 && (
-                        <div className="alert alert-warning"><AlertCircle size={14} className="flex-shrink-0 mt-0.5" /><span><strong>{s.lateSessions} late sessions</strong> &gt; 5 → <strong>-0.5% deduction</strong></span></div>
-                      )}
+                      {/* ── Admin: Bonus Overrides ── */}
+                      <div>
+                        <div className="text-sm font-semibold mb-2 flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
+                          <ToggleRight size={14} /> Bonus Override <span className="text-[10px] font-normal px-1.5 py-0.5 rounded" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>Admin only</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <BonusToggle
+                            label="Attendance Bonus (+0.5% GMV)"
+                            autoEarned={autoAttendance}
+                            value={overrides.attendanceGranted ?? null}
+                            onChange={v => saveOverride(host.hostId, v, overrides.punctualityGranted ?? null)}
+                          />
+                          <BonusToggle
+                            label="Punctuality Bonus (+0.5% GMV)"
+                            autoEarned={autoPunctuality}
+                            value={overrides.punctualityGranted ?? null}
+                            onChange={v => saveOverride(host.hostId, overrides.attendanceGranted ?? null, v)}
+                          />
+                        </div>
+                        {savingOverride === host.hostId && (
+                          <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Saving…</div>
+                        )}
+                      </div>
 
-                      {/* Per-brand breakdown */}
+                      {/* ── Admin: Violations ── */}
+                      <div>
+                        <div className="text-sm font-semibold mb-2 flex items-center gap-1.5" style={{ color: "var(--text-secondary)" }}>
+                          <ShieldAlert size={14} /> Violations <span className="text-[10px] font-normal px-1.5 py-0.5 rounded" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>Admin only</span>
+                        </div>
+                        <div className="space-y-2">
+                          {violations.length === 0 ? (
+                            <div className="text-xs" style={{ color: "var(--text-muted)" }}>No violations recorded this month.</div>
+                          ) : (
+                            violations.map(v => (
+                              <ViolationRow key={v.id} v={v} onDelete={() => deleteViolation(host.hostId, v.id)} />
+                            ))
+                          )}
+                          <AddViolationForm
+                            hostId={host.hostId} month={month} year={year} brands={brands}
+                            onAdded={v => setViolationsMap(m => ({ ...m, [host.hostId]: [...(m[host.hostId] ?? []), v] }))}
+                          />
+                        </div>
+                      </div>
+
+                      {/* ── Per-brand breakdown ── */}
                       <div>
                         <div className="text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>Commission by Brand</div>
                         {s.byBrand.length === 0 ? (
@@ -339,7 +626,6 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                                   <th>Brand</th>
                                   <th>Type</th>
                                   <th className="text-right">GMV</th>
-                                  <th className="text-right">Hrs</th>
                                   <th className="text-right">GMV/hr</th>
                                   <th className="text-right">T1 ≥</th>
                                   <th className="text-right">T2 ≥</th>
@@ -353,24 +639,20 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                                   if (!b.kpiConfigFound) {
                                     return (
                                       <tr key={b.brandId}>
-                                        <td className="font-medium" colSpan={10}>
+                                        <td className="font-medium" colSpan={9}>
                                           <span style={{ color: "var(--text-muted)" }}>{b.brandName}</span>
                                           <span className="ml-2 text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--danger-light)", color: "var(--danger-text)" }}>No KPI config for this month</span>
                                         </td>
                                       </tr>
                                     );
                                   }
-                                  const bauHours = b.totalHours - (b.totalHours > 0 ? b.campaignDayGMVPerHour > 0 ? 0 : 0 : 0); // sessions split is in commission.ts
-                                  const k1 = b.kpi1Rate;
-                                  const k2 = b.kpi2Rate;
+                                  const k1 = b.kpi1Rate, k2 = b.kpi2Rate;
                                   return (
                                     <>
-                                      {/* BAU row */}
                                       <tr key={`${b.brandId}-bau`}>
                                         <td rowSpan={2} style={{ verticalAlign: "middle", fontWeight: 500 }}>{b.brandName}</td>
                                         <td><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>BAU</span></td>
-                                        <td className="text-right">{formatCurrency(b.totalGMV - (b.campaignDayGMVPerHour > 0 ? 0 : 0))}</td>
-                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>{b.normalDayGMVPerHour > 0 || b.tier1KpiNormal > 0 ? "—" : "—"}</td>
+                                        <td className="text-right">{b.normalDayGMVPerHour > 0 ? formatCurrency(b.totalGMV - (b.campaignDayGMVPerHour > 0 ? 0 : 0)) : "—"}</td>
                                         <td className="text-right font-semibold" style={{ color: b.bauTier > 0 ? "var(--success)" : "var(--text-secondary)" }}>
                                           {b.normalDayGMVPerHour > 0 ? formatCurrency(b.normalDayGMVPerHour) + "/h" : "—"}
                                         </td>
@@ -388,10 +670,8 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                                           {formatCurrency(b.bauCommission)}
                                         </td>
                                       </tr>
-                                      {/* Campaign row */}
                                       <tr key={`${b.brandId}-camp`}>
                                         <td><span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Campaign</span></td>
-                                        <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>—</td>
                                         <td className="text-right text-xs" style={{ color: "var(--text-muted)" }}>—</td>
                                         <td className="text-right font-semibold" style={{ color: b.campTier > 0 ? "var(--success)" : "var(--text-secondary)" }}>
                                           {b.campaignDayGMVPerHour > 0 ? formatCurrency(b.campaignDayGMVPerHour) + "/h" : "—"}
@@ -416,9 +696,9 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                               </tbody>
                               <tfoot>
                                 <tr style={{ borderTop: "2px solid var(--border)" }}>
-                                  <td colSpan={8} className="font-semibold" style={{ color: "var(--text-primary)" }}>Net Commission (after deductions)</td>
+                                  <td colSpan={7} className="font-semibold" style={{ color: "var(--text-primary)" }}>Net Commission</td>
                                   <td />
-                                  <td className="text-right font-bold text-base" style={{ color: "var(--success)" }}>{formatCurrency(s.netCommission)}</td>
+                                  <td className="text-right font-bold text-base" style={{ color: "var(--success)" }}>{formatCurrency(netCommission)}</td>
                                 </tr>
                               </tfoot>
                             </table>
@@ -437,33 +717,6 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function LoadingSpinner() {
-  return (
-    <div className="text-center py-12" style={{ color: "var(--text-muted)" }}>
-      <div className="inline-block w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin mb-2" />
-      <div>Loading…</div>
-    </div>
-  );
-}
-
-function KVCard({ label, value, sub, warn }: { label: string; value: string; sub?: string; warn?: boolean }) {
-  return (
-    <div className="rounded-lg p-3" style={{ background: warn ? "var(--danger-light)" : "var(--bg-subtle)", border: warn ? "1px solid var(--danger)" : "1px solid var(--border)" }}>
-      <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>{label}</div>
-      <div className="text-lg font-bold" style={{ color: warn ? "var(--danger-text)" : "var(--text-primary)" }}>{value}</div>
-      {sub && <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{sub}</div>}
-    </div>
-  );
-}
-
-function TierBadge({ tier }: { tier: 0 | 1 | 2 }) {
-  if (tier === 2) return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#22c55e20", color: "#22c55e" }}>Tier 2 ✓</span>;
-  if (tier === 1) return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#f59e0b20", color: "#f59e0b" }}>Tier 1</span>;
-  return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>Below KPI</span>;
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type PayrollTab = "parttime" | "fulltime";
@@ -476,7 +729,6 @@ export default function PayrollPage() {
 
   return (
     <div className="space-y-5 animate-in">
-      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>Payroll</h1>
@@ -492,7 +744,6 @@ export default function PayrollPage() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--bg-subtle)" }}>
         {([["parttime", "Part-Time Payroll"], ["fulltime", "Full-Time Commission"]] as [PayrollTab, string][]).map(([t, l]) => (
           <button key={t} onClick={() => setActiveTab(t)}
