@@ -20,6 +20,7 @@ import {
 } from "date-fns";
 import type { HostMonthlyStats } from "@/lib/commission";
 import { DatePicker } from "@/components/ui/date-picker";
+import { BrandReportModal } from "./BrandReportModal";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -154,7 +155,7 @@ export default function PerformancePage() {
   const [bpCustomStart, setBpCustomStart] = useState("");
   const [bpCustomEnd, setBpCustomEnd]     = useState("");
   const [bpData, setBpData] = useState<{
-    brands: { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; bucketGMV: number[] }[];
+    brands: { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; totalHours: number; prevGMV: number; bucketGMV: number[] }[];
     buckets: { label: string; sublabel?: string; start: string; end: string }[];
     groupBy: "week" | "month";
   } | null>(null);
@@ -802,6 +803,8 @@ function BrandPerformanceTab({
   savingTarget: string | null;
   saveTarget: (brandId: string, year: number, month: number, value: string) => void;
 }) {
+  const [reportModal, setReportModal] = useState<{ brandId: string; brandName: string; month: number; year: number } | null>(null);
+
   const PLATFORM_SECTIONS: { key: string; label: string }[] = [
     { key: "SHOPEE", label: "Shopee" },
     { key: "TIKTOK", label: "TikTok" },
@@ -985,9 +988,17 @@ function BrandPerformanceTab({
                   style={{ gridTemplateColumns: "1fr 170px 80px 120px 100px 100px 100px", borderColor: "var(--border)", background: rowBg }}>
                   {/* Brand name */}
                   <div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 group">
                       <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: b.color }} />
                       <span className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{b.name}</span>
+                      <button
+                        onClick={() => setReportModal({ brandId: b.id, brandName: b.name, month: editMonth, year: editYear })}
+                        className="opacity-0 group-hover:opacity-100 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold transition-opacity"
+                        style={{ background: "#2A2968", color: "#fff" }}
+                        title="Generate monthly PPTX report"
+                      >
+                        Report
+                      </button>
                     </div>
                   </div>
 
@@ -1091,6 +1102,15 @@ function BrandPerformanceTab({
         <div className="section-card p-10 text-center" style={{ color: "var(--text-muted)" }}>
           No completed sessions found for this period.
         </div>
+      )}
+
+      {reportModal && (
+        <BrandReportModal
+          brand={{ id: reportModal.brandId, name: reportModal.brandName }}
+          month={reportModal.month}
+          year={reportModal.year}
+          onClose={() => setReportModal(null)}
+        />
       )}
     </div>
   );
