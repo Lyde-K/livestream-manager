@@ -18,6 +18,17 @@ function countWorkingDays(year: number, month: number, offDowSet: Set<number>, p
 
 const ENFAGROW_EXCLUDE_PATTERN = /enfagrow/i;
 
+function resolvePunctuality(s: { punctuality: string | null; actualStart: Date | null; scheduledStart: Date }): "EARLY" | "ON_TIME" | "LATE" | null {
+  if (s.punctuality === "EARLY" || s.punctuality === "ON_TIME" || s.punctuality === "LATE") {
+    return s.punctuality;
+  }
+  if (!s.actualStart) return null;
+  const diffMin = (s.actualStart.getTime() - s.scheduledStart.getTime()) / 60_000;
+  if (diffMin < -5) return "EARLY";
+  if (diffMin <= 5) return "ON_TIME";
+  return "LATE";
+}
+
 export interface HostMonthlyStats {
   hostId: string;
   hostName: string;
@@ -85,7 +96,7 @@ export interface SessionDetail {
   grossRevenue: number | null;
   adsCost: number | null;
   adsCostRatio: number | null;
-  punctuality: string | null;
+  punctuality: "EARLY" | "ON_TIME" | "LATE" | null;
   isCampaignDay: boolean;
 }
 
@@ -119,9 +130,9 @@ export async function getHostMonthlyStats(
 
   const completed = sessions.filter((s) => s.status === "COMPLETED");
   const missed = sessions.filter((s) => s.status === "MISSED");
-  const late = completed.filter((s) => s.punctuality === "LATE");
-  const early = completed.filter((s) => s.punctuality === "EARLY");
-  const onTime = completed.filter((s) => s.punctuality === "ON_TIME");
+  const late = completed.filter((s) => resolvePunctuality(s) === "LATE");
+  const early = completed.filter((s) => resolvePunctuality(s) === "EARLY");
+  const onTime = completed.filter((s) => resolvePunctuality(s) === "ON_TIME");
 
   const totalActualHours = completed.reduce((sum, s) => sum + (s.actualDurationMinutes || 0) / 60, 0);
   const totalScheduledHours = sessions.reduce((sum, s) => {
@@ -184,7 +195,7 @@ export async function getHostMonthlyStats(
         grossRevenue: gr,
         adsCost: ac,
         adsCostRatio: gr && gr > 0 && ac != null ? ac / gr : null,
-        punctuality: s.punctuality,
+        punctuality: resolvePunctuality(s),
         isCampaignDay: s.isCampaignDay,
       };
     });
