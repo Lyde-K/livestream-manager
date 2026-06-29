@@ -87,7 +87,7 @@ function getAdminStats(start: Date, end: Date, brandId?: string) {
   return unstable_cache(
     () => fetchAdminStats(start, end, brandId),
     ["admin-stats", key],
-    { revalidate: 30 },
+    { revalidate: 0 },
   )();
 }
 
