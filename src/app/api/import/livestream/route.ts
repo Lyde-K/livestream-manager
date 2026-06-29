@@ -507,6 +507,29 @@ function mergeTikTokRows(
 
 // ── TikTok preview builder ────────────────────────────────────────────────────
 
+function mytDateStr(d: Date | string): string {
+  // Returns YYYY-MM-DD in MYT (UTC+8)
+  const ts = typeof d === "string" ? new Date(d) : d;
+  const myt = new Date(ts.getTime() + 8 * 3600_000);
+  return myt.toISOString().slice(0, 10);
+}
+
+function campaignCoversDate(
+  campaigns: { startDate: Date | string; endDate: Date | string; name: string }[],
+  sessionStart: Date
+) {
+  const sessionDateMYT = mytDateStr(sessionStart);
+  return campaigns.some(c => mytDateStr(c.startDate) <= sessionDateMYT && sessionDateMYT <= mytDateStr(c.endDate));
+}
+
+function campaignNameForDate(
+  campaigns: { startDate: Date | string; endDate: Date | string; name: string }[],
+  sessionStart: Date
+) {
+  const sessionDateMYT = mytDateStr(sessionStart);
+  return campaigns.find(c => mytDateStr(c.startDate) <= sessionDateMYT && sessionDateMYT <= mytDateStr(c.endDate))?.name ?? null;
+}
+
 function buildTikTokPreview(
   rows: TikTokRow[],
   hosts: { id: string; displayName: string }[],
@@ -530,9 +553,9 @@ function buildTikTokPreview(
     const host = overrideHostId
       ? hosts.find(h => h.id === overrideHostId) ?? null
       : extractHost(r.roomTitle, hosts);
-    const autoIsCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const autoIsCampaign = campaignCoversDate(campaigns, startMYT);
     const isCampaign = key in campaignOverrides ? campaignOverrides[key] : autoIsCampaign;
-    const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
+    const campaignName = campaignNameForDate(campaigns, startMYT);
     const matchedSlot = host ? findMatchingAdminSession(startMYT, host.id, adminSessions) : null;
 
     return {
@@ -606,9 +629,9 @@ function buildShopeePreview(
     const host = overrideHostId
       ? hosts.find(h => h.id === overrideHostId) ?? null
       : extractHost(r.title, hosts);
-    const autoIsCampaign = campaigns.some(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate));
+    const autoIsCampaign = campaignCoversDate(campaigns, startMYT);
     const isCampaign = key in campaignOverrides ? campaignOverrides[key] : autoIsCampaign;
-    const campaignName = campaigns.find(c => startMYT >= new Date(c.startDate) && startMYT <= new Date(c.endDate))?.name ?? null;
+    const campaignName = campaignNameForDate(campaigns, startMYT);
 
     // Match to admin slot if host identified
     const matchedSlot = host ? findMatchingAdminSession(startMYT, host.id, adminSessions) : null;

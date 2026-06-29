@@ -94,7 +94,12 @@ export default function CampaignCalendarPage() {
     const res = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, brandId: form.brandId || null }),
+      body: JSON.stringify({
+        ...form,
+        brandId: form.brandId || null,
+        startDate: `${form.startDate}T00:00:00+08:00`,
+        endDate:   `${form.endDate}T23:59:59+08:00`,
+      }),
     });
     setSaving(false);
     if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed to save"); return; }
