@@ -815,7 +815,7 @@ function BrandPerformanceTab({
     const max = Math.max(...bucketGMV, 1);
     const showLabels = bucketGMV.length <= 6;
     return (
-      <div className="flex gap-0.5 items-end" style={{ height: showLabels ? 36 : 28 }}>
+      <div className="flex gap-0.5 items-end w-full" style={{ height: showLabels ? 36 : 28 }}>
         {bucketGMV.map((v, i) => {
           const h = Math.max(2, Math.round((v / max) * (showLabels ? 24 : 24)));
           const isLatest = i === bucketGMV.length - 1;
@@ -979,7 +979,7 @@ function BrandPerformanceTab({
                   </div>
 
                   {/* Bucket bars */}
-                  <div className="flex justify-center px-1">{weekBars(b.bucketGMV)}</div>
+                  <div className="w-full px-1">{weekBars(b.bucketGMV)}</div>
 
                   {/* Target (editable) */}
                   <div className="flex justify-center">
