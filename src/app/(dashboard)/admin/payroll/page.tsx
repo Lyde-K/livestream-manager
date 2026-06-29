@@ -376,6 +376,8 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
   // per-host local state for violations and overrides (to avoid full reload)
   const [violationsMap, setViolationsMap] = useState<Record<string, Violation[]>>({});
   const [overridesMap,  setOverridesMap]  = useState<Record<string, BonusOverride>>({});
+  // pending = unsaved draft per host; null = no pending changes
+  const [pendingOverrides, setPendingOverrides] = useState<Record<string, BonusOverride>>({});
   const [savingOverride, setSavingOverride] = useState<string | null>(null);
 
   useEffect(() => {
@@ -399,15 +401,26 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
     }).catch(() => setLoading(false));
   }, [month, year]);
 
-  async function saveOverride(hostId: string, attendanceGranted: boolean | null, punctualityGranted: boolean | null) {
+  function stagePendingOverride(hostId: string, override: BonusOverride) {
+    setPendingOverrides(m => ({ ...m, [hostId]: override }));
+  }
+
+  async function confirmOverride(hostId: string) {
+    const pending = pendingOverrides[hostId];
+    if (!pending) return;
     setSavingOverride(hostId);
     await fetch("/api/payroll/bonus-override", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hostId, month, year, attendanceGranted, punctualityGranted }),
+      body: JSON.stringify({ hostId, month, year, ...pending }),
     });
-    setOverridesMap(m => ({ ...m, [hostId]: { attendanceGranted, punctualityGranted } }));
+    setOverridesMap(m => ({ ...m, [hostId]: pending }));
+    setPendingOverrides(m => { const n = { ...m }; delete n[hostId]; return n; });
     setSavingOverride(null);
+  }
+
+  function cancelPending(hostId: string) {
+    setPendingOverrides(m => { const n = { ...m }; delete n[hostId]; return n; });
   }
 
   async function deleteViolation(hostId: string, id: string) {
@@ -421,16 +434,17 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
   const hostsWithStats = data.filter(h => h.stats);
   const totalGMV = hostsWithStats.reduce((s, h) => s + (h.stats?.totalGMV ?? 0), 0);
 
-  // Compute final net commission per host (with overrides + violations)
-  function computeNet(h: FTHostPayroll): number {
+  // Compute final net commission — bonus amount is always 0.5% GMV regardless of auto-earn
+  function computeNet(h: FTHostPayroll, useOverride?: BonusOverride): number {
     const s = h.stats;
     if (!s) return 0;
-    const overrides = overridesMap[h.hostId] ?? h.bonusOverride;
+    const overrides = useOverride ?? pendingOverrides[h.hostId] ?? overridesMap[h.hostId] ?? h.bonusOverride;
     const violations = violationsMap[h.hostId] ?? h.violations ?? [];
-    const autoAttendance   = s.hoursDeficit <= 0;
-    const autoPunctuality  = s.lateSessions <= 5;
-    const attBonus  = resolveBonus(autoAttendance,  overrides.attendanceGranted  ?? null) ? s.attendanceCommission  : 0;
-    const punctBonus = resolveBonus(autoPunctuality, overrides.punctualityGranted ?? null) ? s.punctualityCommission : 0;
+    const autoAttendance  = s.hoursDeficit <= 0;
+    const autoPunctuality = s.lateSessions <= 5;
+    const bonusAmount = s.totalGMV * 0.005; // 0.5% of total GMV
+    const attBonus   = resolveBonus(autoAttendance,  overrides.attendanceGranted  ?? null) ? bonusAmount : 0;
+    const punctBonus = resolveBonus(autoPunctuality, overrides.punctualityGranted ?? null) ? bonusAmount : 0;
     const violationDeduction = violations.reduce((sum, v) => sum + v.deductionAmount, 0);
     return s.estimatedCommission + attBonus + punctBonus - violationDeduction;
   }
@@ -448,14 +462,18 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
       <div className="space-y-3">
         {data.map((host) => {
           const s = host.stats;
-          const overrides  = overridesMap[host.hostId]  ?? host.bonusOverride;
+          const savedOverrides = overridesMap[host.hostId] ?? host.bonusOverride;
+          const pending        = pendingOverrides[host.hostId]; // unsaved draft
+          const activeOverrides = pending ?? savedOverrides;    // what's shown in UI
           const violations = violationsMap[host.hostId] ?? host.violations ?? [];
-          const netCommission = computeNet(host);
+          const netCommission = computeNet(host); // uses pending if present
           const autoAttendance  = s ? s.hoursDeficit <= 0 : false;
           const autoPunctuality = s ? s.lateSessions <= 5  : false;
-          const attEarned   = s ? resolveBonus(autoAttendance,  overrides.attendanceGranted  ?? null) : false;
-          const punctEarned = s ? resolveBonus(autoPunctuality, overrides.punctualityGranted ?? null) : false;
+          const bonusAmount = s ? s.totalGMV * 0.005 : 0;
+          const attEarned   = s ? resolveBonus(autoAttendance,  activeOverrides.attendanceGranted  ?? null) : false;
+          const punctEarned = s ? resolveBonus(autoPunctuality, activeOverrides.punctualityGranted ?? null) : false;
           const violationTotal = violations.reduce((sum, v) => sum + v.deductionAmount, 0);
+          const hasPending = !!pending;
 
           return (
             <div key={host.hostId} className="section-card overflow-hidden">
@@ -511,7 +529,12 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                       {/* ── Commission summary card ── */}
                       <div className="metric-card-indigo rounded-xl p-5 text-white">
                         <div className="text-sm opacity-80 mb-1">Estimated Commission — {FULL_MONTHS[month-1]} {year}</div>
-                        <div className="text-3xl font-bold mb-4">{formatCurrency(netCommission)}</div>
+                        <div className="flex items-end gap-3 mb-4">
+                          <div className="text-3xl font-bold">{formatCurrency(netCommission)}</div>
+                          {hasPending && (
+                            <div className="text-sm opacity-60 line-through">{formatCurrency(computeNet(host, savedOverrides))}</div>
+                          )}
+                        </div>
                         <div className="grid grid-cols-3 gap-3 text-sm">
                           {/* Base */}
                           <div className="bg-white/10 rounded-lg p-2.5 text-center">
@@ -522,11 +545,11 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                           <div className={`rounded-lg p-2.5 text-center ${attEarned ? "bg-green-500/25" : "bg-white/10"}`}>
                             <div className="opacity-70 text-xs mb-0.5">Attendance Bonus</div>
                             <div className="font-semibold">
-                              {attEarned ? `+${formatCurrency(s.attendanceCommission)}` : "—"}
+                              {attEarned ? `+${formatCurrency(bonusAmount)}` : "—"}
                             </div>
-                            {!attEarned && !autoAttendance && overrides.attendanceGranted === null && (
+                            {!attEarned && (
                               <div className="text-[10px] opacity-60 mt-0.5">
-                                {s.hoursDeficit.toFixed(1)}h short
+                                {activeOverrides.attendanceGranted === false ? "Admin denied" : `${s.hoursDeficit.toFixed(1)}h short`}
                               </div>
                             )}
                           </div>
@@ -534,11 +557,11 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                           <div className={`rounded-lg p-2.5 text-center ${punctEarned ? "bg-green-500/25" : "bg-white/10"}`}>
                             <div className="opacity-70 text-xs mb-0.5">Punctuality Bonus</div>
                             <div className="font-semibold">
-                              {punctEarned ? `+${formatCurrency(s.punctualityCommission)}` : "—"}
+                              {punctEarned ? `+${formatCurrency(bonusAmount)}` : "—"}
                             </div>
-                            {!punctEarned && !autoPunctuality && overrides.punctualityGranted === null && (
+                            {!punctEarned && (
                               <div className="text-[10px] opacity-60 mt-0.5">
-                                {s.lateSessions} late sessions
+                                {activeOverrides.punctualityGranted === false ? "Admin denied" : `${s.lateSessions} late sessions`}
                               </div>
                             )}
                           </div>
@@ -579,18 +602,40 @@ function FullTimeTab({ month, year }: { month: number; year: number }) {
                           <BonusToggle
                             label="Attendance Bonus (+0.5% GMV)"
                             autoEarned={autoAttendance}
-                            value={overrides.attendanceGranted ?? null}
-                            onChange={v => saveOverride(host.hostId, v, overrides.punctualityGranted ?? null)}
+                            value={activeOverrides.attendanceGranted ?? null}
+                            onChange={v => stagePendingOverride(host.hostId, { ...activeOverrides, attendanceGranted: v })}
                           />
                           <BonusToggle
                             label="Punctuality Bonus (+0.5% GMV)"
                             autoEarned={autoPunctuality}
-                            value={overrides.punctualityGranted ?? null}
-                            onChange={v => saveOverride(host.hostId, overrides.attendanceGranted ?? null, v)}
+                            value={activeOverrides.punctualityGranted ?? null}
+                            onChange={v => stagePendingOverride(host.hostId, { ...activeOverrides, punctualityGranted: v })}
                           />
                         </div>
-                        {savingOverride === host.hostId && (
-                          <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Saving…</div>
+                        {/* Confirm bar — only appears when there are unsaved changes */}
+                        {hasPending && (
+                          <div className="mt-3 flex items-center justify-between gap-3 rounded-lg px-4 py-3"
+                            style={{ background: "var(--bg-subtle)", border: "1px solid var(--accent)" }}>
+                            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                              New commission: <strong style={{ color: "var(--text-primary)" }}>{formatCurrency(netCommission)}</strong>
+                              <span className="ml-2 opacity-50">was {formatCurrency(computeNet(host, savedOverrides))}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => cancelPending(host.hostId)}
+                                className="px-3 py-1.5 rounded text-xs"
+                                style={{ background: "var(--bg-card)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => confirmOverride(host.hostId)}
+                                disabled={savingOverride === host.hostId}
+                                className="px-3 py-1.5 rounded text-xs font-semibold text-white disabled:opacity-60"
+                                style={{ background: "var(--accent)" }}>
+                                {savingOverride === host.hostId ? "Saving…" : "Confirm Override"}
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
 
