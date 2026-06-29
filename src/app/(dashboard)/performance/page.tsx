@@ -154,8 +154,9 @@ export default function PerformancePage() {
   const [bpCustomStart, setBpCustomStart] = useState("");
   const [bpCustomEnd, setBpCustomEnd]     = useState("");
   const [bpData, setBpData] = useState<{
-    brands: { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; weeklyGMV: number[] }[];
-    weeks: { label: string; start: string; end: string }[];
+    brands: { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; bucketGMV: number[] }[];
+    buckets: { label: string; sublabel?: string; start: string; end: string }[];
+    groupBy: "week" | "month";
   } | null>(null);
   const [bpLoading, setBpLoading] = useState(false);
   // pendingTargets: brandId → { year, month, value } — edits before save
@@ -179,7 +180,8 @@ export default function PerformancePage() {
     if (mainTab !== "brands") return;
     setBpLoading(true);
     const s = format(bpStart, "yyyy-MM-dd"), e = format(bpEnd, "yyyy-MM-dd");
-    fetch(`/api/brand-performance?start=${s}&end=${e}&prevStart=${bpPrevRange.start}&prevEnd=${bpPrevRange.end}`)
+    const groupBy = (bpPeriod === "month" || bpPeriod === "week") ? "week" : "month";
+    fetch(`/api/brand-performance?start=${s}&end=${e}&prevStart=${bpPrevRange.start}&prevEnd=${bpPrevRange.end}&groupBy=${groupBy}`)
       .then(r => r.json())
       .then(d => { setBpData(d); setBpLoading(false); })
       .catch(() => setBpLoading(false));
@@ -197,7 +199,8 @@ export default function PerformancePage() {
     setSavingTarget(null);
     // Refresh
     const s = format(bpStart, "yyyy-MM-dd"), e = format(bpEnd, "yyyy-MM-dd");
-    fetch(`/api/brand-performance?start=${s}&end=${e}&prevStart=${bpPrevRange.start}&prevEnd=${bpPrevRange.end}`)
+    const groupBy = (bpPeriod === "month" || bpPeriod === "week") ? "week" : "month";
+    fetch(`/api/brand-performance?start=${s}&end=${e}&prevStart=${bpPrevRange.start}&prevEnd=${bpPrevRange.end}&groupBy=${groupBy}`)
       .then(r => r.json()).then(d => setBpData(d));
     setPendingTargets(prev => { const n = { ...prev }; delete n[brandId]; return n; });
   }
@@ -773,8 +776,8 @@ function TierBadge({ tier }: { tier: 0|1|2 }) {
 
 // ─── Brand Performance Tab ────────────────────────────────────────────────────
 
-type BpBrand = { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; weeklyGMV: number[] };
-type BpWeek  = { label: string; start: string; end: string };
+type BpBrand  = { id: string; name: string; platform: string; color: string; target: number; totalGMV: number; prevGMV: number; bucketGMV: number[] };
+type BpBucket = { label: string; sublabel?: string; start: string; end: string };
 
 function BrandPerformanceTab({
   period, setPeriod, anchor, setAnchor,
@@ -789,7 +792,7 @@ function BrandPerformanceTab({
   customStart: string; setCustomStart: (s: string) => void;
   customEnd: string;   setCustomEnd: (s: string) => void;
   label: string; canNavigate: boolean;
-  bpData: { brands: BpBrand[]; weeks: BpWeek[] } | null;
+  bpData: { brands: BpBrand[]; buckets: BpBucket[]; groupBy: "week" | "month" } | null;
   bpLoading: boolean;
   pendingTargets: Record<string, { year: number; month: number; value: string }>;
   setPendingTargets: React.Dispatch<React.SetStateAction<Record<string, { year: number; month: number; value: string }>>>;
@@ -808,20 +811,21 @@ function BrandPerformanceTab({
     return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{pct.toFixed(1)}%</span>;
   }
 
-  function weekBars(weeklyGMV: number[]) {
-    const max = Math.max(...weeklyGMV, 1);
+  function weekBars(bucketGMV: number[]) {
+    const max = Math.max(...bucketGMV, 1);
     return (
       <div className="flex gap-1 items-end h-8">
-        {weeklyGMV.map((v, i) => {
+        {bucketGMV.map((v, i) => {
           const h = Math.max(2, Math.round((v / max) * 28));
-          const isLatest = i === weeklyGMV.length - 1;
+          const isLatest = i === bucketGMV.length - 1;
+          const bucket = bpData?.buckets[i];
           return (
             <div key={i} className="flex flex-col items-center gap-0.5 flex-1 group relative">
               <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[var(--bg-card)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[9px] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10 shadow-sm">
-                {bpData?.weeks[i]?.label ?? `W${i+1}`}<br/>RM {v.toLocaleString("en-MY", { maximumFractionDigits: 0 })}
+                {bucket?.sublabel ?? bucket?.label ?? `#${i+1}`}<br/>RM {v.toLocaleString("en-MY", { maximumFractionDigits: 0 })}
               </div>
               <div className="w-full rounded-sm" style={{ height: h, background: isLatest ? "var(--sidebar-active)" : "rgba(148,163,184,.25)" }} />
-              <span className="text-[8px]" style={{ color: "var(--text-muted)" }}>W{i + 1}</span>
+              <span className="text-[8px] font-bold" style={{ color: "var(--text-muted)" }}>{bucket?.label ?? `#${i+1}`}</span>
             </div>
           );
         })}
@@ -882,7 +886,7 @@ function BrandPerformanceTab({
             { label: "Total GMV", value: formatCurrency(totalActual), sub: totalTarget > 0 ? `vs ${formatCurrency(totalTarget)} target` : "No target set" },
             { label: "Achievement", value: totalAchieve != null ? `${totalAchieve.toFixed(1)}%` : "—", sub: totalAchieve == null ? "Set targets below" : totalAchieve >= 90 ? "On track ✓" : totalAchieve >= 60 ? "Needs attention" : "Below target" },
             { label: "vs Previous", value: totalGrowth != null ? `${totalGrowth >= 0 ? "+" : ""}${totalGrowth.toFixed(1)}%` : "—", sub: `Prev: ${formatCurrency(totalPrev)}` },
-            { label: "Active Brands", value: String(bpData.brands.length), sub: `${bpData.weeks.length} week${bpData.weeks.length !== 1 ? "s" : ""} in range` },
+            { label: "Active Brands", value: String(bpData.brands.length), sub: `${bpData.buckets.length} ${bpData.groupBy === "month" ? "month" : "week"}${bpData.buckets.length !== 1 ? "s" : ""} in range` },
           ].map(k => (
             <div key={k.label} className="section-card p-4">
               <p className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--text-muted)" }}>{k.label}</p>
@@ -899,9 +903,9 @@ function BrandPerformanceTab({
         </div>
       )}
 
-      {/* Cumulative week-on-week chart */}
-      {!bpLoading && bpData && bpData.weeks.length > 1 && (
-        <BpCumulativeChart brands={bpData.brands} weeks={bpData.weeks} />
+      {/* Cumulative chart */}
+      {!bpLoading && bpData && bpData.buckets.length > 1 && (
+        <BpCumulativeChart brands={bpData.brands} buckets={bpData.buckets} groupBy={bpData.groupBy} />
       )}
 
       {/* Platform sections */}
@@ -944,7 +948,7 @@ function BrandPerformanceTab({
             <div className="grid text-[10px] font-semibold uppercase tracking-wide px-4 py-2 border-b"
               style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", borderColor: "var(--border)", color: "var(--text-muted)" }}>
               <div>Brand</div>
-              <div>Week-on-week</div>
+              <div>{bpData?.groupBy === "month" ? "Month-on-month" : "Week-on-week"}</div>
               <div className="text-right">Target</div>
               <div className="text-right">Actual</div>
               <div className="text-right">vs Prev</div>
@@ -972,7 +976,7 @@ function BrandPerformanceTab({
                   </div>
 
                   {/* Week bars */}
-                  <div className="pr-2">{weekBars(b.weeklyGMV)}</div>
+                  <div className="pr-2">{weekBars(b.bucketGMV)}</div>
 
                   {/* Target (editable) */}
                   <div className="text-right">
@@ -1070,7 +1074,7 @@ function BrandPerformanceTab({
 
 // ─── Cumulative Week-on-Week Line Chart ───────────────────────────────────────
 
-function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek[] }) {
+function BpCumulativeChart({ brands, buckets, groupBy }: { brands: BpBrand[]; buckets: BpBucket[]; groupBy: "week" | "month" }) {
   const [hovered, setHovered] = useState<{ weekIdx: number; x: number; y: number } | null>(null);
 
   // Group brands by platform and compute cumulative GMV per week
@@ -1084,12 +1088,12 @@ function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek
   const seriesData = (SERIES.map(s => {
     const sb = brands.filter(b => b.platform === s.key);
     if (sb.length === 0) return null;
-    const weekly = weeks.map((_, wi) => sb.reduce((sum, b) => sum + (b.weeklyGMV[wi] ?? 0), 0));
+    const weekly = buckets.map((_, wi) => sb.reduce((sum, b) => sum + (b.bucketGMV[wi] ?? 0), 0));
     const cumActual   = weekly.reduce<number[]>((acc, v) => [...acc, (acc[acc.length - 1] ?? 0) + v], []);
     const totalTarget = sb.reduce((sum, b) => sum + b.target, 0);
-    const cumTarget   = weeks.map((_, i) => totalTarget > 0 ? (totalTarget / weeks.length) * (i + 1) : null);
+    const cumTarget   = buckets.map((_, i) => totalTarget > 0 ? (totalTarget / buckets.length) * (i + 1) : null);
     const prevTotal   = sb.reduce((sum, b) => sum + b.prevGMV, 0);
-    const cumPrev     = weeks.map((_, i) => prevTotal > 0 ? (prevTotal / weeks.length) * (i + 1) : null);
+    const cumPrev     = buckets.map((_, i) => prevTotal > 0 ? (prevTotal / buckets.length) * (i + 1) : null);
     return { ...s, cumActual, cumTarget, cumPrev, totalTarget, prevTotal };
   }).filter(Boolean)) as SeriesItem[];
 
@@ -1104,7 +1108,7 @@ function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek
   const allVals = seriesData.flatMap(s => [...s.cumActual, ...(s.cumTarget.filter(Boolean) as number[]), ...(s.cumPrev.filter(Boolean) as number[])]);
   const maxVal = Math.max(...allVals, 1);
 
-  function toX(wi: number) { return padL + (wi / (weeks.length - 1)) * chartW; }
+  function toX(wi: number) { return padL + (wi / (buckets.length - 1)) * chartW; }
   function toY(v: number)  { return padT + chartH - (v / maxVal) * chartH; }
   function pts(vals: (number | null)[]) {
     return vals.map((v, i) => v != null ? `${toX(i)},${toY(v)}` : null).filter(Boolean).join(" ");
@@ -1133,7 +1137,7 @@ function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek
     <div className="section-card p-4">
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-          Cumulative GMV — Week on Week
+          Cumulative GMV — {groupBy === "month" ? "Month on Month" : "Week on Week"}
         </p>
         <div className="flex items-center gap-4 flex-wrap">
           {seriesData.map(s => (
@@ -1164,7 +1168,7 @@ function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek
               border: "1px solid var(--border)",
               color: "var(--text-primary)",
             }}>
-            <div className="font-semibold mb-1" style={{ color: "var(--text-secondary)" }}>{weeks[hovered.weekIdx]?.label}</div>
+            <div className="font-semibold mb-1" style={{ color: "var(--text-secondary)" }}>{buckets[hovered.weekIdx]?.sublabel ?? buckets[hovered.weekIdx]?.label}</div>
             {tooltipData.map(t => (
               <div key={t.label} className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
@@ -1187,16 +1191,16 @@ function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={padL} y1={t.y} x2={W - padR} y2={t.y} stroke="var(--border)" strokeWidth="1" strokeDasharray={i === 0 ? "none" : "3,4"} />
-              <text x={padL - 4} y={t.y + 3.5} textAnchor="end" fontSize="9" fill="var(--text-muted)">
+              <text x={padL - 4} y={t.y + 3.5} textAnchor="end" fontSize="9" fontWeight="600" fill="rgba(255,255,255,0.5)">
                 {t.v >= 1000 ? `${(t.v / 1000).toFixed(0)}K` : t.v.toFixed(0)}
               </text>
             </g>
           ))}
 
-          {/* X axis week labels */}
-          {weeks.map((w, i) => (
-            <text key={i} x={toX(i)} y={H - 4} textAnchor="middle" fontSize="9" fill="var(--text-muted)">
-              {`W${i + 1}`}
+          {/* X axis labels */}
+          {buckets.map((b, i) => (
+            <text key={i} x={toX(i)} y={H - 4} textAnchor="middle" fontSize="9" fontWeight="600" fill="rgba(255,255,255,0.6)">
+              {b.label}
             </text>
           ))}
 
@@ -1226,11 +1230,11 @@ function BpCumulativeChart({ brands, weeks }: { brands: BpBrand[]; weeks: BpWeek
           ))}
 
           {/* Hover interaction overlay */}
-          {weeks.map((_, wi) => (
+          {buckets.map((_, wi) => (
             <rect key={wi}
-              x={toX(wi) - chartW / weeks.length / 2}
+              x={toX(wi) - chartW / buckets.length / 2}
               y={padT}
-              width={chartW / weeks.length}
+              width={chartW / buckets.length}
               height={chartH}
               fill="transparent"
               onMouseEnter={e => {
