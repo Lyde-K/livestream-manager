@@ -813,19 +813,22 @@ function BrandPerformanceTab({
 
   function weekBars(bucketGMV: number[]) {
     const max = Math.max(...bucketGMV, 1);
+    const showLabels = bucketGMV.length <= 6;
     return (
-      <div className="flex gap-1 items-end h-8">
+      <div className="flex gap-0.5 items-end" style={{ height: showLabels ? 36 : 28 }}>
         {bucketGMV.map((v, i) => {
-          const h = Math.max(2, Math.round((v / max) * 28));
+          const h = Math.max(2, Math.round((v / max) * (showLabels ? 24 : 24)));
           const isLatest = i === bucketGMV.length - 1;
           const bucket = bpData?.buckets[i];
           return (
-            <div key={i} className="flex flex-col items-center gap-0.5 flex-1 group relative">
+            <div key={i} className="flex flex-col items-center flex-1 group relative" style={{ minWidth: 0 }}>
               <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[var(--bg-card)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[9px] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10 shadow-sm">
                 {bucket?.sublabel ?? bucket?.label ?? `#${i+1}`}<br/>RM {v.toLocaleString("en-MY", { maximumFractionDigits: 0 })}
               </div>
               <div className="w-full rounded-sm" style={{ height: h, background: isLatest ? "var(--sidebar-active)" : "rgba(148,163,184,.25)" }} />
-              <span className="text-[8px] font-bold" style={{ color: "var(--text-muted)" }}>{bucket?.label ?? `#${i+1}`}</span>
+              {showLabels && (
+                <span className="text-[8px] font-bold mt-0.5 leading-none" style={{ color: "var(--text-muted)" }}>{bucket?.label ?? `#${i+1}`}</span>
+              )}
             </div>
           );
         })}
@@ -946,13 +949,13 @@ function BrandPerformanceTab({
 
             {/* Table header */}
             <div className="grid text-[10px] font-semibold uppercase tracking-wide px-4 py-2 border-b"
-              style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", borderColor: "var(--border)", color: "var(--text-muted)" }}>
+              style={{ gridTemplateColumns: "1fr 170px 120px 100px 100px 100px", borderColor: "var(--border)", color: "var(--text-muted)" }}>
               <div>Brand</div>
-              <div>{bpData?.groupBy === "month" ? "Month-on-month" : "Week-on-week"}</div>
-              <div className="text-right">Target</div>
-              <div className="text-right">Actual</div>
-              <div className="text-right">vs Prev</div>
-              <div className="text-right">Achievement</div>
+              <div className="text-center">{bpData?.groupBy === "month" ? "Month-on-month" : "Week-on-week"}</div>
+              <div className="text-center">Target</div>
+              <div className="text-center">Actual</div>
+              <div className="text-center">vs Prev</div>
+              <div className="text-center">Achievement</div>
             </div>
 
             {/* Brand rows */}
@@ -966,7 +969,7 @@ function BrandPerformanceTab({
 
               return (
                 <div key={b.id} className="grid items-center px-4 py-3 border-b"
-                  style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", borderColor: "var(--border)", background: rowBg }}>
+                  style={{ gridTemplateColumns: "1fr 170px 120px 100px 100px 100px", borderColor: "var(--border)", background: rowBg }}>
                   {/* Brand name */}
                   <div>
                     <div className="flex items-center gap-1.5">
@@ -975,18 +978,18 @@ function BrandPerformanceTab({
                     </div>
                   </div>
 
-                  {/* Week bars */}
-                  <div className="pr-2">{weekBars(b.bucketGMV)}</div>
+                  {/* Bucket bars */}
+                  <div className="flex justify-center px-1">{weekBars(b.bucketGMV)}</div>
 
                   {/* Target (editable) */}
-                  <div className="text-right">
+                  <div className="flex justify-center">
                     {isEditing ? (
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center gap-1">
                         <Input
                           value={pending.value}
                           onChange={e => setPendingTargets(prev => ({ ...prev, [b.id]: { ...prev[b.id], value: e.target.value } }))}
                           onKeyDown={e => { if (e.key === "Enter") saveTarget(b.id, pending.year, pending.month, pending.value); if (e.key === "Escape") setPendingTargets(prev => { const n={...prev}; delete n[b.id]; return n; }); }}
-                          className="w-24 text-right text-xs h-7"
+                          className="w-24 text-center text-xs h-7"
                           autoFocus
                         />
                         <button onClick={() => saveTarget(b.id, pending.year, pending.month, pending.value)}
@@ -996,7 +999,7 @@ function BrandPerformanceTab({
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-end gap-1 group">
+                      <div className="flex items-center gap-1 group">
                         <span className="text-sm" style={{ color: b.target > 0 ? "var(--text-primary)" : "var(--text-muted)" }}>
                           {b.target > 0 ? formatCurrency(b.target) : "—"}
                         </span>
@@ -1010,12 +1013,12 @@ function BrandPerformanceTab({
                   </div>
 
                   {/* Actual */}
-                  <div className="text-right text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  <div className="text-center text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
                     {formatCurrency(b.totalGMV)}
                   </div>
 
                   {/* vs Prev */}
-                  <div className="text-right text-xs">
+                  <div className="text-center text-xs">
                     {growth != null ? (
                       <span style={{ color: growth >= 0 ? "var(--success)" : "var(--danger)" }}>
                         {growth >= 0 ? "+" : ""}{growth.toFixed(1)}%
@@ -1024,12 +1027,12 @@ function BrandPerformanceTab({
                   </div>
 
                   {/* Achievement */}
-                  <div className="text-right">
+                  <div className="flex flex-col items-center">
                     {pct != null ? achieveBadge(pct, true) : (
                       <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>No target</span>
                     )}
                     {pct != null && b.target > 0 && (
-                      <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)" }}>
+                      <div className="mt-1 h-1 w-full rounded-full overflow-hidden" style={{ background: "var(--bg-subtle)" }}>
                         <div className="h-full rounded-full" style={{
                           width: `${Math.min(100, pct)}%`,
                           background: pct >= 90 ? "var(--success)" : pct >= 60 ? "#f59e0b" : "var(--danger)",
@@ -1043,21 +1046,21 @@ function BrandPerformanceTab({
 
             {/* Section total row */}
             <div className="grid items-center px-4 py-3"
-              style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 90px", background: "var(--bg-subtle)" }}>
+              style={{ gridTemplateColumns: "1fr 170px 120px 100px 100px 100px", background: "var(--bg-subtle)" }}>
               <div className="text-xs font-bold" style={{ color: "var(--text-secondary)" }}>Total {secLabel}</div>
               <div />
-              <div className="text-right text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+              <div className="text-center text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
                 {secTarget > 0 ? formatCurrency(secTarget) : "—"}
               </div>
-              <div className="text-right text-sm font-bold" style={{ color: "var(--text-primary)" }}>{formatCurrency(secTotal)}</div>
-              <div className="text-right text-xs">
+              <div className="text-center text-sm font-bold" style={{ color: "var(--text-primary)" }}>{formatCurrency(secTotal)}</div>
+              <div className="text-center text-xs">
                 {secGrowth != null && (
                   <span style={{ color: secGrowth >= 0 ? "var(--success)" : "var(--danger)" }}>
                     {secGrowth >= 0 ? "+" : ""}{secGrowth.toFixed(1)}%
                   </span>
                 )}
               </div>
-              <div className="text-right">{secPct != null && achieveBadge(secPct, true)}</div>
+              <div className="flex justify-center">{secPct != null && achieveBadge(secPct, true)}</div>
             </div>
           </div>
         );
