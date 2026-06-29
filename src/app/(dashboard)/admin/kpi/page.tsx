@@ -108,18 +108,20 @@ function NumInput({
 
   return (
     <Input
-      type="number"
-      step="0.01"
+      type="text"
+      inputMode="decimal"
       value={raw}
       placeholder="0"
       className={className}
       onChange={(e) => {
-        setRaw(e.target.value);
-        const n = parseFloat(e.target.value);
+        // Allow intermediate states like "0.", "-", "1e" without clearing
+        const val = e.target.value;
+        setRaw(val);
+        const n = parseFloat(val);
         onChange(isNaN(n) ? 0 : n);
       }}
       onBlur={() => {
-        // Normalise display on blur: "1." → "1", "" stays ""
+        // Normalise display on blur: "0." → "0", "" stays ""
         const n = parseFloat(raw);
         setRaw(isNaN(n) || n === 0 ? "" : String(n));
       }}
