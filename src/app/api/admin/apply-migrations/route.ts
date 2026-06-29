@@ -205,6 +205,22 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
       `ALTER TABLE "BrandKPIConfig" ADD CONSTRAINT "BrandKPIConfig_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE CASCADE ON UPDATE CASCADE`,
     ],
   },
+  {
+    name: "013_add_public_holiday",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS "PublicHoliday" (
+        "id"        TEXT NOT NULL,
+        "date"      TEXT NOT NULL,
+        "name"      TEXT NOT NULL,
+        "year"      INTEGER NOT NULL,
+        "month"     INTEGER NOT NULL,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT "PublicHoliday_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "PublicHoliday_date_key" ON "PublicHoliday"("date")`,
+      `CREATE INDEX IF NOT EXISTS "PublicHoliday_year_month_idx" ON "PublicHoliday"("year", "month")`,
+    ],
+  },
 ];
 
 export async function POST(req: NextRequest) {
