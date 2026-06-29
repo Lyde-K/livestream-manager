@@ -108,39 +108,37 @@ export default function MyPerformancePage() {
               </div>
               <div
                 className="rounded-lg p-2.5 text-center"
-                style={{ background: stats.hoursDeduction > 0 ? "rgba(239,68,68,0.1)" : "var(--bg-subtle)" }}
+                style={{ background: stats.attendanceCommission > 0 ? "rgba(34,197,94,0.1)" : "var(--bg-subtle)" }}
               >
-                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Hours Deduction</p>
-                <p className="font-semibold" style={{ color: stats.hoursDeduction > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
-                  {stats.hoursDeduction > 0 ? `−${formatCurrency(stats.hoursDeduction)}` : "—"}
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Attendance Bonus</p>
+                <p className="font-semibold" style={{ color: stats.attendanceCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                  {stats.attendanceCommission > 0 ? `+${formatCurrency(stats.attendanceCommission)}` : "—"}
                 </p>
               </div>
               <div
                 className="rounded-lg p-2.5 text-center"
-                style={{ background: stats.punctualityDeduction > 0 ? "rgba(239,68,68,0.1)" : "var(--bg-subtle)" }}
+                style={{ background: stats.punctualityCommission > 0 ? "rgba(34,197,94,0.1)" : "var(--bg-subtle)" }}
               >
-                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Punctuality Deduction</p>
-                <p className="font-semibold" style={{ color: stats.punctualityDeduction > 0 ? "var(--danger)" : "var(--text-secondary)" }}>
-                  {stats.punctualityDeduction > 0 ? `−${formatCurrency(stats.punctualityDeduction)}` : "—"}
+                <p style={{ color: "var(--text-muted)" }} className="mb-0.5">Punctuality Bonus</p>
+                <p className="font-semibold" style={{ color: stats.punctualityCommission > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                  {stats.punctualityCommission > 0 ? `+${formatCurrency(stats.punctualityCommission)}` : "—"}
                 </p>
               </div>
             </div>
 
-            {/* Deduction explanations */}
-            {(stats.hoursDeduction > 0 || stats.punctualityDeduction > 0) && (
-              <div className="mt-3 space-y-1">
-                {stats.hoursDeduction > 0 && (
-                  <p className="text-xs" style={{ color: "var(--danger)" }}>
-                    ⚠ Hours deficit exceeds threshold — 0.5% deduction applied on total GMV
-                  </p>
-                )}
-                {stats.punctualityDeduction > 0 && (
-                  <p className="text-xs" style={{ color: "var(--danger)" }}>
-                    ⚠ More than 5 late sessions — 0.5% deduction applied on total GMV
-                  </p>
-                )}
-              </div>
-            )}
+            {/* Bonus explanations */}
+            <div className="mt-3 space-y-1">
+              {stats.attendanceCommission === 0 && (
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Complete {stats.requiredHours.toFixed(1)}h to unlock +0.5% attendance bonus
+                </p>
+              )}
+              {stats.punctualityCommission === 0 && (
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  Keep late sessions ≤ 5 to unlock +0.5% punctuality bonus
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Hours + Punctuality */}

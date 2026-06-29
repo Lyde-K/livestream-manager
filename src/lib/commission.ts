@@ -51,10 +51,13 @@ export interface HostMonthlyStats {
   totalAdsCost: number;
   byBrand: BrandStats[];
   // Commission
-  estimatedCommission: number;
+  estimatedCommission: number;      // base KPI commission
+  attendanceCommission: number;     // 0.5% of GMV if hours >= required
+  punctualityCommission: number;    // 0.5% of GMV if late sessions <= threshold
+  netCommission: number;            // total = base + attendance + punctuality
+  // kept for backward compat — always 0 now
   hoursDeduction: number;
   punctualityDeduction: number;
-  netCommission: number;
 }
 
 export interface BrandStats {
@@ -278,12 +281,19 @@ export async function getHostMonthlyStats(
     });
   }
 
-  // Deductions applied to GMV base (0.5% of GMV excl. Enfagrow) not commission
-  const hoursDeduction = hoursDeficit > hoursDeficitThreshold
-    ? deductionBaseGMV * 0.005 : 0;
-  const punctualityDeduction = late.length > lateThreshold
-    ? deductionBaseGMV * 0.005 : 0;
-  const netCommission = Math.max(0, estimatedCommissionTotal - hoursDeduction - punctualityDeduction);
+  const totalGMVForMonth = completed.reduce((sum, s) => sum + (s.gmv || 0), 0);
+
+  // Attendance commission: 0.5% of total GMV if hours done >= required
+  const attendanceCommission = hoursDeficit <= 0 ? totalGMVForMonth * 0.005 : 0;
+
+  // Punctuality commission: 0.5% of total GMV if late sessions <= threshold
+  const punctualityCommission = late.length <= lateThreshold ? totalGMVForMonth * 0.005 : 0;
+
+  const netCommission = estimatedCommissionTotal + attendanceCommission + punctualityCommission;
+
+  // kept for backward compat
+  const hoursDeduction = 0;
+  const punctualityDeduction = 0;
 
   return {
     hostId, hostName: host.user.name, displayName: host.displayName,
@@ -299,6 +309,7 @@ export async function getHostMonthlyStats(
     totalGrossRevenue: completed.reduce((sum, s) => sum + ((s as any).grossRevenue || 0), 0),
     totalAdsCost: completed.reduce((sum, s) => sum + ((s as any).adsCost || 0), 0),
     byBrand, estimatedCommission: estimatedCommissionTotal,
+    attendanceCommission, punctualityCommission,
     hoursDeduction, punctualityDeduction, netCommission,
   };
 }
