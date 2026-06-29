@@ -825,7 +825,7 @@ export default function LivestreamImportPage() {
             <Stat label="Host matched" value={preview.filter(p => p.hostId).length} color="#22c55e" />
             <div className="flex items-center gap-1.5">
               <Stat label="Unmatched" value={unmatchedRows.length} color={unmatchedRows.length > 0 ? "#ef4444" : undefined} />
-              {unmatchedRows.length > 0 && (
+              {(unmatchedRows.length > 0 || showUnmatchedOnly) && (
                 <button
                   onClick={() => setShowUnmatchedOnly(v => !v)}
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer transition-all"
