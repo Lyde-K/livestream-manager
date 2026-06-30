@@ -348,7 +348,7 @@ function thisMonth() {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type Step = "upload" | "preview" | "done";
-type Tab  = "import" | "export";
+type Tab  = "import" | "export" | "product";
 
 // ── Export helpers ────────────────────────────────────────────────────────────
 
@@ -575,6 +575,223 @@ async function downloadExport(sessions: ExportSession[], platform: string, month
   URL.revokeObjectURL(url);
 }
 
+// ── Product Import Panel ──────────────────────────────────────────────────────
+
+interface SimpleBrand { id: string; name: string; color: string; }
+
+function ProductImportPanel({ brands }: { brands: SimpleBrand[] }) {
+  const now = new Date();
+  const [productBrandId, setProductBrandId]   = useState("");
+  const [productPlatform, setProductPlatform] = useState<"TIKTOK" | "SHOPEE">("TIKTOK");
+  const [productMonth, setProductMonth]       = useState(now.getMonth() + 1);
+  const [productYear, setProductYear]         = useState(now.getFullYear());
+  const [productFile, setProductFile]         = useState<File | null>(null);
+  const [replace, setReplace]                 = useState(true);
+  const [loading, setLoading]                 = useState(false);
+  const [result, setResult]                   = useState("");
+  const [error, setError]                     = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const FULL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  async function handleProductImport() {
+    if (!productFile || !productBrandId) { setError("Select a brand and file first."); return; }
+    setLoading(true); setResult(""); setError("");
+    try {
+      const buf = await productFile.arrayBuffer();
+      const ExcelJS = await import("exceljs");
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      const ws = wb.worksheets[0];
+
+      const colMap: Record<string, number> = {};
+      let headerRowNum = -1;
+      ws.eachRow((row, rn) => {
+        if (headerRowNum !== -1) return;
+        const vals = row.values as (string | null | undefined)[];
+        const hasHeader = vals.some(v =>
+          typeof v === "string" && /product|item|sku|gmv|sale|unit|sold|order|click/i.test(v)
+        );
+        if (hasHeader) {
+          headerRowNum = rn;
+          vals.forEach((v, i) => { if (v) colMap[String(v).trim().toLowerCase()] = i; });
+        }
+      });
+
+      if (headerRowNum === -1) { setError("Could not find header row."); setLoading(false); return; }
+
+      function findCol(...keys: string[]): number {
+        for (const k of keys) {
+          for (const [h, i] of Object.entries(colMap)) {
+            if (h.includes(k)) return i;
+          }
+        }
+        return -1;
+      }
+
+      const nameIdx  = findCol("product name","item name","product","name","sku name");
+      const idIdx    = findCol("product id","item id","sku id");
+      const gmvIdx   = findCol("gmv","sales","revenue","sale amount");
+      const unitsIdx = findCol("units sold","item sold","qty sold","quantity sold","unit","items sold");
+      const ordIdx   = findCol("order","orders","confirmed order");
+      const clkIdx   = findCol("click","clicks","product click");
+      const cvrIdx   = findCol("cvr","conv","conversion");
+
+      if (nameIdx === -1) { setError("Could not find product name column."); setLoading(false); return; }
+      if (gmvIdx  === -1) { setError("Could not find GMV/sales column."); setLoading(false); return; }
+
+      const rows: { productId?: string; productName: string; gmv: number; unitsSold: number; orders: number; clicks: number; convRate?: number; }[] = [];
+
+      ws.eachRow((row, rn) => {
+        if (rn <= headerRowNum) return;
+        const vals = row.values as (string | number | null | undefined)[];
+        const name = String(vals[nameIdx] ?? "").trim();
+        if (!name) return;
+        function numVal(idx: number): number {
+          if (idx === -1) return 0;
+          const v = vals[idx];
+          if (v == null) return 0;
+          return parseFloat(String(v).replace(/[^0-9.-]/g, "")) || 0;
+        }
+        rows.push({
+          productId:   idIdx !== -1 ? String(vals[idIdx] ?? "").trim() || undefined : undefined,
+          productName: name,
+          gmv:         numVal(gmvIdx),
+          unitsSold:   Math.round(numVal(unitsIdx)),
+          orders:      Math.round(numVal(ordIdx)),
+          clicks:      Math.round(numVal(clkIdx)),
+          convRate:    cvrIdx !== -1 ? numVal(cvrIdx) || undefined : undefined,
+        });
+      });
+
+      if (rows.length === 0) { setError("No data rows found."); setLoading(false); return; }
+
+      const res = await fetch("/api/product-performance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandId: productBrandId, platform: productPlatform, month: productMonth, year: productYear, replace, rows }),
+      });
+      if (!res.ok) { setError("Upload failed."); setLoading(false); return; }
+      const json = await res.json();
+      setResult(`✓ Imported ${json.count} products for ${FULL_MONTHS[productMonth-1]} ${productYear}`);
+      setProductFile(null);
+      if (fileRef.current) fileRef.current.value = "";
+    } catch (e) {
+      setError("Failed to parse file: " + String(e));
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div className="section-card p-5 space-y-4">
+        <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>Product Performance Import</h2>
+        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          Upload product-level export from TikTok or Shopee. Columns auto-detected — supports Product Name, GMV, Units Sold, Orders, Clicks, CVR.
+        </p>
+
+        {/* Platform toggle */}
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Platform</label>
+          <div className="flex rounded-lg overflow-hidden w-fit" style={{ border: "1px solid var(--border)" }}>
+            {(["TIKTOK","SHOPEE"] as const).map(p => (
+              <button key={p} onClick={() => setProductPlatform(p)}
+                className="px-5 py-2 text-sm font-semibold transition-colors cursor-pointer"
+                style={productPlatform === p
+                  ? { background: p === "TIKTOK" ? "#010101" : "#ee4d2d", color: "#fff" }
+                  : { background: "var(--bg-card)", color: "var(--text-secondary)" }}>
+                {p === "TIKTOK" ? "🎵 TikTok" : "🛍️ Shopee"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Brand + Month/Year */}
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>Brand</label>
+            <select value={productBrandId} onChange={e => setProductBrandId(e.target.value)}
+              className="w-full rounded-lg px-3 py-2 text-sm border"
+              style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              <option value="">Select brand…</option>
+              {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>Month</label>
+            <select value={productMonth} onChange={e => setProductMonth(Number(e.target.value))}
+              className="w-full rounded-lg px-3 py-2 text-sm border"
+              style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>Year</label>
+            <select value={productYear} onChange={e => setProductYear(Number(e.target.value))}
+              className="w-full rounded-lg px-3 py-2 text-sm border"
+              style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
+              {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* File upload */}
+        <div>
+          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>
+            {productPlatform === "TIKTOK" ? "TikTok Product Export (.xlsx)" : "Shopee Product Export (.xlsx / .csv)"}
+          </label>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv"
+            onChange={e => setProductFile(e.target.files?.[0] ?? null)}
+            className="w-full text-sm rounded-lg px-3 py-2 border cursor-pointer"
+            style={{ background: "var(--bg-subtle)", borderColor: productFile ? "var(--accent)" : "var(--border)", color: "var(--text-primary)" }}
+          />
+          {productFile && (
+            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{productFile.name} · {(productFile.size/1024).toFixed(0)} KB</p>
+          )}
+        </div>
+
+        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>
+          <input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} className="rounded" />
+          Replace existing data for this brand / platform / month
+        </label>
+
+        {result && (
+          <div className="flex items-center gap-2 text-sm rounded-lg px-3 py-2.5"
+            style={{ background: "var(--success-light)", color: "var(--success-text)", border: "1px solid var(--success)" }}>
+            <CheckCircle2 size={14} className="flex-shrink-0" /> {result}
+          </div>
+        )}
+        {error && (
+          <div className="flex items-center gap-2 text-sm rounded-lg px-3 py-2.5"
+            style={{ background: "var(--bg-danger)", color: "var(--text-danger)", border: "1px solid var(--border-danger)" }}>
+            <AlertCircle size={14} className="flex-shrink-0" /> {error}
+          </div>
+        )}
+
+        <button onClick={handleProductImport} disabled={loading || !productFile || !productBrandId}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "var(--accent)", color: "#fff" }}>
+          <Upload size={14} />
+          {loading ? "Importing…" : "Import Products"}
+        </button>
+      </div>
+
+      <div className="section-card p-4 text-sm space-y-2" style={{ color: "var(--text-secondary)" }}>
+        <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Column auto-detection</p>
+        <ul className="space-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
+          <li>• <strong>Product name</strong> — looks for "product name", "item name", "name", "sku name"</li>
+          <li>• <strong>GMV / Sales</strong> — looks for "gmv", "sales", "revenue", "sale amount"</li>
+          <li>• <strong>Units sold</strong> — looks for "units sold", "item sold", "quantity sold", "unit"</li>
+          <li>• <strong>Orders</strong> — looks for "order", "orders", "confirmed order"</li>
+          <li>• <strong>Clicks</strong> — looks for "click", "clicks", "product click"</li>
+          <li>• <strong>CVR</strong> — looks for "cvr", "conv", "conversion"</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export default function LivestreamImportPage() {
   const [tab, setTab]                 = useState<Tab>("import");
   const [brands, setBrands]           = useState<Brand[]>([]);
@@ -789,13 +1006,13 @@ export default function LivestreamImportPage() {
 
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-        {(["import", "export"] as Tab[]).map(t => (
+        {(["import", "export", "product"] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className="px-4 py-1.5 rounded-md text-sm font-semibold capitalize transition-all"
             style={tab === t
               ? { background: "var(--bg-card)", color: "var(--text-primary)", boxShadow: "0 1px 3px rgba(0,0,0,.15)" }
               : { color: "var(--text-muted)" }}>
-            {t === "import" ? "Import" : "Export"}
+            {t === "import" ? "Import" : t === "export" ? "Export" : "Product Import"}
           </button>
         ))}
       </div>
@@ -1207,6 +1424,11 @@ export default function LivestreamImportPage() {
         </div>
       )}
       </> }
+
+      {/* ── PRODUCT IMPORT TAB ── */}
+      {tab === "product" && (
+        <ProductImportPanel brands={brands} />
+      )}
     </div>
   );
 }

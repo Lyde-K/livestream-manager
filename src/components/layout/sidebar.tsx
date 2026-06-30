@@ -28,12 +28,12 @@ const navItems: NavItem[] = [
   { label: "Brand Schedule",    href: "/client-brand",              icon: Calendar,        roles: ["CLIENT"],    group: "LIVESTREAM" },
   { label: "Performance",       href: "/performance",               icon: BarChart3,       roles: ["ADMIN"],     group: "LIVESTREAM" },
   { label: "My Performance",    href: "/my-performance",            icon: TrendingUp,      roles: ["LIVE_HOST"], group: "LIVESTREAM", permission: "viewPerformance" },
+  { label: "Product Performance", href: "/product-performance",    icon: Package,         roles: ["ADMIN"],     group: "LIVESTREAM" },
   { label: "AI Analysis",       href: "/intelligence",              icon: Sparkles,        roles: ["ADMIN"],     group: "LIVESTREAM" },
   { label: "My AI Analysis",    href: "/my-intelligence",           icon: Sparkles,        roles: ["LIVE_HOST"], group: "LIVESTREAM", permission: "viewAIAnalysis" },
   { label: "Brand AI Analysis", href: "/client-brand/intelligence", icon: Sparkles,        roles: ["CLIENT"],    group: "LIVESTREAM" },
   { label: "Leaderboard",       href: "/leaderboard",               icon: Trophy,          roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeaderboard" },
   { label: "Leave",             href: "/leave",                     icon: UmbrellaOff,     roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeave" },
-  { label: "Product Performance", href: "/product-performance",      icon: Package,         roles: ["ADMIN"],             group: "LIVESTREAM" },
   { label: "Livestream Import",  href: "/import/livestream",         icon: Upload,          roles: ["ADMIN"],             group: "LIVESTREAM" },
   // AFFILIATE
   { label: "Overview",          href: "/affiliate",                 icon: LayoutDashboard, roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
