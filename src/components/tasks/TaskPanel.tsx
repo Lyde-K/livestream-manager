@@ -218,7 +218,7 @@ function TaskCard({
                 return <span key={l} style={{ fontSize: "10px", fontWeight: 600, padding: "1px 6px", borderRadius: "20px", background: `${c}22`, color: c }}>#{l}</span>;
               })}
               {task.dueDate && (
-                <span style={{ fontSize: "10px", color: isOverdue ? "#ef4444" : "var(--text-muted)", display: "flex", alignItems: "center", gap: "3px" }}>
+                <span style={{ fontSize: "10px", fontWeight: 600, color: isOverdue ? "#ff2d2d" : "var(--text-primary)", display: "flex", alignItems: "center", gap: "3px" }}>
                   {isOverdue && <AlertTriangle size={9} />}<Calendar size={9} />
                   {new Date(task.dueDate).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}
                 </span>
@@ -240,7 +240,7 @@ function TaskCard({
             <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: "10px", fontWeight: 600, color: pm.color }}>{pm.label}</span>
               {task.dueDate && (
-                <span style={{ fontSize: "10px", color: isOverdue ? "#ef4444" : "var(--text-muted)" }}>
+                <span style={{ fontSize: "10px", fontWeight: 600, color: isOverdue ? "#ff2d2d" : "var(--text-primary)" }}>
                   · {new Date(task.dueDate).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}
                 </span>
               )}
@@ -386,10 +386,12 @@ function SearchOverlay({ tasks, onSelect, onClose }: {
                 <sm.Icon size={14} style={{ color: sm.color, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontSize: "13px", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</p>
-                  <p style={{ margin: 0, fontSize: "11px", color: "var(--text-muted)" }}>
-                    {sm.label} · {pm.label}
-                    {task.team ? ` · ${task.team.name}` : ""}
-                    {task.dueDate ? ` · ${new Date(task.dueDate).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}` : ""}
+                  <p style={{ margin: 0, fontSize: "11px", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "3px", flexWrap: "wrap" }}>
+                    <span>{sm.label} · {pm.label}{task.team ? ` · ${task.team.name}` : ""}</span>
+                    {task.dueDate && (() => {
+                      const od = new Date(task.dueDate) < new Date();
+                      return <span style={{ fontWeight: 600, color: od ? "#ff2d2d" : "var(--text-primary)" }}>· {new Date(task.dueDate).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}</span>;
+                    })()}
                   </p>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
