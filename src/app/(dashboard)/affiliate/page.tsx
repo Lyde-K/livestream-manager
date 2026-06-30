@@ -140,6 +140,7 @@ export default function AffiliateOverviewPage() {
   const [allProducts, setAllProducts] = useState<ProductOption[]>([]);
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
   const productPickerRef = useRef<HTMLDivElement>(null);
 
   // Close product picker on outside click
@@ -148,6 +149,7 @@ export default function AffiliateOverviewPage() {
     function handleClick(e: MouseEvent) {
       if (productPickerRef.current && !productPickerRef.current.contains(e.target as Node)) {
         setProductPickerOpen(false);
+        setProductSearch("");
       }
     }
     document.addEventListener("mousedown", handleClick);
@@ -450,8 +452,21 @@ export default function AffiliateOverviewPage() {
                 {productPickerOpen && (
                   <div
                     className="absolute right-0 top-full mt-1 rounded-lg shadow-lg border"
-                    style={{ zIndex: 9999, background: "var(--bg-card)", borderColor: "var(--border)", minWidth: "240px" }}
+                    style={{ zIndex: 9999, background: "var(--bg-card)", borderColor: "var(--border)", minWidth: "280px" }}
                   >
+                    {/* Search */}
+                    <div className="px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="Search by name or PID…"
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        className="w-full text-xs rounded-md px-2.5 py-1.5 outline-none"
+                        style={{ background: "var(--bg-subtle)", color: "var(--text-primary)", border: "1px solid var(--border)" }}
+                      />
+                    </div>
+
                     {/* Quick actions */}
                     <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
                       <button
@@ -471,33 +486,53 @@ export default function AffiliateOverviewPage() {
                     </div>
 
                     {/* Scrollable product list */}
-                    <div style={{ maxHeight: "200px", overflowY: "auto" }}>
-                      {allProducts.map((p) => {
-                        const checked = selectedProductIds.includes(p.productId);
-                        return (
-                          <label
-                            key={p.productId}
-                            className="flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors hover:bg-[var(--bg-subtle)]"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => {
-                                setSelectedProductIds((prev) =>
-                                  checked ? prev.filter((id) => id !== p.productId) : [...prev, p.productId]
-                                );
-                              }}
-                              className="flex-shrink-0"
-                            />
-                            <span className="flex-1 text-xs truncate" style={{ color: "var(--text-primary)" }} title={p.productName}>
-                              {p.productName}
-                            </span>
-                            <span className="text-xs font-mono tabular-nums flex-shrink-0" style={{ color: "var(--text-muted)" }}>
-                              {formatCurrency(p.gmv)}
-                            </span>
-                          </label>
-                        );
-                      })}
+                    <div style={{ maxHeight: "220px", overflowY: "auto" }}>
+                      {(() => {
+                        const q = productSearch.trim().toLowerCase();
+                        const visible = q
+                          ? allProducts.filter((p) =>
+                              p.productName.toLowerCase().includes(q) || p.productId.toLowerCase().includes(q)
+                            )
+                          : allProducts;
+                        if (visible.length === 0) {
+                          return (
+                            <div className="px-3 py-4 text-xs text-center" style={{ color: "var(--text-muted)" }}>
+                              No products found
+                            </div>
+                          );
+                        }
+                        return visible.map((p) => {
+                          const checked = selectedProductIds.includes(p.productId);
+                          return (
+                            <label
+                              key={p.productId}
+                              className="flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors hover:bg-[var(--bg-subtle)]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setSelectedProductIds((prev) =>
+                                    checked ? prev.filter((id) => id !== p.productId) : [...prev, p.productId]
+                                  );
+                                }}
+                                className="flex-shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs truncate" style={{ color: "var(--text-primary)" }} title={p.productName}>
+                                  {p.productName}
+                                </div>
+                                <div className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>
+                                  {p.productId}
+                                </div>
+                              </div>
+                              <span className="text-xs font-mono tabular-nums flex-shrink-0" style={{ color: "var(--text-muted)" }}>
+                                {formatCurrency(p.gmv)}
+                              </span>
+                            </label>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 )}
