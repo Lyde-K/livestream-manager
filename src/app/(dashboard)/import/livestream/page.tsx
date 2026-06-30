@@ -611,7 +611,7 @@ function ProductImportPanel({ brands }: { brands: SimpleBrand[] }) {
         if (headerRowNum !== -1) return;
         const vals = row.values as (string | null | undefined)[];
         const hasHeader = vals.some(v =>
-          typeof v === "string" && /product|item|sku|gmv|sale|unit|sold|order|click/i.test(v)
+          typeof v === "string" && /product|item|sku|gmv|sale|unit|sold|order|click|revenue/i.test(v)
         );
         if (hasHeader) {
           headerRowNum = rn;
@@ -630,13 +630,25 @@ function ProductImportPanel({ brands }: { brands: SimpleBrand[] }) {
         return -1;
       }
 
-      const nameIdx  = findCol("product name","item name","product","name","sku name");
-      const idIdx    = findCol("product id","item id","sku id");
-      const gmvIdx   = findCol("gmv","sales","revenue","sale amount");
-      const unitsIdx = findCol("units sold","item sold","qty sold","quantity sold","unit","items sold");
-      const ordIdx   = findCol("order","orders","confirmed order");
-      const clkIdx   = findCol("click","clicks","product click");
-      const cvrIdx   = findCol("cvr","conv","conversion");
+      let nameIdx: number, gmvIdx: number, unitsIdx: number, ordIdx: number, clkIdx: number, atcIdx: number;
+
+      if (productPlatform === "SHOPEE") {
+        // Shopee: Product(s) | Product Clicks | ATC | Orders(Confirmed Order) | Items Sold(Confirmed Order) | Sales(Confirmed Order)
+        nameIdx  = findCol("product(s)", "product");
+        gmvIdx   = findCol("sales(confirmed order)", "sales");
+        unitsIdx = findCol("items sold(confirmed order)", "items sold");
+        ordIdx   = findCol("orders(confirmed order)", "orders");
+        clkIdx   = findCol("product clicks", "clicks", "click");
+        atcIdx   = findCol("atc");
+      } else {
+        // TikTok: Product Info (2nd col) | Gross Revenue | Unit Sales
+        nameIdx  = findCol("product info", "product name", "product");
+        gmvIdx   = findCol("gross revenue", "revenue", "gmv", "sales");
+        unitsIdx = findCol("unit sales", "units sold", "unit");
+        ordIdx   = findCol("order", "orders");
+        clkIdx   = findCol("click", "clicks");
+        atcIdx   = -1;
+      }
 
       if (nameIdx === -1) { setError("Could not find product name column."); setLoading(false); return; }
       if (gmvIdx  === -1) { setError("Could not find GMV/sales column."); setLoading(false); return; }
@@ -655,13 +667,12 @@ function ProductImportPanel({ brands }: { brands: SimpleBrand[] }) {
           return parseFloat(String(v).replace(/[^0-9.-]/g, "")) || 0;
         }
         rows.push({
-          productId:   idIdx !== -1 ? String(vals[idIdx] ?? "").trim() || undefined : undefined,
           productName: name,
           gmv:         numVal(gmvIdx),
           unitsSold:   Math.round(numVal(unitsIdx)),
           orders:      Math.round(numVal(ordIdx)),
-          clicks:      Math.round(numVal(clkIdx)),
-          convRate:    cvrIdx !== -1 ? numVal(cvrIdx) || undefined : undefined,
+          clicks:      productPlatform === "SHOPEE" ? Math.round(numVal(clkIdx)) : Math.round(numVal(clkIdx)),
+          convRate:    atcIdx !== -1 ? numVal(atcIdx) || undefined : undefined,
         });
       });
 
@@ -778,15 +789,23 @@ function ProductImportPanel({ brands }: { brands: SimpleBrand[] }) {
       </div>
 
       <div className="section-card p-4 text-sm space-y-2" style={{ color: "var(--text-secondary)" }}>
-        <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Column auto-detection</p>
-        <ul className="space-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
-          <li>• <strong>Product name</strong> — looks for "product name", "item name", "name", "sku name"</li>
-          <li>• <strong>GMV / Sales</strong> — looks for "gmv", "sales", "revenue", "sale amount"</li>
-          <li>• <strong>Units sold</strong> — looks for "units sold", "item sold", "quantity sold", "unit"</li>
-          <li>• <strong>Orders</strong> — looks for "order", "orders", "confirmed order"</li>
-          <li>• <strong>Clicks</strong> — looks for "click", "clicks", "product click"</li>
-          <li>• <strong>CVR</strong> — looks for "cvr", "conv", "conversion"</li>
-        </ul>
+        <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Expected columns — {productPlatform === "TIKTOK" ? "TikTok" : "Shopee"}</p>
+        {productPlatform === "SHOPEE" ? (
+          <ul className="space-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
+            <li>• <strong>Product(s)</strong> — product name</li>
+            <li>• <strong>Product Clicks</strong> — clicks</li>
+            <li>• <strong>ATC</strong> — add to cart</li>
+            <li>• <strong>Orders(Confirmed Order)</strong> — order count</li>
+            <li>• <strong>Items Sold(Confirmed Order)</strong> — units sold</li>
+            <li>• <strong>Sales(Confirmed Order)</strong> — GMV / revenue</li>
+          </ul>
+        ) : (
+          <ul className="space-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
+            <li>• <strong>Product Info</strong> — product name (2nd column)</li>
+            <li>• <strong>Gross Revenue</strong> — GMV</li>
+            <li>• <strong>Unit Sales</strong> — units sold</li>
+          </ul>
+        )}
       </div>
     </div>
   );
