@@ -608,6 +608,7 @@ export default function LivestreamImportPage() {
   const [productFile, setProductFile]         = useState<File | null>(null);
   const [productResult, setProductResult]     = useState<{ count: number } | null>(null);
   const [productError, setProductError]       = useState("");
+  const [productLoading, setProductLoading]   = useState(false);
 
   const sessionsRef = useRef<HTMLInputElement>(null);
   const adsCostRef  = useRef<HTMLInputElement>(null);
@@ -643,6 +644,19 @@ export default function LivestreamImportPage() {
   }
 
   const isShopeeXlsx = platform === "SHOPEE" && (sessionsFile?.name.toLowerCase().endsWith(".xlsx") ?? false);
+
+  async function handleProductOnly() {
+    if (!productFile || !brandId) return;
+    setProductLoading(true); setProductResult(null); setProductError("");
+    try {
+      const count = await importProductFile(productFile, platform, brandId, month);
+      setProductResult({ count });
+      setProductFile(null);
+      if (productRef.current) productRef.current.value = "";
+    } catch (e) {
+      setProductError(e instanceof Error ? e.message : "Product import failed");
+    } finally { setProductLoading(false); }
+  }
 
   async function handlePreview() {
     if (!brandId || !month || !sessionsFile) { setError("Select brand, month, and session file"); return; }
@@ -1130,6 +1144,27 @@ export default function LivestreamImportPage() {
               inputRef={productRef}
               accept=".xlsx,.xls,.csv"
             />
+            {productResult && (
+              <div className="flex items-center gap-2 text-xs mt-2 rounded-lg px-3 py-2"
+                style={{ background: "rgba(34,197,94,.08)", color: "#16a34a", border: "1px solid rgba(34,197,94,.25)" }}>
+                <CheckCircle2 size={13} className="flex-shrink-0" />
+                {productResult.count} products imported
+              </div>
+            )}
+            {productError && (
+              <div className="flex items-center gap-2 text-xs mt-2 rounded-lg px-3 py-2"
+                style={{ background: "rgba(239,68,68,.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,.25)" }}>
+                <AlertCircle size={13} className="flex-shrink-0" />
+                {productError}
+              </div>
+            )}
+            {productFile && brandId && (
+              <div className="flex justify-end mt-2">
+                <Button onClick={handleProductOnly} loading={productLoading} variant="secondary">
+                  <Upload size={13} /> Import products only
+                </Button>
+              </div>
+            )}
           </div>
 
           {error && <ErrorBanner message={error} />}
