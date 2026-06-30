@@ -681,27 +681,55 @@ export default function LivestreamImportPage() {
   }
 
   async function importProductFile(file: File, plt: Platform, bId: string, mo: string): Promise<number> {
-    const buf = await file.arrayBuffer();
-    const ExcelJS = await import("exceljs");
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buf);
-    const ws = wb.worksheets[0];
-    if (!ws) throw new Error("No sheet found in product file");
+    const isCSV = file.name.toLowerCase().endsWith(".csv");
 
-    const colMap: Record<string, number> = {};
-    let headerRowNum = -1;
-    ws.eachRow((row, rn) => {
-      if (headerRowNum !== -1) return;
-      const vals = row.values as (string | null | undefined)[];
-      const hasHeader = vals.some(v =>
-        typeof v === "string" && /product|item|sku|gmv|sale|unit|sold|order|click|revenue/i.test(v)
-      );
-      if (hasHeader) {
-        headerRowNum = rn;
-        vals.forEach((v, i) => { if (v) colMap[String(v).trim().toLowerCase()] = i; });
+    // ── Parse into a uniform 2-D array of strings ──────────────────────────────
+    let grid: string[][] = [];
+
+    if (isCSV) {
+      const text = await file.text();
+      // Simple CSV parser — handles quoted fields with embedded commas/newlines
+      const lines = text.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const cells: string[] = [];
+        let cur = "", inQ = false;
+        for (let ci = 0; ci < line.length; ci++) {
+          const ch = line[ci];
+          if (ch === '"') { inQ = !inQ; }
+          else if (ch === "," && !inQ) { cells.push(cur.trim()); cur = ""; }
+          else { cur += ch; }
+        }
+        cells.push(cur.trim());
+        grid.push(cells);
       }
-    });
-    if (headerRowNum === -1) throw new Error("Could not find header row in product file");
+    } else {
+      const buf = await file.arrayBuffer();
+      const ExcelJS = await import("exceljs");
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buf);
+      const ws = wb.worksheets[0];
+      if (!ws) throw new Error("No sheet found in product file");
+      ws.eachRow((row) => {
+        const vals = (row.values as (string | number | null | undefined)[]).slice(1);
+        grid.push(vals.map(v => String(v ?? "").trim()));
+      });
+    }
+
+    if (grid.length === 0) throw new Error("Product file is empty");
+
+    // ── Find header row ─────────────────────────────────────────────────────────
+    let headerRowIdx = -1;
+    const colMap: Record<string, number> = {};
+    for (let ri = 0; ri < grid.length; ri++) {
+      const hasHeader = grid[ri].some(v => /product|item|sku|gmv|sale|unit|sold|order|click|revenue/i.test(v));
+      if (hasHeader) {
+        headerRowIdx = ri;
+        grid[ri].forEach((v, i) => { if (v) colMap[v.toLowerCase()] = i; });
+        break;
+      }
+    }
+    if (headerRowIdx === -1) throw new Error("Could not find header row in product file");
 
     function findCol(...keys: string[]): number {
       for (const k of keys) {
@@ -733,25 +761,26 @@ export default function LivestreamImportPage() {
     if (gmvIdx  === -1) throw new Error("Could not find GMV/sales column");
 
     const rows: { productName: string; gmv: number; unitsSold: number; orders: number; clicks: number; convRate?: number }[] = [];
-    ws.eachRow((row, rn) => {
-      if (rn <= headerRowNum) return;
-      const vals = row.values as (string | number | null | undefined)[];
-      const name = String(vals[nameIdx] ?? "").trim();
-      if (!name) return;
-      function numVal(idx: number): number {
-        if (idx === -1) return 0;
-        const v = vals[idx];
-        return v == null ? 0 : parseFloat(String(v).replace(/[^0-9.-]/g, "")) || 0;
-      }
+
+    function numStr(s: string): number {
+      return parseFloat(s.replace(/[^0-9.-]/g, "")) || 0;
+    }
+
+    for (let ri = headerRowIdx + 1; ri < grid.length; ri++) {
+      const cells = grid[ri];
+      const name = cells[nameIdx]?.trim() ?? "";
+      if (!name) continue;
+      const atc = atcIdx !== -1 ? numStr(cells[atcIdx] ?? "") : undefined;
       rows.push({
         productName: name,
-        gmv:      numVal(gmvIdx),
-        unitsSold: Math.round(numVal(unitsIdx)),
-        orders:    Math.round(numVal(ordIdx)),
-        clicks:    Math.round(numVal(clkIdx)),
-        convRate:  atcIdx !== -1 ? numVal(atcIdx) || undefined : undefined,
+        gmv:       numStr(cells[gmvIdx]  ?? ""),
+        unitsSold: Math.round(numStr(cells[unitsIdx] ?? "")),
+        orders:    Math.round(numStr(cells[ordIdx]   ?? "")),
+        clicks:    Math.round(numStr(cells[clkIdx]   ?? "")),
+        convRate:  atc != null && atc > 0 ? atc : undefined,
       });
-    });
+    }
+
     if (rows.length === 0) throw new Error("No data rows found in product file");
 
     const [moYear, moMonth] = mo.split("-").map(Number);
