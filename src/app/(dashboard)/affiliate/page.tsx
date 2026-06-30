@@ -358,7 +358,7 @@ export default function AffiliateOverviewPage() {
 
       {/* Period filter — mode switcher + controls */}
       {data && (data.periods?.length ?? 0) > 0 && (
-        <div className="section-card p-3 flex flex-wrap items-start gap-3">
+        <div className="section-card p-3 flex flex-wrap items-start gap-3" style={{ overflow: "visible" }}>
           {/* Mode buttons — Custom range integrates the picker trigger */}
           <div className="flex gap-1 flex-wrap items-center">
             <button
@@ -449,8 +449,8 @@ export default function AffiliateOverviewPage() {
 
                 {productPickerOpen && (
                   <div
-                    className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg border"
-                    style={{ background: "var(--bg-card)", borderColor: "var(--border)", minWidth: "240px" }}
+                    className="absolute right-0 top-full mt-1 rounded-lg shadow-lg border"
+                    style={{ zIndex: 9999, background: "var(--bg-card)", borderColor: "var(--border)", minWidth: "240px" }}
                   >
                     {/* Quick actions */}
                     <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
