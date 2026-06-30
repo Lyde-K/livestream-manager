@@ -200,7 +200,7 @@ export default function MySchedulePage() {
               {detail.isCampaignDay && <Badge variant="warning">Campaign Day</Badge>}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {detail.room && <InfoRow label="Room" value={detail.room.name} />}
+              {detail.room ? <InfoRow label="Room" value={detail.room.name} /> : null}
               <InfoRow label="Platform" value={<PlatformBadge platform={detail.platform} showName size="sm" />} />
               <InfoRow label="Scheduled" value={
                 `${formatMYT(detail.scheduledStart, "dd MMM yyyy")}  ${formatMYT(detail.scheduledStart, "HH:mm")} – ${formatMYT(detail.scheduledEnd, "HH:mm")}`
@@ -208,11 +208,29 @@ export default function MySchedulePage() {
               {detail.actualStart && <InfoRow label="Actual Start" value={formatMYT(detail.actualStart, "HH:mm")} />}
               {detail.gmv !== null && <InfoRow label="GMV" value={formatCurrency(detail.gmv ?? 0)} />}
             </div>
-            {detail.notes && (
-              <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
-                {detail.notes}
-              </div>
-            )}
+            {detail.notes && (() => {
+              const locMatch = detail.notes.match(/^📍 (.+?)(?:\n|$)([\s\S]*)/);
+              const loc = locMatch ? locMatch[1] : null;
+              const rest = locMatch ? locMatch[2].trim() : detail.notes;
+              return (
+                <>
+                  {loc && (
+                    <div className="rounded-lg px-3 py-2.5 flex items-start gap-2" style={{ background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.35)" }}>
+                      <span style={{ fontSize: 16 }}>📍</span>
+                      <div>
+                        <div className="text-xs font-bold mb-0.5" style={{ color: "#f97316" }}>Off-site location</div>
+                        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{loc}</div>
+                      </div>
+                    </div>
+                  )}
+                  {rest && (
+                    <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
+                      {rest}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             <div className="flex justify-between pt-2" style={{ borderTop: "1px solid var(--border)" }}>
               <Button variant="outline" size="sm" onClick={() => addToCalendar(detail)}>
                 <CalendarPlus size={13} /> Add to Google Calendar
@@ -401,11 +419,25 @@ function DayView({ sessions, onSessionClick }: {
                 )}
                 {s.gmv !== null && <span>GMV: {formatCurrency(s.gmv ?? 0)}</span>}
               </div>
-              {s.notes && (
-                <p className="mt-1.5 text-xs rounded px-2 py-1" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
-                  {s.notes}
-                </p>
-              )}
+              {s.notes && (() => {
+                const locMatch = s.notes.match(/^📍 (.+?)(?:\n|$)([\s\S]*)/);
+                const loc = locMatch ? locMatch[1] : null;
+                const rest = locMatch ? locMatch[2].trim() : s.notes;
+                return (
+                  <>
+                    {loc && (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded" style={{ background: "rgba(249,115,22,0.12)", color: "#f97316" }}>
+                        📍 Off-site: {loc}
+                      </div>
+                    )}
+                    {rest && (
+                      <p className="mt-1 text-xs rounded px-2 py-1" style={{ background: "var(--bg-subtle)", color: "var(--text-muted)" }}>
+                        {rest}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </button>
         );
@@ -437,6 +469,10 @@ function SessionRow({ session: s, onClick }: { session: Session; onClick: () => 
         <div className="flex items-center gap-3 mt-0.5 text-xs" style={{ color: "var(--text-secondary)" }}>
           <span>{start} – {end}</span>
           {s.room && <><span>·</span><span>{s.room.name}</span></>}
+          {!s.room && s.notes?.startsWith("📍") && (() => {
+            const loc = s.notes.match(/^📍 (.+?)(?:\n|$)/)?.[1];
+            return loc ? <><span>·</span><span style={{ color: "#f97316", fontWeight: 600 }}>📍 {loc}</span></> : null;
+          })()}
         </div>
       </div>
       <StatusBadge status={s.status} punctuality={s.punctuality} />

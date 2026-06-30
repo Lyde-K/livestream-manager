@@ -272,6 +272,7 @@ export default function SchedulePage() {
     roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK",
     scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "",
   });
+  const [externalLocation, setExternalLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [is24h, setIs24h] = useState(true);
   const [emailLoading, setEmailLoading] = useState(false);
@@ -396,12 +397,17 @@ export default function SchedulePage() {
   function openEdit(s: Session) {
     setDetailSession(null);
     setEditing(s);
+    const rawNotes = s.notes || "";
+    const locMatch = rawNotes.match(/^📍 (.+?)(?:\n|$)([\s\S]*)/);
+    const parsedLocation = locMatch ? locMatch[1] : "";
+    const parsedNotes = locMatch ? locMatch[2].trim() : rawNotes;
+    setExternalLocation(parsedLocation);
     setForm({
       roomId: s.roomId ?? "", liveHostId: s.liveHostId ?? "", brandId: s.brandId,
       platform: s.platform,
       scheduledStart: toInputMYT(s.scheduledStart),
       scheduledEnd: toInputMYT(s.scheduledEnd),
-      isCampaignDay: s.isCampaignDay, notes: s.notes || "",
+      isCampaignDay: s.isCampaignDay, notes: parsedNotes,
     });
     setOpen(true);
   }
@@ -410,11 +416,16 @@ export default function SchedulePage() {
     setSaving(true);
     const url = editing ? `/api/sessions/${editing.id}` : "/api/sessions";
     const method = editing ? "PUT" : "POST";
+    const locationPrefix = !form.roomId && externalLocation.trim()
+      ? `📍 ${externalLocation.trim()}\n`
+      : "";
+    const combinedNotes = locationPrefix + (form.notes || "");
     await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        notes: combinedNotes,
         scheduledStart: toMYT(form.scheduledStart),
         scheduledEnd: toMYT(form.scheduledEnd),
       }),
@@ -512,6 +523,7 @@ export default function SchedulePage() {
 
   function openAddSession() {
     setEditing(null);
+    setExternalLocation("");
     setForm({ roomId: "", liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: "", scheduledEnd: "", isCampaignDay: false, notes: "" });
     setOpen(true);
   }
@@ -872,6 +884,7 @@ export default function SchedulePage() {
           onSessionClick={(s) => setDetailSession(s)}
           onAddSlot={(roomId, start, end) => {
             setEditing(null);
+            setExternalLocation("");
             setForm({ roomId, liveHostId: "", brandId: "", platform: "TIKTOK", scheduledStart: start, scheduledEnd: end, isCampaignDay: false, notes: "" });
             setDetailSession(null);
             setOpen(true);
@@ -936,7 +949,15 @@ export default function SchedulePage() {
               {detailSession.isCampaignDay && <Badge variant="warning">Campaign Day</Badge>}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <InfoRow label="Room" value={detailSession.room?.name ?? "—"} />
+              {detailSession.room
+                ? <InfoRow label="Room" value={detailSession.room.name} />
+                : <InfoRow label="Room" value={
+                    (() => {
+                      const loc = detailSession.notes?.match(/^📍 (.+?)(?:\n|$)/)?.[1];
+                      return loc ? <span style={{ color: "#f97316", fontWeight: 600 }}>📍 {loc}</span> : <span style={{ color: "var(--text-muted)" }}>None</span>;
+                    })()
+                  } />
+              }
               <InfoRow label="Platform" value={detailSession.platform} />
               <InfoRow label="Scheduled Start" value={formatMYT(detailSession.scheduledStart, is24h ? "dd MMM yyyy HH:mm" : "dd MMM yyyy h:mm a")} />
               <InfoRow label="Scheduled End"   value={formatMYT(detailSession.scheduledEnd,   is24h ? "HH:mm" : "h:mm a")} />
@@ -956,14 +977,15 @@ export default function SchedulePage() {
               {detailSession.gmv != null && <InfoRow label="GMV" value={formatCurrency(detailSession.gmv)} />}
               {(detailSession as any).adsCost != null && <InfoRow label="Ads Cost" value={formatCurrency((detailSession as any).adsCost)} />}
             </div>
-            {detailSession.notes && (
-              <div
-                className="rounded-lg px-3 py-2 text-sm"
-                style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}
-              >
-                {detailSession.notes}
-              </div>
-            )}
+            {detailSession.notes && (() => {
+              const locMatch = detailSession.notes.match(/^📍 (.+?)(?:\n|$)([\s\S]*)/);
+              const rest = locMatch ? locMatch[2].trim() : detailSession.notes;
+              return rest ? (
+                <div className="rounded-lg px-3 py-2 text-sm" style={{ background: "var(--bg-subtle)", color: "var(--text-secondary)" }}>
+                  {rest}
+                </div>
+              ) : null;
+            })()}
             <div className="flex justify-between pt-2" style={{ borderTop: "1px solid var(--border)" }}>
               <Button variant="destructive" size="sm" onClick={() => deleteSession(detailSession.id)}>Delete</Button>
               <div className="flex gap-2">
@@ -1148,10 +1170,24 @@ export default function SchedulePage() {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Room <span className="font-normal text-xs" style={{ color: "var(--text-muted)" }}>(optional)</span></label>
-            <Select value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value })}>
-              <option value="">Select room…</option>
+            <Select value={form.roomId} onChange={(e) => { setForm({ ...form, roomId: e.target.value }); if (e.target.value) setExternalLocation(""); }}>
+              <option value="">No room — external location</option>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </Select>
+            {!form.roomId && (
+              <div className="mt-2">
+                <Input
+                  value={externalLocation}
+                  onChange={(e) => setExternalLocation(e.target.value)}
+                  placeholder="Enter location (e.g. client office, home studio)…"
+                />
+                {externalLocation.trim() && (
+                  <p className="mt-1.5 text-xs flex items-center gap-1 font-medium" style={{ color: "#f97316" }}>
+                    📍 Host will see this as an off-site location alert
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Platform</label>
@@ -2252,7 +2288,7 @@ function HoursTrackerPanel({
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value }: { label: string; value: string | React.ReactNode }) {
   return (
     <div>
       <div className="text-xs mb-0.5" style={{ color: "var(--text-muted)" }}>{label}</div>
