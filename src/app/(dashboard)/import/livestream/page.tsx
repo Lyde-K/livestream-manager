@@ -348,7 +348,7 @@ function thisMonth() {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 type Step = "upload" | "preview" | "done";
-type Tab  = "import" | "export" | "product";
+type Tab  = "import" | "export";
 
 // ── Export helpers ────────────────────────────────────────────────────────────
 
@@ -575,242 +575,6 @@ async function downloadExport(sessions: ExportSession[], platform: string, month
   URL.revokeObjectURL(url);
 }
 
-// ── Product Import Panel ──────────────────────────────────────────────────────
-
-interface SimpleBrand { id: string; name: string; color: string; }
-
-function ProductImportPanel({ brands }: { brands: SimpleBrand[] }) {
-  const now = new Date();
-  const [productBrandId, setProductBrandId]   = useState("");
-  const [productPlatform, setProductPlatform] = useState<"TIKTOK" | "SHOPEE">("TIKTOK");
-  const [productMonth, setProductMonth]       = useState(now.getMonth() + 1);
-  const [productYear, setProductYear]         = useState(now.getFullYear());
-  const [productFile, setProductFile]         = useState<File | null>(null);
-  const [replace, setReplace]                 = useState(true);
-  const [loading, setLoading]                 = useState(false);
-  const [result, setResult]                   = useState("");
-  const [error, setError]                     = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const FULL_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
-  async function handleProductImport() {
-    if (!productFile || !productBrandId) { setError("Select a brand and file first."); return; }
-    setLoading(true); setResult(""); setError("");
-    try {
-      const buf = await productFile.arrayBuffer();
-      const ExcelJS = await import("exceljs");
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(buf);
-      const ws = wb.worksheets[0];
-
-      const colMap: Record<string, number> = {};
-      let headerRowNum = -1;
-      ws.eachRow((row, rn) => {
-        if (headerRowNum !== -1) return;
-        const vals = row.values as (string | null | undefined)[];
-        const hasHeader = vals.some(v =>
-          typeof v === "string" && /product|item|sku|gmv|sale|unit|sold|order|click|revenue/i.test(v)
-        );
-        if (hasHeader) {
-          headerRowNum = rn;
-          vals.forEach((v, i) => { if (v) colMap[String(v).trim().toLowerCase()] = i; });
-        }
-      });
-
-      if (headerRowNum === -1) { setError("Could not find header row."); setLoading(false); return; }
-
-      function findCol(...keys: string[]): number {
-        for (const k of keys) {
-          for (const [h, i] of Object.entries(colMap)) {
-            if (h.includes(k)) return i;
-          }
-        }
-        return -1;
-      }
-
-      let nameIdx: number, gmvIdx: number, unitsIdx: number, ordIdx: number, clkIdx: number, atcIdx: number;
-
-      if (productPlatform === "SHOPEE") {
-        // Shopee: Product(s) | Product Clicks | ATC | Orders(Confirmed Order) | Items Sold(Confirmed Order) | Sales(Confirmed Order)
-        nameIdx  = findCol("product(s)", "product");
-        gmvIdx   = findCol("sales(confirmed order)", "sales");
-        unitsIdx = findCol("items sold(confirmed order)", "items sold");
-        ordIdx   = findCol("orders(confirmed order)", "orders");
-        clkIdx   = findCol("product clicks", "clicks", "click");
-        atcIdx   = findCol("atc");
-      } else {
-        // TikTok: Product Info (2nd col) | Gross Revenue | Unit Sales
-        nameIdx  = findCol("product info", "product name", "product");
-        gmvIdx   = findCol("gross revenue", "revenue", "gmv", "sales");
-        unitsIdx = findCol("unit sales", "units sold", "unit");
-        ordIdx   = findCol("order", "orders");
-        clkIdx   = findCol("click", "clicks");
-        atcIdx   = -1;
-      }
-
-      if (nameIdx === -1) { setError("Could not find product name column."); setLoading(false); return; }
-      if (gmvIdx  === -1) { setError("Could not find GMV/sales column."); setLoading(false); return; }
-
-      const rows: { productId?: string; productName: string; gmv: number; unitsSold: number; orders: number; clicks: number; convRate?: number; }[] = [];
-
-      ws.eachRow((row, rn) => {
-        if (rn <= headerRowNum) return;
-        const vals = row.values as (string | number | null | undefined)[];
-        const name = String(vals[nameIdx] ?? "").trim();
-        if (!name) return;
-        function numVal(idx: number): number {
-          if (idx === -1) return 0;
-          const v = vals[idx];
-          if (v == null) return 0;
-          return parseFloat(String(v).replace(/[^0-9.-]/g, "")) || 0;
-        }
-        rows.push({
-          productName: name,
-          gmv:         numVal(gmvIdx),
-          unitsSold:   Math.round(numVal(unitsIdx)),
-          orders:      Math.round(numVal(ordIdx)),
-          clicks:      productPlatform === "SHOPEE" ? Math.round(numVal(clkIdx)) : Math.round(numVal(clkIdx)),
-          convRate:    atcIdx !== -1 ? numVal(atcIdx) || undefined : undefined,
-        });
-      });
-
-      if (rows.length === 0) { setError("No data rows found."); setLoading(false); return; }
-
-      const res = await fetch("/api/product-performance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brandId: productBrandId, platform: productPlatform, month: productMonth, year: productYear, replace, rows }),
-      });
-      if (!res.ok) { setError("Upload failed."); setLoading(false); return; }
-      const json = await res.json();
-      setResult(`✓ Imported ${json.count} products for ${FULL_MONTHS[productMonth-1]} ${productYear}`);
-      setProductFile(null);
-      if (fileRef.current) fileRef.current.value = "";
-    } catch (e) {
-      setError("Failed to parse file: " + String(e));
-    }
-    setLoading(false);
-  }
-
-  return (
-    <div className="space-y-5 max-w-2xl">
-      <div className="section-card p-5 space-y-4">
-        <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>Product Performance Import</h2>
-        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          Upload product-level export from TikTok or Shopee. Columns auto-detected — supports Product Name, GMV, Units Sold, Orders, Clicks, CVR.
-        </p>
-
-        {/* Platform toggle */}
-        <div>
-          <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--text-muted)" }}>Platform</label>
-          <div className="flex rounded-lg overflow-hidden w-fit" style={{ border: "1px solid var(--border)" }}>
-            {(["TIKTOK","SHOPEE"] as const).map(p => (
-              <button key={p} onClick={() => setProductPlatform(p)}
-                className="px-5 py-2 text-sm font-semibold transition-colors cursor-pointer"
-                style={productPlatform === p
-                  ? { background: p === "TIKTOK" ? "#010101" : "#ee4d2d", color: "#fff" }
-                  : { background: "var(--bg-card)", color: "var(--text-secondary)" }}>
-                {p === "TIKTOK" ? "🎵 TikTok" : "🛍️ Shopee"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Brand + Month/Year */}
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>Brand</label>
-            <select value={productBrandId} onChange={e => setProductBrandId(e.target.value)}
-              className="w-full rounded-lg px-3 py-2 text-sm border"
-              style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
-              <option value="">Select brand…</option>
-              {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>Month</label>
-            <select value={productMonth} onChange={e => setProductMonth(Number(e.target.value))}
-              className="w-full rounded-lg px-3 py-2 text-sm border"
-              style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
-              {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>Year</label>
-            <select value={productYear} onChange={e => setProductYear(Number(e.target.value))}
-              className="w-full rounded-lg px-3 py-2 text-sm border"
-              style={{ background: "var(--bg-subtle)", borderColor: "var(--border)", color: "var(--text-primary)" }}>
-              {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* File upload */}
-        <div>
-          <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-muted)" }}>
-            {productPlatform === "TIKTOK" ? "TikTok Product Export (.xlsx)" : "Shopee Product Export (.xlsx / .csv)"}
-          </label>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv"
-            onChange={e => setProductFile(e.target.files?.[0] ?? null)}
-            className="w-full text-sm rounded-lg px-3 py-2 border cursor-pointer"
-            style={{ background: "var(--bg-subtle)", borderColor: productFile ? "var(--accent)" : "var(--border)", color: "var(--text-primary)" }}
-          />
-          {productFile && (
-            <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{productFile.name} · {(productFile.size/1024).toFixed(0)} KB</p>
-          )}
-        </div>
-
-        <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: "var(--text-muted)" }}>
-          <input type="checkbox" checked={replace} onChange={e => setReplace(e.target.checked)} className="rounded" />
-          Replace existing data for this brand / platform / month
-        </label>
-
-        {result && (
-          <div className="flex items-center gap-2 text-sm rounded-lg px-3 py-2.5"
-            style={{ background: "var(--success-light)", color: "var(--success-text)", border: "1px solid var(--success)" }}>
-            <CheckCircle2 size={14} className="flex-shrink-0" /> {result}
-          </div>
-        )}
-        {error && (
-          <div className="flex items-center gap-2 text-sm rounded-lg px-3 py-2.5"
-            style={{ background: "var(--bg-danger)", color: "var(--text-danger)", border: "1px solid var(--border-danger)" }}>
-            <AlertCircle size={14} className="flex-shrink-0" /> {error}
-          </div>
-        )}
-
-        <button onClick={handleProductImport} disabled={loading || !productFile || !productBrandId}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "var(--accent)", color: "#fff" }}>
-          <Upload size={14} />
-          {loading ? "Importing…" : "Import Products"}
-        </button>
-      </div>
-
-      <div className="section-card p-4 text-sm space-y-2" style={{ color: "var(--text-secondary)" }}>
-        <p className="font-semibold" style={{ color: "var(--text-primary)" }}>Expected columns — {productPlatform === "TIKTOK" ? "TikTok" : "Shopee"}</p>
-        {productPlatform === "SHOPEE" ? (
-          <ul className="space-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
-            <li>• <strong>Product(s)</strong> — product name</li>
-            <li>• <strong>Product Clicks</strong> — clicks</li>
-            <li>• <strong>ATC</strong> — add to cart</li>
-            <li>• <strong>Orders(Confirmed Order)</strong> — order count</li>
-            <li>• <strong>Items Sold(Confirmed Order)</strong> — units sold</li>
-            <li>• <strong>Sales(Confirmed Order)</strong> — GMV / revenue</li>
-          </ul>
-        ) : (
-          <ul className="space-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
-            <li>• <strong>Product Info</strong> — product name (2nd column)</li>
-            <li>• <strong>Gross Revenue</strong> — GMV</li>
-            <li>• <strong>Unit Sales</strong> — units sold</li>
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function LivestreamImportPage() {
   const [tab, setTab]                 = useState<Tab>("import");
   const [brands, setBrands]           = useState<Brand[]>([]);
@@ -840,8 +604,14 @@ export default function LivestreamImportPage() {
   const [dbSessions, setDbSessions]   = useState<{ summary: { total: number; totalGMV: number; byType: { adminCreated: number; shopeeImported: number; tiktokImported: number } }; sessions: Array<{ id: string; externalRef: string | null; platform: string; status: string; scheduledStart: string; gmv: number | null; liveHost: { displayName: string } | null; title: string | null }> } | null>(null);
   const [dbLoading, setDbLoading]     = useState(false);
 
+  // Product file state (uploaded alongside session file in Step 1)
+  const [productFile, setProductFile]         = useState<File | null>(null);
+  const [productResult, setProductResult]     = useState<{ count: number } | null>(null);
+  const [productError, setProductError]       = useState("");
+
   const sessionsRef = useRef<HTMLInputElement>(null);
   const adsCostRef  = useRef<HTMLInputElement>(null);
+  const productRef  = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/brands?hasLivestream=1").then(r => r.json()).then((b: Brand[]) => setBrands(b.filter(x => x)));
@@ -866,8 +636,10 @@ export default function LivestreamImportPage() {
     setBrandId("");
     setSessionsFile(null);
     setAdsCostFile(null);
+    setProductFile(null);
     if (sessionsRef.current) sessionsRef.current.value = "";
     if (adsCostRef.current) adsCostRef.current.value = "";
+    if (productRef.current) productRef.current.value = "";
   }
 
   const isShopeeXlsx = platform === "SHOPEE" && (sessionsFile?.name.toLowerCase().endsWith(".xlsx") ?? false);
@@ -906,6 +678,91 @@ export default function LivestreamImportPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");
     } finally { setLoading(false); }
+  }
+
+  async function importProductFile(file: File, plt: Platform, bId: string, mo: string): Promise<number> {
+    const buf = await file.arrayBuffer();
+    const ExcelJS = await import("exceljs");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const ws = wb.worksheets[0];
+    if (!ws) throw new Error("No sheet found in product file");
+
+    const colMap: Record<string, number> = {};
+    let headerRowNum = -1;
+    ws.eachRow((row, rn) => {
+      if (headerRowNum !== -1) return;
+      const vals = row.values as (string | null | undefined)[];
+      const hasHeader = vals.some(v =>
+        typeof v === "string" && /product|item|sku|gmv|sale|unit|sold|order|click|revenue/i.test(v)
+      );
+      if (hasHeader) {
+        headerRowNum = rn;
+        vals.forEach((v, i) => { if (v) colMap[String(v).trim().toLowerCase()] = i; });
+      }
+    });
+    if (headerRowNum === -1) throw new Error("Could not find header row in product file");
+
+    function findCol(...keys: string[]): number {
+      for (const k of keys) {
+        for (const [h, i] of Object.entries(colMap)) {
+          if (h.includes(k)) return i;
+        }
+      }
+      return -1;
+    }
+
+    let nameIdx: number, gmvIdx: number, unitsIdx: number, ordIdx: number, clkIdx: number, atcIdx: number;
+    if (plt === "SHOPEE") {
+      nameIdx  = findCol("product(s)", "product");
+      gmvIdx   = findCol("sales(confirmed order)", "sales");
+      unitsIdx = findCol("items sold(confirmed order)", "items sold");
+      ordIdx   = findCol("orders(confirmed order)", "orders");
+      clkIdx   = findCol("product clicks", "clicks", "click");
+      atcIdx   = findCol("atc");
+    } else {
+      nameIdx  = findCol("product info", "product name", "product");
+      gmvIdx   = findCol("gross revenue", "revenue", "gmv", "sales");
+      unitsIdx = findCol("unit sales", "units sold", "unit");
+      ordIdx   = findCol("order", "orders");
+      clkIdx   = findCol("click", "clicks");
+      atcIdx   = -1;
+    }
+
+    if (nameIdx === -1) throw new Error("Could not find product name column");
+    if (gmvIdx  === -1) throw new Error("Could not find GMV/sales column");
+
+    const rows: { productName: string; gmv: number; unitsSold: number; orders: number; clicks: number; convRate?: number }[] = [];
+    ws.eachRow((row, rn) => {
+      if (rn <= headerRowNum) return;
+      const vals = row.values as (string | number | null | undefined)[];
+      const name = String(vals[nameIdx] ?? "").trim();
+      if (!name) return;
+      function numVal(idx: number): number {
+        if (idx === -1) return 0;
+        const v = vals[idx];
+        return v == null ? 0 : parseFloat(String(v).replace(/[^0-9.-]/g, "")) || 0;
+      }
+      rows.push({
+        productName: name,
+        gmv:      numVal(gmvIdx),
+        unitsSold: Math.round(numVal(unitsIdx)),
+        orders:    Math.round(numVal(ordIdx)),
+        clicks:    Math.round(numVal(clkIdx)),
+        convRate:  atcIdx !== -1 ? numVal(atcIdx) || undefined : undefined,
+      });
+    });
+    if (rows.length === 0) throw new Error("No data rows found in product file");
+
+    const [moYear, moMonth] = mo.split("-").map(Number);
+    const res = await fetch("/api/product-performance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brandId: bId, platform: plt, month: moMonth, year: moYear, replace: true, rows }),
+    });
+    if (!res.ok) throw new Error("Product upload failed");
+    const json = await res.json();
+    return json.count as number;
   }
 
   async function handleConfirm() {
@@ -949,6 +806,18 @@ export default function LivestreamImportPage() {
       }
 
       setResult({ ...(data as { inserted: number; updated?: number; skipped: number; unmatched: number }), adsCostMatched: platform === "TIKTOK" ? adsCostMatched : undefined });
+
+      // Product import — runs after session import succeeds
+      if (productFile && brandId) {
+        setProductResult(null); setProductError("");
+        try {
+          const pCount = await importProductFile(productFile, platform, brandId, month);
+          setProductResult({ count: pCount });
+        } catch (pe) {
+          setProductError(pe instanceof Error ? pe.message : "Product import failed");
+        }
+      }
+
       setStep("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unexpected error");
@@ -975,8 +844,10 @@ export default function LivestreamImportPage() {
   function reset() {
     setStep("upload"); setPreview([]); setHostOverrides({}); setCampaignOverrides({}); setSelectedKeys(new Set());
     setSessionsFile(null); setAdsCostFile(null); setResult(null); setError("");
+    setProductFile(null); setProductResult(null); setProductError("");
     if (sessionsRef.current) sessionsRef.current.value = "";
     if (adsCostRef.current) adsCostRef.current.value = "";
+    if (productRef.current) productRef.current.value = "";
   }
 
   const brandsForPlatform = (p: string) =>
@@ -1025,13 +896,13 @@ export default function LivestreamImportPage() {
 
       {/* Tab switcher */}
       <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-        {(["import", "export", "product"] as Tab[]).map(t => (
+        {(["import", "export"] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className="px-4 py-1.5 rounded-md text-sm font-semibold capitalize transition-all"
             style={tab === t
               ? { background: "var(--bg-card)", color: "var(--text-primary)", boxShadow: "0 1px 3px rgba(0,0,0,.15)" }
               : { color: "var(--text-muted)" }}>
-            {t === "import" ? "Import" : t === "export" ? "Export" : "Product Import"}
+            {t === "import" ? "Import" : "Export"}
           </button>
         ))}
       </div>
@@ -1214,6 +1085,23 @@ export default function LivestreamImportPage() {
               accept=".xlsx"
             />
           )}
+
+          {/* ── Product Performance file ── */}
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", marginTop: "0.25rem" }}>
+            <p className="text-xs font-semibold mb-3" style={{ color: "var(--text-secondary)" }}>
+              Product Performance — optional
+            </p>
+            <FileSlot
+              label={platform === "TIKTOK" ? "TikTok Product Export (.xlsx)" : "Shopee Product Export (.xlsx / .csv)"}
+              hint={platform === "TIKTOK"
+                ? "Columns: Product Info · Gross Revenue · Unit Sales"
+                : "Columns: Product(s) · Product Clicks · ATC · Orders(Confirmed Order) · Items Sold(Confirmed Order) · Sales(Confirmed Order)"}
+              file={productFile}
+              onPick={setProductFile}
+              inputRef={productRef}
+              accept=".xlsx,.xls,.csv"
+            />
+          </div>
 
           {error && <ErrorBanner message={error} />}
 
@@ -1432,6 +1320,23 @@ export default function LivestreamImportPage() {
               <KV label="Ads cost patched" value={`${result.adsCostMatched} sessions`} />
             )}
           </div>
+
+          {/* Product import result */}
+          {productResult && (
+            <div className="flex items-center gap-2 text-sm rounded-lg px-3 py-2.5"
+              style={{ background: "rgba(34,197,94,.08)", color: "#16a34a", border: "1px solid rgba(34,197,94,.3)" }}>
+              <CheckCircle2 size={14} className="flex-shrink-0" />
+              Product data imported — {productResult.count} products
+            </div>
+          )}
+          {productError && (
+            <div className="flex items-center gap-2 text-sm rounded-lg px-3 py-2.5"
+              style={{ background: "var(--bg-danger)", color: "var(--text-danger)", border: "1px solid var(--border-danger)" }}>
+              <AlertCircle size={14} className="flex-shrink-0" />
+              Product import: {productError}
+            </div>
+          )}
+
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             Data is live in the dashboard.{" "}
             Matched sessions updated existing admin-created slots with actuals and punctuality. Unmatched rows created as new sessions.{" "}
@@ -1443,11 +1348,6 @@ export default function LivestreamImportPage() {
         </div>
       )}
       </> }
-
-      {/* ── PRODUCT IMPORT TAB ── */}
-      {tab === "product" && (
-        <ProductImportPanel brands={brands} />
-      )}
     </div>
   );
 }
