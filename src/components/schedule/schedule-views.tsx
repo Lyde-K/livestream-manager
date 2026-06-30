@@ -253,13 +253,14 @@ interface DailyListViewProps {
   filterBrand?: string;
   filterRoom?: string;
   filterType?: string;
+  filterRoomless?: boolean;
   is24h?: boolean;
   onSessionClick: (s: Session) => void;
 }
 
 export function DailyListView({
   gridDate, setGridDate, sessions,
-  filterHost = "", filterBrand = "", filterRoom = "", filterType = "",
+  filterHost = "", filterBrand = "", filterRoom = "", filterType = "", filterRoomless = false,
   is24h = true, onSessionClick,
 }: DailyListViewProps) {
   const monthStr = gridDate.slice(0, 7);
@@ -272,6 +273,7 @@ export function DailyListView({
       if (filterBrand && s.brandId    !== filterBrand) continue;
       if (filterRoom  && s.roomId     !== filterRoom)  continue;
       if (filterType  && s.platform   !== filterType)  continue;
+      if (filterRoomless && s.roomId) continue;
       const dateStr = mytDateStr(s.scheduledStart);
       const arr = map.get(dateStr) ?? [];
       arr.push(s);
@@ -279,7 +281,7 @@ export function DailyListView({
     }
     for (const [, arr] of map) arr.sort((a, b) => a.scheduledStart.localeCompare(b.scheduledStart));
     return map;
-  }, [sessions, monthStr, filterHost, filterBrand, filterRoom, filterType]);
+  }, [sessions, monthStr, filterHost, filterBrand, filterRoom, filterType, filterRoomless]);
 
   const sortedDays = useMemo(() => [...byDay.keys()].sort(), [byDay]);
   const timeFmt = is24h ? "HH:mm" : "h:mm a";
@@ -414,6 +416,7 @@ interface DailyGridViewProps {
   filterRoom?: string;
   filterType?: string;
   filterHost?: string;
+  filterRoomless?: boolean;
   onSessionClick: (s: Session) => void;
   onAddSlot?: (roomId: string, start: string, end: string) => void;
   onPasteSlot?: (roomId: string, start: string, end: string, cb: NonNullable<Clipboard>) => Promise<string>;
@@ -423,7 +426,7 @@ interface DailyGridViewProps {
 
 export function DailyGridView({
   gridDate, setGridDate, sessions, rooms, hosts = [],
-  filterBrand = "", filterRoom = "", filterType = "", filterHost = "",
+  filterBrand = "", filterRoom = "", filterType = "", filterHost = "", filterRoomless = false,
   onSessionClick, onAddSlot, onPasteSlot, onUpdateSlot, onDeleteSlot,
 }: DailyGridViewProps) {
   const [editMode, setEditMode] = useState(false);
@@ -465,17 +468,18 @@ export function DailyGridView({
     const myt = new Date(d.getTime() + 8 * 3600_000);
     const sessionDate = myt.toISOString().slice(0, 10);
     return sessionDate === gridDate &&
-      (!filterHost  || s.liveHostId === filterHost) &&
-      (!filterBrand || s.brandId    === filterBrand) &&
-      (!filterRoom  || s.roomId     === filterRoom) &&
-      (!filterType  || ((s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME") === filterType);
-  }), [sessions, gridDate, filterHost, filterBrand, filterRoom, filterType]);
+      (!filterHost     || s.liveHostId === filterHost) &&
+      (!filterBrand    || s.brandId    === filterBrand) &&
+      (!filterRoom     || s.roomId     === filterRoom) &&
+      (!filterType     || ((s.liveHost as unknown as { type?: string } | null)?.type ?? "FULL_TIME") === filterType) &&
+      (!filterRoomless || !s.roomId);
+  }), [sessions, gridDate, filterHost, filterBrand, filterRoom, filterType, filterRoomless]);
 
   const sortedRooms = useMemo(() =>
     [...rooms].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
   , [rooms]);
 
-  const filtersActive = !!(filterHost || filterBrand || filterRoom || filterType);
+  const filtersActive = !!(filterHost || filterBrand || filterRoom || filterType || filterRoomless);
 
   const allRoomsForDay = useMemo(() =>
     filterRoom ? sortedRooms.filter(r => r.id === filterRoom) : sortedRooms

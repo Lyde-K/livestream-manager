@@ -260,6 +260,7 @@ export default function SchedulePage() {
   const [filterBrand, setFilterBrand] = useState("");
   const [filterRoom, setFilterRoom] = useState("");
   const [filterType, setFilterType] = useState("");
+  const [filterRoomless, setFilterRoomless] = useState(false);
   // Pending filters (bound to dropdowns — only committed on Apply)
   const [pendingHost, setPendingHost] = useState("");
   const [pendingBrand, setPendingBrand] = useState("");
@@ -452,6 +453,7 @@ export default function SchedulePage() {
   function clearFilters() {
     setPendingType(""); setPendingHost(""); setPendingBrand(""); setPendingRoom("");
     setFilterType(""); setFilterHost(""); setFilterBrand(""); setFilterRoom("");
+    setFilterRoomless(false);
   }
 
   async function reloadCurrentRange() {
@@ -842,12 +844,24 @@ export default function SchedulePage() {
             {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>
           {/* 4. Rooms */}
-          <Select value={pendingRoom} onChange={(e) => setPendingRoom(e.target.value)} className="flex-1 min-w-[100px] lg:w-36 lg:flex-none">
+          <Select value={pendingRoom} onChange={(e) => { setPendingRoom(e.target.value); if (e.target.value) setFilterRoomless(false); }} className="flex-1 min-w-[100px] lg:w-36 lg:flex-none">
             <option value="">All Rooms</option>
             {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
+          {/* 5. Off-site toggle */}
+          <button
+            onClick={() => { setFilterRoomless(r => !r); if (!filterRoomless) setPendingRoom(""); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex-shrink-0"
+            style={{
+              background: filterRoomless ? "rgba(249,115,22,0.15)" : "var(--bg-subtle)",
+              color: filterRoomless ? "#f97316" : "var(--text-secondary)",
+              border: filterRoomless ? "1px solid rgba(249,115,22,0.4)" : "1px solid transparent",
+            }}
+          >
+            📍 Off-site only
+          </button>
           <div className="flex items-center gap-2 ml-auto">
-            {(filterHost || filterBrand || filterRoom || filterType) && (
+            {(filterHost || filterBrand || filterRoom || filterType || filterRoomless) && (
               <Button size="sm" variant="ghost" onClick={clearFilters}>Clear</Button>
             )}
             <Button size="sm" onClick={applyFilters}
@@ -881,6 +895,7 @@ export default function SchedulePage() {
           filterBrand={filterBrand}
           filterRoom={filterRoom}
           filterType={filterType}
+          filterRoomless={filterRoomless}
           onSessionClick={(s) => setDetailSession(s)}
           onAddSlot={(roomId, start, end) => {
             setEditing(null);
@@ -930,6 +945,7 @@ export default function SchedulePage() {
           filterBrand={filterBrand}
           filterRoom={filterRoom}
           filterType={filterType}
+          filterRoomless={filterRoomless}
           is24h={is24h}
           onSessionClick={(s) => setDetailSession(s)}
         />
