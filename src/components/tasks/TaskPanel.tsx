@@ -809,6 +809,8 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
   const [sending, setSending]             = useState(false);
   const [reviewSearch, setReviewSearch]   = useState("");
   const [sendingReview, setSendingReview] = useState(false);
+  const [dueDateEdit, setDueDateEdit]     = useState(false);
+  const [savingDate, setSavingDate]       = useState(false);
   const commentRef = useRef<HTMLInputElement>(null);
   const labels = parseLabels(task.labels);
   const sm = STATUS_META[task.status] ?? STATUS_META.todo;
@@ -829,6 +831,38 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
   async function changeStatus(status: string) {
     const res = await fetch(`/api/tasks/${task.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
     if (res.ok) { const d = await res.json(); onUpdate(d.task); }
+  }
+
+  async function changeDueDate(newDate: string) {
+    if (savingDate) return;
+    setSavingDate(true);
+    const oldLabel = task.dueDate
+      ? new Date(task.dueDate).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
+      : "none";
+    const newLabel = newDate
+      ? new Date(newDate).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
+      : "none";
+
+    const patchRes = await fetch(`/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dueDate: newDate || null }),
+    });
+    if (patchRes.ok) {
+      const d = await patchRes.json();
+      onUpdate(d.task);
+      // Post audit log as a system comment
+      const me = allUsers.find((u) => u.id === currentUserId);
+      const logContent = `📅 Due date changed: ${oldLabel} → ${newLabel} (by ${me?.name ?? "Unknown"})`;
+      const logRes = await fetch(`/api/tasks/${task.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: logContent }),
+      });
+      if (logRes.ok) { const ld = await logRes.json(); setComments((c) => [...c, ld.comment]); }
+    }
+    setDueDateEdit(false);
+    setSavingDate(false);
   }
 
   async function sendForReview(reviewerId: string) {
@@ -874,6 +908,39 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
           <ExternalLink size={11} /> {task.link.length > 50 ? task.link.slice(0, 47) + "…" : task.link}
         </a>
       )}
+
+      {/* ── Due date row ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px", padding: "7px 10px", borderRadius: "8px", background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+        <Calendar size={12} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+        <span style={{ fontSize: "11px", color: "var(--text-muted)", flexShrink: 0 }}>Due date</span>
+        {dueDateEdit ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1 }}>
+            <div style={{ flex: 1 }}>
+              <DatePicker
+                value={task.dueDate ? task.dueDate.slice(0, 10) : ""}
+                onChange={(v) => changeDueDate(v)}
+              />
+            </div>
+            <button onClick={() => setDueDateEdit(false)} disabled={savingDate}
+              style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "6px", border: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit" }}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setDueDateEdit(true)}
+            style={{ fontSize: "11px", fontWeight: 600, color: task.dueDate ? (new Date(task.dueDate) < new Date() ? "#ff2d2d" : "var(--text-primary)") : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", textAlign: "left", flex: 1 }}>
+            {task.dueDate
+              ? new Date(task.dueDate).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })
+              : "No due date — click to set"}
+          </button>
+        )}
+        {!dueDateEdit && (
+          <button onClick={() => setDueDateEdit(true)}
+            style={{ fontSize: "10px", padding: "2px 8px", borderRadius: "6px", border: "1px solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>
+            Edit
+          </button>
+        )}
+      </div>
 
       <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: "10px" }}>
         {Object.entries(STATUS_META).map(([k, v]) => (
@@ -964,16 +1031,28 @@ function TaskDetail({ task, currentUserId, allUsers, teams, onClose, onUpdate }:
       </p>
       <div style={{ maxHeight: "160px", overflowY: "auto", marginBottom: "8px" }}>
         {comments.length === 0 && <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>No comments yet.</p>}
-        {comments.map((c) => (
-          <div key={c.id} style={{ marginBottom: "8px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "3px" }}>
-              {c.user && <Avatar name={c.user.name} size={16} />}
-              <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>{c.user?.name ?? "User"}</span>
-              <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{new Date(c.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}</span>
+        {comments.map((c) => {
+          const isLog = c.content.startsWith("📅 Due date changed:");
+          if (isLog) {
+            return (
+              <div key={c.id} style={{ marginBottom: "6px", padding: "5px 8px", borderRadius: "6px", background: "rgba(249,115,22,.07)", border: "1px solid rgba(249,115,22,.2)", display: "flex", alignItems: "center", gap: "6px" }}>
+                <Calendar size={10} style={{ color: "#f97316", flexShrink: 0 }} />
+                <span style={{ fontSize: "10px", color: "var(--text-secondary)", flex: 1 }}>{c.content.replace("📅 ", "")}</span>
+                <span style={{ fontSize: "10px", color: "var(--text-muted)", flexShrink: 0 }}>{new Date(c.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}</span>
+              </div>
+            );
+          }
+          return (
+            <div key={c.id} style={{ marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "3px" }}>
+                {c.user && <Avatar name={c.user.name} size={16} />}
+                <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-secondary)" }}>{c.user?.name ?? "User"}</span>
+                <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{new Date(c.createdAt).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)", paddingLeft: "21px", lineHeight: 1.4 }}>{c.content}</p>
             </div>
-            <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)", paddingLeft: "21px", lineHeight: 1.4 }}>{c.content}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <div style={{ display: "flex", gap: "6px" }}>
         <input ref={commentRef} value={commentText} onChange={(e) => setCommentText(e.target.value)}
