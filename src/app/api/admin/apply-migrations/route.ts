@@ -229,6 +229,31 @@ const MIGRATIONS: { name: string; statements: string[] }[] = [
     ],
   },
   {
+    name: "016_add_product_performance",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS "ProductPerformance" (
+        "id"          TEXT NOT NULL,
+        "brandId"     TEXT NOT NULL,
+        "platform"    TEXT NOT NULL,
+        "month"       INTEGER NOT NULL,
+        "year"        INTEGER NOT NULL,
+        "productId"   TEXT,
+        "productName" TEXT NOT NULL,
+        "gmv"         DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "unitsSold"   INTEGER NOT NULL DEFAULT 0,
+        "orders"      INTEGER NOT NULL DEFAULT 0,
+        "clicks"      INTEGER NOT NULL DEFAULT 0,
+        "convRate"    DOUBLE PRECISION,
+        "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "updatedAt"   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        CONSTRAINT "ProductPerformance_pkey" PRIMARY KEY ("id"),
+        CONSTRAINT "ProductPerformance_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand"("id") ON DELETE CASCADE
+      )`,
+      `CREATE INDEX IF NOT EXISTS "ProductPerformance_brandId_month_year_idx" ON "ProductPerformance"("brandId","month","year")`,
+      `CREATE INDEX IF NOT EXISTS "ProductPerformance_platform_month_year_idx" ON "ProductPerformance"("platform","month","year")`,
+    ],
+  },
+  {
     name: "015_add_violations_and_bonus_overrides",
     statements: [
       `CREATE TABLE IF NOT EXISTS "HostViolation" (

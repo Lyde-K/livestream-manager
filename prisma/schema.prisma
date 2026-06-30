@@ -106,6 +106,7 @@ model Brand {
   campaigns             Campaign[]
   brandKpiConfigs       BrandKPIConfig[]
   violations            HostViolation[]
+  productPerformance    ProductPerformance[]
 }
 
 model Campaign {
@@ -704,4 +705,25 @@ model HostBonusOverride {
   updatedAt           DateTime @updatedAt
 
   @@unique([hostId, month, year])
+}
+
+model ProductPerformance {
+  id          String   @id @default(cuid())
+  brandId     String
+  brand       Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  platform    String   // TIKTOK | SHOPEE
+  month       Int      // 1-based
+  year        Int
+  productId   String?  // platform product ID
+  productName String
+  gmv         Float    @default(0)
+  unitsSold   Int      @default(0)
+  orders      Int      @default(0)
+  clicks      Int      @default(0)
+  convRate    Float?   // conversion rate %
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([brandId, month, year])
+  @@index([platform, month, year])
 }

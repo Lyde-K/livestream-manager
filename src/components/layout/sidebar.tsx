@@ -33,7 +33,8 @@ const navItems: NavItem[] = [
   { label: "Brand AI Analysis", href: "/client-brand/intelligence", icon: Sparkles,        roles: ["CLIENT"],    group: "LIVESTREAM" },
   { label: "Leaderboard",       href: "/leaderboard",               icon: Trophy,          roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeaderboard" },
   { label: "Leave",             href: "/leave",                     icon: UmbrellaOff,     roles: ["ADMIN","LIVE_HOST"], group: "LIVESTREAM", permission: "viewLeave" },
-  { label: "Livestream Import", href: "/import/livestream",         icon: Upload,          roles: ["ADMIN"],             group: "LIVESTREAM" },
+  { label: "Product Performance", href: "/product-performance",      icon: Package,         roles: ["ADMIN"],             group: "LIVESTREAM" },
+  { label: "Livestream Import",  href: "/import/livestream",         icon: Upload,          roles: ["ADMIN"],             group: "LIVESTREAM" },
   // AFFILIATE
   { label: "Overview",          href: "/affiliate",                 icon: LayoutDashboard, roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
   { label: "Creators",          href: "/affiliate/creators",        icon: Users,           roles: ["ADMIN","CLIENT"], group: "AFFILIATE" },
