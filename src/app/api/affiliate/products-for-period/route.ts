@@ -58,11 +58,11 @@ export async function GET(req: NextRequest) {
     periodFilter = { period: periodParam };
   }
 
-  // Group by productId+productName to aggregate GMV across periods
+  // Group by productId+productName to aggregate metrics across periods
   const grouped = await prisma.affiliateProductStat.groupBy({
     by: ["productId", "productName"],
     where: { brandId: brandFilter, ...periodFilter },
-    _sum: { gmv: true },
+    _sum: { gmv: true, videos: true, liveStreams: true, estCommission: true },
     orderBy: { _sum: { gmv: "desc" } },
   });
 
@@ -70,6 +70,9 @@ export async function GET(req: NextRequest) {
     productId: g.productId,
     productName: g.productName,
     gmv: Number(g._sum.gmv ?? 0),
+    videos: Number(g._sum.videos ?? 0),
+    liveStreams: Number(g._sum.liveStreams ?? 0),
+    estCommission: Number(g._sum.estCommission ?? 0),
   }));
 
   return Response.json({ products });

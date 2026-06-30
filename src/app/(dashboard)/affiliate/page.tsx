@@ -120,7 +120,7 @@ const LABEL_EXPLANATIONS: Record<string, { title: string; criteria: string[]; co
 
 type AffiliateType = "all" | "live" | "video";
 
-interface ProductOption { productId: string; productName: string; gmv: number; }
+interface ProductOption { productId: string; productName: string; gmv: number; videos: number; liveStreams: number; estCommission: number; }
 
 export default function AffiliateOverviewPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -309,15 +309,17 @@ export default function AffiliateOverviewPage() {
     : [];
 
   // Product filter derived values
-  const filteredProducts = selectedProductIds.length > 0
+  const selectedFilter = selectedProductIds.length > 0;
+  const filteredProductRows = selectedFilter
     ? allProducts.filter((p) => selectedProductIds.includes(p.productId))
     : allProducts;
 
-  const filteredProductGmv = selectedProductIds.length > 0
-    ? allProducts.filter((p) => selectedProductIds.includes(p.productId)).reduce((s, p) => s + p.gmv, 0)
-    : displaySnapshot?.gmv ?? 0;
+  const filteredProducts = filteredProductRows; // alias used for top-products list
 
-  const gmvKpiValue = selectedProductIds.length > 0 ? filteredProductGmv : (displaySnapshot?.gmv ?? 0);
+  const gmvKpiValue       = selectedFilter ? filteredProductRows.reduce((s, p) => s + p.gmv, 0)           : (displaySnapshot?.gmv ?? 0);
+  const commissionKpiValue = selectedFilter ? filteredProductRows.reduce((s, p) => s + p.estCommission, 0) : (displaySnapshot?.estCommission ?? 0);
+  const videosKpiValue    = selectedFilter ? filteredProductRows.reduce((s, p) => s + p.videos, 0)        : (displaySnapshot?.videos ?? 0);
+  const livestreamsKpiValue = selectedFilter ? filteredProductRows.reduce((s, p) => s + p.liveStreams, 0) : (displaySnapshot?.liveStreams ?? 0);
 
   return (
     <div className="space-y-5 animate-in">
@@ -603,12 +605,30 @@ export default function AffiliateOverviewPage() {
               label="GMV"
               value={formatCurrency(gmvKpiValue)}
               fullValue={formatCurrency(gmvKpiValue)}
-              delta={selectedProductIds.length > 0 ? null : gmvDelta}
-              badge={selectedProductIds.length > 0 ? `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}` : undefined}
+              delta={selectedFilter ? null : gmvDelta}
+              badge={selectedFilter ? `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}` : undefined}
             />
-            <KpiCard label="Est. Commission" value={formatCurrency(displaySnapshot.estCommission)} fullValue={formatCurrency(displaySnapshot.estCommission)} delta={null} />
-            <KpiCard label="Videos" value={displaySnapshot.videos.toLocaleString()} fullValue={displaySnapshot.videos.toLocaleString()} delta={videosDelta} />
-            <KpiCard label="Live streams" value={displaySnapshot.liveStreams.toLocaleString()} fullValue={displaySnapshot.liveStreams.toLocaleString()} delta={livesDelta} />
+            <KpiCard
+              label="Est. Commission"
+              value={formatCurrency(commissionKpiValue)}
+              fullValue={formatCurrency(commissionKpiValue)}
+              delta={null}
+              badge={selectedFilter ? `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}` : undefined}
+            />
+            <KpiCard
+              label="Videos"
+              value={videosKpiValue.toLocaleString()}
+              fullValue={videosKpiValue.toLocaleString()}
+              delta={selectedFilter ? null : videosDelta}
+              badge={selectedFilter ? `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}` : undefined}
+            />
+            <KpiCard
+              label="Live streams"
+              value={livestreamsKpiValue.toLocaleString()}
+              fullValue={livestreamsKpiValue.toLocaleString()}
+              delta={selectedFilter ? null : livesDelta}
+              badge={selectedFilter ? `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}` : undefined}
+            />
           </div>
 
           {/* Label distribution */}
@@ -801,7 +821,7 @@ export default function AffiliateOverviewPage() {
                     ? filteredProducts
                     : allProducts.length > 0
                     ? allProducts.slice(0, 10)
-                    : data.topProducts.map((p) => ({ productId: p.id, productName: p.productName, gmv: p.gmv }));
+                    : data.topProducts.map((p) => ({ productId: p.id, productName: p.productName, gmv: p.gmv, videos: 0, liveStreams: 0, estCommission: 0 }));
                   return displayList.map((p, i) => {
                     // Build href: prefer brandId|productId composite (handled by product detail page)
                     const productLinkId = brandId ? `${brandId}|${p.productId}` : p.productId;
