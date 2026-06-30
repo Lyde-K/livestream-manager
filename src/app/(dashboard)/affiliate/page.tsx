@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { LabelChip } from "@/components/affiliate/label-chip";
 import { formatCurrency } from "@/lib/utils";
-import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, Sparkles } from "lucide-react";
+import { Handshake, ArrowRight, Ban, TrendingUp, TrendingDown, Video, Radio, ArrowUp, ArrowDown, Calendar, Sparkles, ChevronDown, Package } from "lucide-react";
 import { MonthRangePicker } from "@/components/ui/month-range-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -120,6 +120,8 @@ const LABEL_EXPLANATIONS: Record<string, { title: string; criteria: string[]; co
 
 type AffiliateType = "all" | "live" | "video";
 
+interface ProductOption { productId: string; productName: string; gmv: number; }
+
 export default function AffiliateOverviewPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandId, setBrandId] = useState("");
@@ -133,6 +135,46 @@ export default function AffiliateOverviewPage() {
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
   const [affiliateType, setAffiliateType] = useState<AffiliateType>("all");
   const cache = useRef<Map<string, OverviewData>>(new Map());
+
+  // Product filter state
+  const [allProducts, setAllProducts] = useState<ProductOption[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const productPickerRef = useRef<HTMLDivElement>(null);
+
+  // Close product picker on outside click
+  useEffect(() => {
+    if (!productPickerOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (productPickerRef.current && !productPickerRef.current.contains(e.target as Node)) {
+        setProductPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [productPickerOpen]);
+
+  // Fetch products for the active period/range
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (brandId) params.set("brandId", brandId);
+    if (filterMode === "ytd") {
+      params.set("period", "YTD");
+    } else if (filterMode === "range" && customFrom && customTo) {
+      params.set("from", customFrom);
+      params.set("to", customTo);
+    } else if (filterMode === "month" && period) {
+      params.set("period", period);
+    }
+    // Reset selection when context changes
+    setSelectedProductIds([]);
+    fetch(`/api/affiliate/products-for-period?${params}`)
+      .then((r) => r.json())
+      .then((d: { products?: ProductOption[] }) => {
+        if (d.products) setAllProducts(d.products);
+      })
+      .catch(() => { /* silent */ });
+  }, [brandId, filterMode, period, customFrom, customTo]);
 
   useEffect(() => {
     fetch("/api/affiliate/brands")
@@ -264,6 +306,17 @@ export default function AffiliateOverviewPage() {
       : data.topCreators
     : [];
 
+  // Product filter derived values
+  const filteredProducts = selectedProductIds.length > 0
+    ? allProducts.filter((p) => selectedProductIds.includes(p.productId))
+    : allProducts;
+
+  const filteredProductGmv = selectedProductIds.length > 0
+    ? allProducts.filter((p) => selectedProductIds.includes(p.productId)).reduce((s, p) => s + p.gmv, 0)
+    : displaySnapshot?.gmv ?? 0;
+
+  const gmvKpiValue = selectedProductIds.length > 0 ? filteredProductGmv : (displaySnapshot?.gmv ?? 0);
+
   return (
     <div className="space-y-5 animate-in">
       <div className="flex items-center justify-between">
@@ -365,7 +418,7 @@ export default function AffiliateOverviewPage() {
           </div>
 
           {/* Affiliate type filter */}
-          <div className="flex gap-1 ml-auto">
+          <div className="flex gap-1 ml-auto flex-wrap items-center">
             {(["all", "live", "video"] as AffiliateType[]).map((t) => (
               <button
                 key={t}
@@ -376,6 +429,80 @@ export default function AffiliateOverviewPage() {
                 {t === "all" ? "All" : t === "live" ? "🔴 Livestream" : "🎬 Videos"}
               </button>
             ))}
+
+            {/* Product filter */}
+            {allProducts.length > 0 && (
+              <div className="relative" ref={productPickerRef}>
+                <button
+                  onClick={() => setProductPickerOpen((o) => !o)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all"
+                  style={{
+                    background: selectedProductIds.length > 0 ? "color-mix(in oklab, var(--accent) 15%, var(--bg-subtle))" : "var(--bg-subtle)",
+                    color: selectedProductIds.length > 0 ? "var(--accent)" : "var(--text-secondary)",
+                    border: selectedProductIds.length > 0 ? "1px solid color-mix(in oklab, var(--accent) 40%, transparent)" : "1px solid transparent",
+                  }}
+                >
+                  <Package size={12} />
+                  {selectedProductIds.length === 0 ? "All products" : `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}`}
+                  <ChevronDown size={11} style={{ opacity: 0.6 }} />
+                </button>
+
+                {productPickerOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg border"
+                    style={{ background: "var(--bg-card)", borderColor: "var(--border)", minWidth: "240px" }}
+                  >
+                    {/* Quick actions */}
+                    <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: "var(--border)" }}>
+                      <button
+                        onClick={() => setSelectedProductIds(allProducts.map((p) => p.productId))}
+                        className="text-xs font-semibold"
+                        style={{ color: "var(--accent)" }}
+                      >
+                        Select all
+                      </button>
+                      <button
+                        onClick={() => setSelectedProductIds([])}
+                        className="text-xs font-semibold"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    {/* Scrollable product list */}
+                    <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+                      {allProducts.map((p) => {
+                        const checked = selectedProductIds.includes(p.productId);
+                        return (
+                          <label
+                            key={p.productId}
+                            className="flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors hover:bg-[var(--bg-subtle)]"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setSelectedProductIds((prev) =>
+                                  checked ? prev.filter((id) => id !== p.productId) : [...prev, p.productId]
+                                );
+                              }}
+                              className="flex-shrink-0"
+                            />
+                            <span className="flex-1 text-xs truncate" style={{ color: "var(--text-primary)" }} title={p.productName}>
+                              {p.productName}
+                            </span>
+                            <span className="text-xs font-mono tabular-nums flex-shrink-0" style={{ color: "var(--text-muted)" }}>
+                              {formatCurrency(p.gmv)}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -437,7 +564,13 @@ export default function AffiliateOverviewPage() {
 
           {/* KPI cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KpiCard label="GMV" value={formatCurrency(displaySnapshot.gmv)} fullValue={formatCurrency(displaySnapshot.gmv)} delta={gmvDelta} />
+            <KpiCard
+              label="GMV"
+              value={formatCurrency(gmvKpiValue)}
+              fullValue={formatCurrency(gmvKpiValue)}
+              delta={selectedProductIds.length > 0 ? null : gmvDelta}
+              badge={selectedProductIds.length > 0 ? `${selectedProductIds.length} product${selectedProductIds.length !== 1 ? "s" : ""}` : undefined}
+            />
             <KpiCard label="Est. Commission" value={formatCurrency(displaySnapshot.estCommission)} fullValue={formatCurrency(displaySnapshot.estCommission)} delta={null} />
             <KpiCard label="Videos" value={displaySnapshot.videos.toLocaleString()} fullValue={displaySnapshot.videos.toLocaleString()} delta={videosDelta} />
             <KpiCard label="Live streams" value={displaySnapshot.liveStreams.toLocaleString()} fullValue={displaySnapshot.liveStreams.toLocaleString()} delta={livesDelta} />
@@ -568,9 +701,16 @@ export default function AffiliateOverviewPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Top 10 creators by GMV
-                  {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
+                <div>
+                  <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Top 10 creators by GMV
+                    {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
+                  </div>
+                  {selectedProductIds.length > 0 && (
+                    <div className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      Creator GMV reflects all products
+                    </div>
+                  )}
                 </div>
                 <Link href={creatorsHref} className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
                   View all <ArrowRight size={11} />
@@ -605,7 +745,9 @@ export default function AffiliateOverviewPage() {
             <div className="section-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Top 10 products by GMV
+                  {selectedProductIds.length > 0
+                    ? `${selectedProductIds.length} selected product${selectedProductIds.length !== 1 ? "s" : ""}`
+                    : "Top 10 products by GMV"}
                   {data.rangeMode && <span className="ml-1 text-xs font-normal" style={{ color: "var(--text-muted)" }}>(aggregated)</span>}
                 </div>
                 <Link href={productsHref} className="text-xs flex items-center gap-1" style={{ color: "var(--accent)" }}>
@@ -618,19 +760,32 @@ export default function AffiliateOverviewPage() {
                   <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>Product</span>
                   <span className="w-24 text-center text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>GMV</span>
                 </div>
-                {data.topProducts.map((p, i) => (
-                  <Link
-                    key={p.id}
-                    href={productHref(p.id)}
-                    className="flex items-center py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors gap-1"
-                    style={{ borderColor: "var(--border)" }}
-                  >
-                    <span className="font-mono text-xs w-7 flex-shrink-0 text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
-                    <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }} title={p.productName}>{p.productName}</span>
-                    <span className="w-24 text-center font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(p.gmv)}</span>
-                  </Link>
-                ))}
-                {data.topProducts.length === 0 && (
+                {(() => {
+                  // Normalize to ProductOption[] for rendering
+                  const displayList: ProductOption[] = selectedProductIds.length > 0
+                    ? filteredProducts
+                    : allProducts.length > 0
+                    ? allProducts.slice(0, 10)
+                    : data.topProducts.map((p) => ({ productId: p.id, productName: p.productName, gmv: p.gmv }));
+                  return displayList.map((p, i) => {
+                    // Build href: prefer brandId|productId composite (handled by product detail page)
+                    const productLinkId = brandId ? `${brandId}|${p.productId}` : p.productId;
+                    const href = productHref(productLinkId);
+                    return (
+                      <Link
+                        key={p.productId}
+                        href={href}
+                        className="flex items-center py-1.5 border-t hover:bg-[var(--bg-subtle)] -mx-1 px-1 rounded transition-colors gap-1"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <span className="font-mono text-xs w-7 flex-shrink-0 text-center" style={{ color: "var(--text-muted)" }}>#{i + 1}</span>
+                        <span className="flex-1 truncate font-medium text-sm" style={{ color: "var(--text-primary)" }} title={p.productName}>{p.productName}</span>
+                        <span className="w-24 text-center font-mono tabular-nums text-sm whitespace-nowrap" style={{ color: "var(--text-primary)" }}>{formatCurrency(p.gmv)}</span>
+                      </Link>
+                    );
+                  });
+                })()}
+                {(selectedProductIds.length > 0 ? filteredProducts : (allProducts.length > 0 ? allProducts.slice(0, 10) : data.topProducts)).length === 0 && (
                   <div className="text-sm py-4" style={{ color: "var(--text-muted)" }}>No product data.</div>
                 )}
               </div>
@@ -719,15 +874,20 @@ export default function AffiliateOverviewPage() {
   );
 }
 
-interface KpiProps { label: string; value: string; fullValue: string; delta: number | null }
-function KpiCard({ label, value, fullValue, delta }: KpiProps) {
+interface KpiProps { label: string; value: string; fullValue: string; delta: number | null; badge?: string; }
+function KpiCard({ label, value, fullValue, delta, badge }: KpiProps) {
   const showDelta = delta != null && Number.isFinite(delta);
   const positive = (delta ?? 0) >= 0;
   return (
     <div className="section-card p-3 sm:p-4 min-w-0">
       <div className="text-xs" style={{ color: "var(--text-muted)" }}>{label}</div>
       <div className="text-base sm:text-lg lg:text-xl font-bold mt-1 whitespace-nowrap tabular-nums" style={{ color: "var(--text-primary)" }} title={fullValue}>{value}</div>
-      {showDelta && (
+      {badge && (
+        <div className="mt-1 text-[11px] font-semibold px-1.5 py-0.5 rounded inline-block" style={{ background: "color-mix(in oklab, var(--accent) 12%, transparent)", color: "var(--accent)" }}>
+          {badge}
+        </div>
+      )}
+      {showDelta && !badge && (
         <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold" style={{ color: positive ? "#10b981" : "#ef4444" }}>
           {positive ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
           {Math.abs(delta!).toFixed(1)}% MoM
