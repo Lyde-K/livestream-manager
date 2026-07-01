@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { generateBrandReport, ReportInput, SessionDemographics } from "@/lib/report/brand-report";
+import { generateBrandReport, ReportInput } from "@/lib/report/brand-report";
 import { mytMonthRange } from "@/lib/utils";
 import { format } from "date-fns";
 
@@ -20,12 +20,10 @@ export async function POST(req: NextRequest) {
     brandId: string;
     month: number;
     year: number;
-    bestDemographics: SessionDemographics;
-    worstDemographics: SessionDemographics;
     notes: ReportInput["notes"];
   };
 
-  const { brandId, month, year, bestDemographics, worstDemographics, notes } = body;
+  const { brandId, month, year, notes } = body;
 
   if (!brandId || !month || !year)
     return Response.json({ error: "brandId, month, year required" }, { status: 400 });
@@ -104,8 +102,15 @@ export async function POST(req: NextRequest) {
       viewers: (s as any).viewers ?? 0,
       adsSpent: (s as any).adsCost ?? 0,
       type: s.isCampaignDay ? "Campaign" : "BAU",
+      scheduledStart: s.scheduledStart.toISOString(),
+      actualStart: s.actualStart ? s.actualStart.toISOString() : null,
+      punctuality: s.punctuality ?? null,
     };
   }
+
+  // Monthly averages (per session)
+  const monthlyAvgGmv       = curSessions.length > 0 ? totalGMV / curSessions.length : 0;
+  const monthlyAvgGmvPerHour = totalHours > 0 ? totalGMV / totalHours : 0;
 
   // Per-host breakdown
   const hostMap = new Map<string, { name: string; gmv: number; hours: number; sessions: number }>();
@@ -139,11 +144,11 @@ export async function POST(req: NextRequest) {
       bauGMV: prevBauGMV, bauHours: prevBauHrs,
       campGMV: prevCampGMV, campHours: prevCampHrs,
     },
-    bestSession:  best  ? sessionToCard(best)  : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, orders:0, viewers:0, type:"BAU" },
-    worstSession: worst ? sessionToCard(worst) : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, adsSpent:0, viewers:0, type:"BAU" },
+    monthlyAvgGmv,
+    monthlyAvgGmvPerHour,
+    bestSession:  best  ? sessionToCard(best)  : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, orders:0, viewers:0, adsSpent:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
+    worstSession: worst ? sessionToCard(worst) : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, adsSpent:0, viewers:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
     hosts,
-    bestDemographics,
-    worstDemographics,
     notes,
   };
 
