@@ -1,6 +1,7 @@
 import PptxGenJS from "pptxgenjs";
 import { readFileSync } from "fs";
 import { join } from "path";
+import JSZip from "jszip";
 
 const NAVY   = "2A2968";
 const NAVY2  = "1E1D4E";
@@ -71,6 +72,8 @@ export interface ReportInput {
   };
 
   hosts: { name: string; gmv: number; hours: number; gmvPerHour: number; sessions: number; }[];
+
+  products: { productName: string; gmv: number; unitsSold: number; orders: number; clicks: number; convRate: number | null; }[];
 
   notes: {
     bestPerformance?: string;
@@ -545,7 +548,85 @@ export async function generateBrandReport(input: ReportInput): Promise<Buffer> {
     });
   }
 
-  // ── SLIDE 8 — SUMMARY ───────────────────────────────────────────────────
+  // ── SLIDE 8 — PRODUCT PERFORMANCE ──────────────────────────────────────
+  if (input.products.length > 0) {
+    const s = pptx.addSlide();
+    frame(s, "PRODUCT PERFORMANCE");
+
+    const products = input.products.slice(0, 10);
+    const totalProductGmv = products.reduce((a, p) => a + p.gmv, 0);
+
+    // ── Left: table ───────────────────────────────────────────────────────
+    rCard(s, 0.2, 0.88, 5.8, 4.32, "F9F9FF", "D8D8F0");
+
+    const H = { bold: true, color: WHITE, fill: { color: NAVY }, fontSize: 8.5, fontFace: "Arial", align: "center" as const, valign: "middle" as const };
+    const C = { fontSize: 8.5, color: "111111", fontFace: "Arial", align: "center" as const, valign: "middle" as const };
+    const L = { ...C, align: "left" as const };
+
+    const rows: any[][] = [
+      [
+        { text: "#",          options: { ...H, w: 0.3 } },
+        { text: "Product",    options: { ...H, align: "left" as const } },
+        { text: "GMV",        options: H },
+        { text: "Units",      options: H },
+        { text: "Conv %",     options: H },
+      ],
+      ...products.map((p, i) => {
+        const bg = i % 2 === 0 ? WHITE : "F9F9FF";
+        const sharePct = totalProductGmv > 0 ? ((p.gmv / totalProductGmv) * 100).toFixed(1) + "%" : "—";
+        return [
+          { text: String(i + 1),                             options: { ...C, bold: true, color: ACCENT, fill: { color: bg } } },
+          { text: p.productName,                             options: { ...L, fill: { color: bg } } },
+          { text: rm(p.gmv) + ` (${sharePct})`,             options: { ...C, bold: i === 0, fill: { color: bg } } },
+          { text: p.unitsSold.toLocaleString(),              options: { ...C, fill: { color: bg } } },
+          { text: p.convRate != null ? p.convRate.toFixed(1) + "%" : "—", options: { ...C, fill: { color: bg } } },
+        ];
+      }),
+    ];
+
+    const rowH = Math.min(0.46, 4.05 / rows.length);
+    s.addTable(rows, {
+      x: 0.35, y: 0.98, w: 5.5, h: 4.05,
+      colW: [0.35, 2.35, 1.65, 0.75, 0.7],
+      border: { type: "solid", color: "D8D8F0", pt: 0.5 },
+      rowH,
+    });
+
+    // ── Right: GMV donut + summary stats ──────────────────────────────────
+    const RX = 6.2;
+    rCard(s, RX, 0.88, 3.6, 4.32, "F9F9FF", "D8D8F0");
+
+    s.addText("GMV Share by Product", { x: RX + 0.15, y: 0.96, w: 3.3, h: 0.24, fontSize: 9, bold: true, color: NAVY, fontFace: "Arial", align: "center" });
+
+    // Donut — top 5 products + "Others"
+    const top5 = products.slice(0, 5);
+    const othersGmv = products.slice(5).reduce((a, p) => a + p.gmv, 0);
+    const donutLabels = [...top5.map(p => p.productName.length > 18 ? p.productName.slice(0, 17) + "…" : p.productName), ...(othersGmv > 0 ? ["Others"] : [])];
+    const donutValues = [...top5.map(p => p.gmv), ...(othersGmv > 0 ? [othersGmv] : [])];
+    const donutColors = [NAVY, ACCENT, "7B78D0", "A5B4FC", "C4C2E8", "CCCCCC"];
+
+    rCard(s, RX + 0.12, 1.22, 3.36, 2.2, WHITE, "E0E0F0");
+    s.addChart("doughnut" as any, [{ name: "GMV Share", labels: donutLabels, values: donutValues }], {
+      x: RX + 0.14, y: 1.24, w: 3.32, h: 2.16,
+      chartColors: donutColors,
+      holeSize: 55,
+      showLegend: true, legendPos: "b", legendFontSize: 7,
+      showPercent: true, dataLabelFontSize: 8, dataLabelFontBold: true,
+      dataLabelColor: WHITE,
+    } as any);
+
+    // Summary stat cards
+    const totalUnits  = products.reduce((a, p) => a + p.unitsSold, 0);
+    const totalOrders = products.reduce((a, p) => a + p.orders,    0);
+    const avgConv     = products.filter(p => p.convRate != null).reduce((a, p, _, arr) => a + (p.convRate ?? 0) / arr.length, 0);
+
+    statCard(s, RX + 0.12, 3.52, 1.62, 0.72, "Total GMV",    rm(totalProductGmv));
+    statCard(s, RX + 1.86, 3.52, 1.62, 0.72, "Units Sold",   totalUnits.toLocaleString());
+    statCard(s, RX + 0.12, 4.32, 1.62, 0.72, "Total Orders", totalOrders.toLocaleString());
+    statCard(s, RX + 1.86, 4.32, 1.62, 0.72, "Avg Conv %",   avgConv > 0 ? avgConv.toFixed(1) + "%" : "—");
+  }
+
+  // ── SLIDE 9 (or 8 if no products) — SUMMARY ────────────────────────────
   {
     const s = pptx.addSlide();
     frame(s, "SUMMARY");
@@ -580,5 +661,145 @@ export async function generateBrandReport(input: ReportInput): Promise<Buffer> {
   }
 
   const buf = await pptx.write({ outputType: "nodebuffer" });
-  return buf as unknown as Buffer;
+  return injectTemplateSlide(buf as unknown as Buffer);
+}
+
+// ── Inject template slide as slide 2 ────────────────────────────────────────
+async function injectTemplateSlide(generatedBuf: Buffer): Promise<Buffer> {
+  const templatePath = join(process.cwd(), "public", "Affiliate Presentation Format.pptx");
+  let templateBuf: Buffer;
+  try {
+    templateBuf = readFileSync(templatePath);
+  } catch {
+    // Template file missing — return unmodified
+    return generatedBuf;
+  }
+
+  const [genZip, tplZip] = await Promise.all([
+    JSZip.loadAsync(generatedBuf),
+    JSZip.loadAsync(templateBuf),
+  ]);
+
+  // ── Find the first slide in the template ──────────────────────────────────
+  const tplSlideFiles = Object.keys(tplZip.files)
+    .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+    .sort();
+  if (tplSlideFiles.length === 0) return generatedBuf;
+
+  const tplSlideKey = tplSlideFiles[0]; // e.g. ppt/slides/slide1.xml
+  const tplSlideXml = await tplZip.files[tplSlideKey].async("string");
+
+  // Its rels file
+  const tplRelsKey = tplSlideKey.replace("ppt/slides/", "ppt/slides/_rels/") + ".rels";
+  const tplRelsXml = tplZip.files[tplRelsKey]
+    ? await tplZip.files[tplRelsKey].async("string")
+    : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
+
+  // Copy any media/assets referenced by the template slide
+  const tplMediaRefMatches = [...tplRelsXml.matchAll(/Target="([^"]+)"/g)];
+  for (const m of tplMediaRefMatches) {
+    const target = m[1];
+    if (target.startsWith("../media/") || target.startsWith("../theme/")) {
+      const srcKey = "ppt/" + target.replace(/^\.\.\//, "");
+      if (tplZip.files[srcKey] && !genZip.files[srcKey]) {
+        const data = await tplZip.files[srcKey].async("nodebuffer");
+        genZip.file(srcKey, data);
+      }
+    }
+    // Copy slideLayouts referenced
+    if (target.includes("slideLayout")) {
+      const layoutKey = "ppt/slides/" + target.replace(/^\.\.\//, "");
+      const resolvedKey = layoutKey.replace("ppt/slides/../", "ppt/");
+      if (tplZip.files[resolvedKey] && !genZip.files[resolvedKey]) {
+        const data = await tplZip.files[resolvedKey].async("nodebuffer");
+        genZip.file(resolvedKey, data);
+        // Also copy the layout's rels
+        const layoutRelsKey = resolvedKey.replace("ppt/slideLayouts/", "ppt/slideLayouts/_rels/") + ".rels";
+        if (tplZip.files[layoutRelsKey] && !genZip.files[layoutRelsKey]) {
+          const rdata = await tplZip.files[layoutRelsKey].async("nodebuffer");
+          genZip.file(layoutRelsKey, rdata);
+        }
+      }
+    }
+  }
+
+  // ── Shift existing slides in generated deck up by 1 (slide1→slide2 etc.) ──
+  const genSlideKeys = Object.keys(genZip.files)
+    .filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f))
+    .sort((a, b) => {
+      const na = parseInt(a.match(/\d+/)![0]);
+      const nb = parseInt(b.match(/\d+/)![0]);
+      return nb - na; // descending so we don't clobber
+    });
+
+  for (const key of genSlideKeys) {
+    const num = parseInt(key.match(/\d+/)![0]);
+    const newKey = `ppt/slides/slide${num + 1}.xml`;
+    const newRelsKey = `ppt/slides/_rels/slide${num + 1}.xml.rels`;
+    const oldRelsKey = `ppt/slides/_rels/slide${num}.xml.rels`;
+
+    const xml = await genZip.files[key].async("nodebuffer");
+    genZip.file(newKey, xml);
+    genZip.remove(key);
+
+    if (genZip.files[oldRelsKey]) {
+      const rxml = await genZip.files[oldRelsKey].async("nodebuffer");
+      genZip.file(newRelsKey, rxml);
+      genZip.remove(oldRelsKey);
+    }
+  }
+
+  // ── Insert the template slide as slide2 ───────────────────────────────────
+  genZip.file("ppt/slides/slide2.xml", tplSlideXml);
+  genZip.file("ppt/slides/_rels/slide2.xml.rels", tplRelsXml);
+
+  // ── Update presentation.xml sldIdLst ─────────────────────────────────────
+  const presKey = "ppt/presentation.xml";
+  let presXml = await genZip.files[presKey].async("string");
+
+  // Find the highest sldId in use and determine the max id
+  const existingIds = [...presXml.matchAll(/id="(\d+)"/g)].map(m => parseInt(m[1]));
+  const maxId = existingIds.length > 0 ? Math.max(...existingIds) : 256;
+  const newSlideId = maxId + 1;
+
+  // Find the first sld:sld entry (which is now slide2 after shifting) and insert before it
+  // We need to insert slide2 as the second entry in the sldIdLst
+  // Find the first <p:sldId> entry after the cover slide
+  const firstSldIdMatch = presXml.match(/<p:sldId\s[^/]*/);
+  if (firstSldIdMatch) {
+    const insertAfter = firstSldIdMatch[0] + "/>";
+    const newEntry = `<p:sldId id="${newSlideId}" r:id="rId_tpl_slide2"/>`;
+    presXml = presXml.replace(insertAfter, insertAfter + newEntry);
+  }
+  genZip.file(presKey, presXml);
+
+  // ── Update presentation.xml.rels ──────────────────────────────────────────
+  const presRelsKey = "ppt/_rels/presentation.xml.rels";
+  let presRelsXml = await genZip.files[presRelsKey].async("string");
+
+  // Shift existing rId references for slides (rId2, rId3... → rId3, rId4...)
+  // Find the max rId number currently in use
+  const rIdNums = [...presRelsXml.matchAll(/Id="rId(\d+)"/g)].map(m => parseInt(m[1]));
+  const maxRId = rIdNums.length > 0 ? Math.max(...rIdNums) : 10;
+
+  // Insert new relationship for template slide
+  presRelsXml = presRelsXml.replace(
+    "</Relationships>",
+    `<Relationship Id="rId_tpl_slide2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`
+  );
+  genZip.file(presRelsKey, presRelsXml);
+
+  // ── Update [Content_Types].xml ────────────────────────────────────────────
+  const ctKey = "[Content_Types].xml";
+  let ctXml = await genZip.files[ctKey].async("string");
+  if (!ctXml.includes('PartName="/ppt/slides/slide2.xml"')) {
+    ctXml = ctXml.replace(
+      "</Types>",
+      `<Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>`
+    );
+    genZip.file(ctKey, ctXml);
+  }
+
+  const finalBuf = await genZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+  return finalBuf;
 }

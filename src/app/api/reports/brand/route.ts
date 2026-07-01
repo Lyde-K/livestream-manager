@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const prevYear  = month === 1 ? year - 1 : year;
   const { start: prevStart, end: prevEnd } = mytMonthRange(prevMonth, prevYear);
 
-  const [curSessions, prevSessions] = await Promise.all([
+  const [curSessions, prevSessions, productRows] = await Promise.all([
     prisma.session.findMany({
       where: { brandId, status: "COMPLETED", scheduledStart: { gte: curStart, lte: curEnd } },
       include: { liveHost: { include: { user: true } } },
@@ -45,6 +45,10 @@ export async function POST(req: NextRequest) {
     prisma.session.findMany({
       where: { brandId, status: "COMPLETED", scheduledStart: { gte: prevStart, lte: prevEnd } },
       select: { gmv: true, isCampaignDay: true, actualDurationMinutes: true },
+    }),
+    prisma.productPerformance.findMany({
+      where: { brandId, month, year },
+      orderBy: { gmv: "desc" },
     }),
   ]);
 
@@ -146,6 +150,14 @@ export async function POST(req: NextRequest) {
     },
     monthlyAvgGmv,
     monthlyAvgGmvPerHour,
+    products: productRows.map(p => ({
+      productName: p.productName,
+      gmv:       p.gmv,
+      unitsSold: p.unitsSold,
+      orders:    p.orders,
+      clicks:    p.clicks,
+      convRate:  p.convRate,
+    })),
     bestSession:  best  ? sessionToCard(best)  : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, orders:0, viewers:0, adsSpent:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
     worstSession: worst ? sessionToCard(worst) : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, adsSpent:0, viewers:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
     hosts,
