@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
       convRate:  p.convRate,
     })),
     bestSession:  best  ? sessionToCard(best)  : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, orders:0, viewers:0, adsSpent:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
-    worstSession: worst ? sessionToCard(worst) : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, adsSpent:0, viewers:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
+    worstSession: worst ? sessionToCard(worst) : { date:"—", hostName:"—", gmv:0, hours:0, gmvPerHour:0, orders:0, adsSpent:0, viewers:0, type:"BAU", scheduledStart: new Date().toISOString(), actualStart: null, punctuality: null },
     hosts,
     notes,
   };

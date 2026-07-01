@@ -16,7 +16,7 @@ const MONTHS = ["January","February","March","April","May","June",
   "July","August","September","October","November","December"];
 
 function rm(v: number) {
-  return "RM " + v.toLocaleString("en-MY", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return "RM " + v.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function mom(cur: number, prev: number) {
   if (!prev) return "—";
@@ -67,7 +67,7 @@ export interface ReportInput {
   };
   worstSession: {
     date: string; hostName: string; gmv: number; hours: number;
-    gmvPerHour: number; adsSpent: number; viewers: number; type: string;
+    gmvPerHour: number; orders: number; adsSpent: number; viewers: number; type: string;
     scheduledStart: string; actualStart: string | null; punctuality: string | null;
   };
 
@@ -140,10 +140,10 @@ export async function generateBrandReport(input: ReportInput): Promise<Buffer> {
     fillHex = LGRAY, valueColor = NAVY, strokeHex = "E0E0F0"
   ) {
     rCard(s, x, y, w, h, fillHex, strokeHex);
-    s.addText(label, { x: x + 0.12, y: y + 0.08, w: w - 0.24, h: 0.22, fontSize: 7.5, color: "777777", fontFace: "Arial" });
-    s.addText(value, { x: x + 0.12, y: y + 0.28, w: w - 0.24, h: 0.36, fontSize: 14, bold: true, color: valueColor, fontFace: "Arial" });
+    s.addText(label, { x: x + 0.13, y: y + 0.09, w: w - 0.26, h: 0.2, fontSize: 7.5, color: "777777", fontFace: "Arial" });
+    s.addText(value, { x: x + 0.13, y: y + 0.3, w: w - 0.26, h: h - 0.42, fontSize: 13.5, bold: true, color: valueColor, fontFace: "Arial", autoFit: true });
     if (sub) {
-      s.addText(sub, { x: x + 0.12, y: y + 0.62, w: w - 0.24, h: 0.18, fontSize: 7, color: "999999", fontFace: "Arial" });
+      s.addText(sub, { x: x + 0.13, y: y + h - 0.2, w: w - 0.26, h: 0.18, fontSize: 7, color: "999999", fontFace: "Arial" });
     }
   }
 
@@ -244,22 +244,23 @@ export async function generateBrandReport(input: ReportInput): Promise<Buffer> {
     s.addChart("bar" as any, [{
       name: "GMV",
       labels: input.current.weekLabels,
-      values: input.current.weeklyGMV,
+      values: input.current.weeklyGMV.map(v => Math.round(v)),
     }], {
       x: 0.45, y: 0.98, w: 9.1, h: 4.12,
       chartColors: [NAVY],
       barDir: "col",
       showValue: true,
-      dataLabelFontSize: 9,
+      dataLabelFontSize: 11,
       dataLabelFontBold: true,
       dataLabelColor: NAVY,
       dataLabelPosition: "outEnd",
       valAxisMinVal: 0,
       showLegend: false,
       valAxisMajorGridlines: { style: "dash", color: "E0E0F0" },
-      catAxisLabelFontSize: 13,
+      catAxisLabelFontSize: 14,
       catAxisLabelFontBold: true,
       catAxisLabelColor: "333333",
+      valAxisLabelFontSize: 10,
     } as any);
   }
 
@@ -317,95 +318,95 @@ export async function generateBrandReport(input: ReportInput): Promise<Buffer> {
     const punctColor = punctualityColor(bs.punctuality);
 
     // ── Left panel: stat cards ───────────────────────────────────────────
-    rCard(s, 0.2, 0.88, 4.6, 4.3, "F9FFF9", "BBF7D0");
+    rCard(s, 0.2, 0.86, 4.62, 4.34, "F9FFF9", "BBF7D0");
 
     // Session tag
     s.addShape("roundRect" as any, {
-      x: 0.32, y: 0.98, w: 4.36, h: 0.3,
+      x: 0.34, y: 0.97, w: 4.34, h: 0.32,
       rectRadius: 0.06,
       fill: { color: "EEFBF0" },
       line: { color: "22C55E", pt: 0.8 },
     });
     s.addText(`✓  ${bs.hostName}  ·  ${bs.date}  ·  ${bs.type}`, {
-      x: 0.38, y: 0.98, w: 4.24, h: 0.3, fontSize: 8.5, bold: true, color: GREEN, fontFace: "Arial",
+      x: 0.4, y: 0.97, w: 4.22, h: 0.32, fontSize: 8.5, bold: true, color: GREEN, fontFace: "Arial", valign: "middle",
     });
 
-    // Core metrics grid (2 columns)
-    statCard(s, 0.32, 1.36, 2.1, 0.82, "GMV",          rm(bs.gmv));
-    statCard(s, 2.52, 1.36, 2.16, 0.82, "GMV / Hour",  rm(bs.gmvPerHour));
-    statCard(s, 0.32, 2.26, 2.1, 0.82, "Duration",     bs.hours.toFixed(1) + "h");
-    statCard(s, 2.52, 2.26, 2.16, 0.82, "Orders",      bs.orders > 0 ? bs.orders.toLocaleString() : "—");
-    statCard(s, 0.32, 3.16, 2.1, 0.82, "Peak Viewers", bs.viewers > 0 ? bs.viewers.toLocaleString() : "—");
+    // Card row height and gap
+    const CW1 = 2.06, CW2 = 2.1, CX2 = 2.5, CH = 0.86, CG = 0.1;
+    const CR1 = 1.37, CR2 = CR1 + CH + CG, CR3 = CR2 + CH + CG;
+
+    statCard(s, 0.34, CR1, CW1, CH, "GMV",          rm(bs.gmv));
+    statCard(s, CX2,  CR1, CW2, CH, "GMV / Hour",   rm(bs.gmvPerHour));
+    statCard(s, 0.34, CR2, CW1, CH, "Duration",     bs.hours.toFixed(1) + "h");
+    statCard(s, CX2,  CR2, CW2, CH, "Orders",       bs.orders > 0 ? bs.orders.toLocaleString() : "—");
+    statCard(s, 0.34, CR3, CW1, CH, "Peak Viewers", bs.viewers > 0 ? bs.viewers.toLocaleString() : "—");
 
     // TikTok-only: ROAS + Net Revenue
     if (isTikTok) {
-      statCard(s, 2.52, 3.16, 2.16, 0.82, "ROAS",        roas !== null ? roas.toFixed(2) + "×" : "N/A", undefined, roas && roas >= 1 ? "EEFBF0" : LGRAY, roas && roas >= 1 ? GREEN : NAVY, roas && roas >= 1 ? "BBF7D0" : "E0E0F0");
-      statCard(s, 0.32, 4.06, 4.36, 0.82, "Net Revenue", rm(netRev > 0 ? netRev : 0), undefined, "EEFBF0", GREEN, "BBF7D0");
+      statCard(s, CX2, CR3, CW2, CH, "ROAS", roas !== null ? roas.toFixed(2) + "×" : "N/A", undefined, roas && roas >= 1 ? "EEFBF0" : LGRAY, roas && roas >= 1 ? GREEN : NAVY, roas && roas >= 1 ? "BBF7D0" : "E0E0F0");
+      const CR4 = CR3 + CH + CG;
+      statCard(s, 0.34, CR4, CW1 + CG + CW2, CH, "Net Revenue (after ads)", rm(netRev > 0 ? netRev : 0), undefined, "EEFBF0", GREEN, "BBF7D0");
     } else {
-      statCard(s, 2.52, 3.16, 2.16, 0.82, "Orders / Hour", bs.hours > 0 ? (bs.orders / bs.hours).toFixed(1) : "—");
-      // Notes if present
+      statCard(s, CX2, CR3, CW2, CH, "Orders / Hour", bs.hours > 0 ? (bs.orders / bs.hours).toFixed(1) : "—");
       if (input.notes.bestPerformance) {
-        rCard(s, 0.32, 4.06, 4.36, 1.05, "F8F8FF", "C7C7E8");
-        s.addText("WHAT WORKED:", { x: 0.44, y: 4.12, w: 4.1, h: 0.22, fontSize: 7.5, bold: true, color: NAVY, fontFace: "Arial" });
-        s.addText(input.notes.bestPerformance, { x: 0.44, y: 4.34, w: 4.1, h: 0.72, fontSize: 7.5, color: "333333", fontFace: "Arial", valign: "top" });
+        const CR4 = CR3 + CH + CG;
+        rCard(s, 0.34, CR4, CW1 + CG + CW2, 4.86 - CR4 - 0.08, "F8F8FF", "C7C7E8");
+        s.addText("WHAT WORKED:", { x: 0.46, y: CR4 + 0.1, w: CW1 + CG + CW2 - 0.2, h: 0.22, fontSize: 7.5, bold: true, color: NAVY, fontFace: "Arial" });
+        s.addText(input.notes.bestPerformance, { x: 0.46, y: CR4 + 0.32, w: CW1 + CG + CW2 - 0.2, h: 4.86 - CR4 - 0.5, fontSize: 8, color: "333333", fontFace: "Arial", valign: "top" });
       }
     }
 
-    // Notes (TikTok — below ROAS row)
-    if (isTikTok && input.notes.bestPerformance) {
-      // notes are shown in right panel below
-    }
-
     // ── Right panel ──────────────────────────────────────────────────────
-    const RX = 5.0;
-    rCard(s, RX, 0.88, 4.8, 4.3, "F9F9FF", "D8D8F0");
+    const RX = 5.06;
+    const RW = 4.74;
+    rCard(s, RX, 0.86, RW, 4.34, "F9F9FF", "D8D8F0");
 
     // Section: vs Monthly Average
-    s.addText("vs Monthly Average", { x: RX + 0.15, y: 0.96, w: 4.5, h: 0.24, fontSize: 9, bold: true, color: NAVY, fontFace: "Arial" });
+    s.addText("vs Monthly Average", { x: RX + 0.16, y: 0.94, w: RW - 0.32, h: 0.26, fontSize: 9.5, bold: true, color: NAVY, fontFace: "Arial" });
 
     // Chart container for comparison bar
-    rCard(s, RX + 0.12, 1.22, 4.56, 1.4, WHITE, "E0E0F0");
+    rCard(s, RX + 0.14, 1.22, RW - 0.28, 1.56, WHITE, "E0E0F0");
 
     s.addChart("bar" as any, [{
       name: "This Session",
-      labels: ["GMV", "GMV/Hour"],
-      values: [bs.gmv, bs.gmvPerHour],
+      labels: ["GMV", "GMV / Hour"],
+      values: [Math.round(bs.gmv), Math.round(bs.gmvPerHour)],
     }, {
       name: "Monthly Avg",
-      labels: ["GMV", "GMV/Hour"],
-      values: [avgGmv, avgGmvPh],
+      labels: ["GMV", "GMV / Hour"],
+      values: [Math.round(avgGmv), Math.round(avgGmvPh)],
     }], {
-      x: RX + 0.14, y: 1.24, w: 4.52, h: 1.36,
+      x: RX + 0.16, y: 1.24, w: RW - 0.32, h: 1.52,
       chartColors: [NAVY, "A5B4FC"],
       barDir: "col",
       barGrouping: "clustered",
-      showLegend: true, legendPos: "t", legendFontSize: 7,
-      showValue: true, dataLabelFontSize: 7, dataLabelFontBold: true,
+      showLegend: true, legendPos: "t", legendFontSize: 8,
+      showValue: true, dataLabelFontSize: 8, dataLabelFontBold: true,
       valAxisMinVal: 0,
-      catAxisLabelFontSize: 8,
+      catAxisLabelFontSize: 9,
       valAxisMajorGridlines: { style: "dash", color: "E8E8F8" },
     } as any);
 
     // Delta badges
     const gmvDelta   = pctDiff(bs.gmv, avgGmv);
     const gmvphDelta = pctDiff(bs.gmvPerHour, avgGmvPh);
-    statCard(s, RX + 0.12, 2.7, 2.2, 0.62, "GMV vs Avg",      gmvDelta,   undefined, "EEEEFF", pctDiffColor(bs.gmv, avgGmv) as string, "C7C7E8");
-    statCard(s, RX + 2.42, 2.7, 2.26, 0.62, "GMV/Hr vs Avg",  gmvphDelta, undefined, "EEEEFF", pctDiffColor(bs.gmvPerHour, avgGmvPh) as string, "C7C7E8");
+    const DBY = 2.86, DBH = 0.72;
+    statCard(s, RX + 0.14, DBY, (RW - 0.28 - 0.1) / 2, DBH, "GMV vs Avg",     gmvDelta,   undefined, "EEEEFF", pctDiffColor(bs.gmv, avgGmv) as string, "C7C7E8");
+    statCard(s, RX + 0.14 + (RW - 0.28 - 0.1) / 2 + 0.1, DBY, (RW - 0.28 - 0.1) / 2, DBH, "GMV/Hr vs Avg", gmvphDelta, undefined, "EEEEFF", pctDiffColor(bs.gmvPerHour, avgGmvPh) as string, "C7C7E8");
 
     // Section: Session Timeline
-    s.addText("Session Timeline", { x: RX + 0.15, y: 3.44, w: 4.5, h: 0.24, fontSize: 9, bold: true, color: NAVY, fontFace: "Arial" });
-    rCard(s, RX + 0.12, 3.7, 4.56, 1.38, WHITE, "E0E0F0");
+    const TLY = DBY + DBH + 0.14;
+    s.addText("Session Timeline", { x: RX + 0.16, y: TLY, w: RW - 0.32, h: 0.26, fontSize: 9.5, bold: true, color: NAVY, fontFace: "Arial" });
+    const TCARDW = (RW - 0.28 - 0.2) / 3;
+    const TCARDY = TLY + 0.28;
+    const TCARDH = 4.86 - TCARDY - 0.08;
+    rCard(s, RX + 0.14, TCARDY, RW - 0.28, TCARDH, WHITE, "E0E0F0");
 
     const schedTime  = formatTime(bs.scheduledStart);
     const actualTime = formatTime(bs.actualStart);
-    statCard(s, RX + 0.2,  3.78, 1.38, 0.82, "Scheduled",  schedTime);
-    statCard(s, RX + 1.66, 3.78, 1.38, 0.82, "Actual Start", actualTime);
-    statCard(s, RX + 3.12, 3.78, 1.36, 0.82, "Punctuality", punctualityLabel(bs.punctuality), undefined, LGRAY, punctColor);
-
-    // Best performance notes (right panel, TikTok)
-    if (isTikTok && input.notes.bestPerformance) {
-      rCard(s, RX + 0.12, 5.1, 4.56, 0.0, "F8F8FF", "C7C7E8"); // hidden, no room — notes go to summary
-    }
+    statCard(s, RX + 0.2,  TCARDY + 0.06, TCARDW, TCARDH - 0.12, "Scheduled",   schedTime);
+    statCard(s, RX + 0.2 + TCARDW + 0.1, TCARDY + 0.06, TCARDW, TCARDH - 0.12, "Actual Start", actualTime);
+    statCard(s, RX + 0.2 + (TCARDW + 0.1) * 2, TCARDY + 0.06, TCARDW, TCARDH - 0.12, "Punctuality", punctualityLabel(bs.punctuality), undefined, LGRAY, punctColor);
   }
 
   // ── SLIDE 6 — WEAKEST PERFORMING SESSION ────────────────────────────────
@@ -421,81 +422,87 @@ export async function generateBrandReport(input: ReportInput): Promise<Buffer> {
     const punctColor = punctualityColor(ws.punctuality);
 
     // ── Left panel ───────────────────────────────────────────────────────
-    rCard(s, 0.2, 0.88, 4.6, 4.3, "FFF8F8", "FECACA");
+    rCard(s, 0.2, 0.86, 4.62, 4.34, "FFF8F8", "FECACA");
 
     s.addShape("roundRect" as any, {
-      x: 0.32, y: 0.98, w: 4.36, h: 0.3,
+      x: 0.34, y: 0.97, w: 4.34, h: 0.32,
       rectRadius: 0.06,
       fill: { color: "FFF0F0" },
       line: { color: "EF4444", pt: 0.8 },
     });
     s.addText(`⚠  ${ws.hostName}  ·  ${ws.date}  ·  ${ws.type}`, {
-      x: 0.38, y: 0.98, w: 4.24, h: 0.3, fontSize: 8.5, bold: true, color: "B91C1C", fontFace: "Arial",
+      x: 0.4, y: 0.97, w: 4.22, h: 0.32, fontSize: 8.5, bold: true, color: "B91C1C", fontFace: "Arial", valign: "middle",
     });
 
-    statCard(s, 0.32, 1.36, 2.1,  0.82, "GMV",          rm(ws.gmv),         undefined, "FFF0F0", RED, "FECACA");
-    statCard(s, 2.52, 1.36, 2.16, 0.82, "GMV / Hour",   rm(ws.gmvPerHour),  undefined, "FFF0F0", RED, "FECACA");
-    statCard(s, 0.32, 2.26, 2.1,  0.82, "Duration",     ws.hours.toFixed(1) + "h");
-    statCard(s, 2.52, 2.26, 2.16, 0.82, "Orders",       ws.viewers > 0 ? ws.viewers.toLocaleString() : "—");
-    statCard(s, 0.32, 3.16, 2.1,  0.82, "Peak Viewers", ws.viewers > 0 ? ws.viewers.toLocaleString() : "—");
+    const CW1 = 2.06, CW2 = 2.1, CX2 = 2.5, CH = 0.86, CG = 0.1;
+    const CR1 = 1.37, CR2 = CR1 + CH + CG, CR3 = CR2 + CH + CG;
+
+    statCard(s, 0.34, CR1, CW1, CH, "GMV",          rm(ws.gmv),         undefined, "FFF0F0", RED, "FECACA");
+    statCard(s, CX2,  CR1, CW2, CH, "GMV / Hour",   rm(ws.gmvPerHour),  undefined, "FFF0F0", RED, "FECACA");
+    statCard(s, 0.34, CR2, CW1, CH, "Duration",     ws.hours.toFixed(1) + "h");
+    statCard(s, CX2,  CR2, CW2, CH, "Orders",       ws.orders > 0 ? ws.orders.toLocaleString() : "—");
+    statCard(s, 0.34, CR3, CW1, CH, "Peak Viewers", ws.viewers > 0 ? ws.viewers.toLocaleString() : "—");
 
     if (isTikTok) {
-      statCard(s, 2.52, 3.16, 2.16, 0.82, "ROAS",        roas !== null ? roas.toFixed(2) + "×" : "N/A", undefined, roas !== null && roas < 1 ? "FFF0F0" : LGRAY, roas !== null && roas < 1 ? RED : NAVY, roas !== null && roas < 1 ? "FECACA" : "E0E0F0");
-      statCard(s, 0.32, 4.06, 4.36, 0.82, "Net Revenue (after ads)", rm(netRev > 0 ? netRev : 0), undefined, netRev <= 0 ? "FFF0F0" : LGRAY, netRev <= 0 ? RED : NAVY, netRev <= 0 ? "FECACA" : "E0E0F0");
+      statCard(s, CX2, CR3, CW2, CH, "ROAS", roas !== null ? roas.toFixed(2) + "×" : "N/A", undefined, roas !== null && roas < 1 ? "FFF0F0" : LGRAY, roas !== null && roas < 1 ? RED : NAVY, roas !== null && roas < 1 ? "FECACA" : "E0E0F0");
+      const CR4 = CR3 + CH + CG;
+      statCard(s, 0.34, CR4, CW1 + CG + CW2, CH, "Net Revenue (after ads)", rm(netRev > 0 ? netRev : 0), undefined, netRev <= 0 ? "FFF0F0" : LGRAY, netRev <= 0 ? RED : NAVY, netRev <= 0 ? "FECACA" : "E0E0F0");
     } else {
-      statCard(s, 2.52, 3.16, 2.16, 0.82, "Orders / Hour", ws.hours > 0 ? (ws.viewers / ws.hours).toFixed(1) : "—");
+      statCard(s, CX2, CR3, CW2, CH, "Orders / Hour", ws.hours > 0 ? (ws.orders / ws.hours).toFixed(1) : "—");
       if (input.notes.worstImprovement) {
-        rCard(s, 0.32, 4.06, 4.36, 1.05, "FFF8F8", "FECACA");
-        s.addText("IMPROVEMENTS:", { x: 0.44, y: 4.12, w: 4.1, h: 0.22, fontSize: 7.5, bold: true, color: RED, fontFace: "Arial" });
-        s.addText(input.notes.worstImprovement, { x: 0.44, y: 4.34, w: 4.1, h: 0.72, fontSize: 7.5, color: "333333", fontFace: "Arial", valign: "top" });
+        const CR4 = CR3 + CH + CG;
+        rCard(s, 0.34, CR4, CW1 + CG + CW2, 4.86 - CR4 - 0.08, "FFF8F8", "FECACA");
+        s.addText("IMPROVEMENTS:", { x: 0.46, y: CR4 + 0.1, w: CW1 + CG + CW2 - 0.2, h: 0.22, fontSize: 7.5, bold: true, color: RED, fontFace: "Arial" });
+        s.addText(input.notes.worstImprovement, { x: 0.46, y: CR4 + 0.32, w: CW1 + CG + CW2 - 0.2, h: 4.86 - CR4 - 0.5, fontSize: 8, color: "333333", fontFace: "Arial", valign: "top" });
       }
     }
 
     // ── Right panel ──────────────────────────────────────────────────────
-    const RX = 5.0;
-    rCard(s, RX, 0.88, 4.8, 4.3, "F9F9FF", "D8D8F0");
+    const RX = 5.06;
+    const RW = 4.74;
+    rCard(s, RX, 0.86, RW, 4.34, "F9F9FF", "D8D8F0");
 
-    s.addText("vs Monthly Average", { x: RX + 0.15, y: 0.96, w: 4.5, h: 0.24, fontSize: 9, bold: true, color: NAVY, fontFace: "Arial" });
+    s.addText("vs Monthly Average", { x: RX + 0.16, y: 0.94, w: RW - 0.32, h: 0.26, fontSize: 9.5, bold: true, color: NAVY, fontFace: "Arial" });
 
-    rCard(s, RX + 0.12, 1.22, 4.56, 1.4, WHITE, "E0E0F0");
+    rCard(s, RX + 0.14, 1.22, RW - 0.28, 1.56, WHITE, "E0E0F0");
     s.addChart("bar" as any, [{
       name: "This Session",
-      labels: ["GMV", "GMV/Hour"],
-      values: [ws.gmv, ws.gmvPerHour],
+      labels: ["GMV", "GMV / Hour"],
+      values: [Math.round(ws.gmv), Math.round(ws.gmvPerHour)],
     }, {
       name: "Monthly Avg",
-      labels: ["GMV", "GMV/Hour"],
-      values: [avgGmv, avgGmvPh],
+      labels: ["GMV", "GMV / Hour"],
+      values: [Math.round(avgGmv), Math.round(avgGmvPh)],
     }], {
-      x: RX + 0.14, y: 1.24, w: 4.52, h: 1.36,
+      x: RX + 0.16, y: 1.24, w: RW - 0.32, h: 1.52,
       chartColors: [RED, "A5B4FC"],
       barDir: "col",
       barGrouping: "clustered",
-      showLegend: true, legendPos: "t", legendFontSize: 7,
-      showValue: true, dataLabelFontSize: 7, dataLabelFontBold: true,
+      showLegend: true, legendPos: "t", legendFontSize: 8,
+      showValue: true, dataLabelFontSize: 8, dataLabelFontBold: true,
       valAxisMinVal: 0,
-      catAxisLabelFontSize: 8,
+      catAxisLabelFontSize: 9,
       valAxisMajorGridlines: { style: "dash", color: "E8E8F8" },
     } as any);
 
     const gmvDelta   = pctDiff(ws.gmv, avgGmv);
     const gmvphDelta = pctDiff(ws.gmvPerHour, avgGmvPh);
-    statCard(s, RX + 0.12, 2.7, 2.2, 0.62, "GMV vs Avg",     gmvDelta,   undefined, "FEEEF0", pctDiffColor(ws.gmv, avgGmv) as string, "FECACA");
-    statCard(s, RX + 2.42, 2.7, 2.26, 0.62, "GMV/Hr vs Avg", gmvphDelta, undefined, "FEEEF0", pctDiffColor(ws.gmvPerHour, avgGmvPh) as string, "FECACA");
+    const DBY = 2.86, DBH = 0.72;
+    statCard(s, RX + 0.14, DBY, (RW - 0.28 - 0.1) / 2, DBH, "GMV vs Avg",     gmvDelta,   undefined, "FEEEF0", pctDiffColor(ws.gmv, avgGmv) as string, "FECACA");
+    statCard(s, RX + 0.14 + (RW - 0.28 - 0.1) / 2 + 0.1, DBY, (RW - 0.28 - 0.1) / 2, DBH, "GMV/Hr vs Avg", gmvphDelta, undefined, "FEEEF0", pctDiffColor(ws.gmvPerHour, avgGmvPh) as string, "FECACA");
 
-    s.addText("Session Timeline", { x: RX + 0.15, y: 3.44, w: 4.5, h: 0.24, fontSize: 9, bold: true, color: NAVY, fontFace: "Arial" });
-    rCard(s, RX + 0.12, 3.7, 4.56, 1.38, WHITE, "E0E0F0");
+    const TLY = DBY + DBH + 0.14;
+    s.addText("Session Timeline", { x: RX + 0.16, y: TLY, w: RW - 0.32, h: 0.26, fontSize: 9.5, bold: true, color: NAVY, fontFace: "Arial" });
+    const TCARDW = (RW - 0.28 - 0.2) / 3;
+    const TCARDY = TLY + 0.28;
+    const TCARDH = 4.86 - TCARDY - 0.08;
+    rCard(s, RX + 0.14, TCARDY, RW - 0.28, TCARDH, WHITE, "E0E0F0");
 
     const schedTime  = formatTime(ws.scheduledStart);
     const actualTime = formatTime(ws.actualStart);
-    statCard(s, RX + 0.2,  3.78, 1.38, 0.82, "Scheduled",   schedTime);
-    statCard(s, RX + 1.66, 3.78, 1.38, 0.82, "Actual Start", actualTime);
-    statCard(s, RX + 3.12, 3.78, 1.36, 0.82, "Punctuality",  punctualityLabel(ws.punctuality), undefined, LGRAY, punctColor);
-
-    // Improvements note (TikTok, right panel bottom)
-    if (isTikTok && input.notes.worstImprovement) {
-      rCard(s, RX + 0.12, 5.12, 4.56, 0.0, "FFF8F8", "FECACA");
-    }
+    statCard(s, RX + 0.2,  TCARDY + 0.06, TCARDW, TCARDH - 0.12, "Scheduled",   schedTime);
+    statCard(s, RX + 0.2 + TCARDW + 0.1, TCARDY + 0.06, TCARDW, TCARDH - 0.12, "Actual Start", actualTime);
+    statCard(s, RX + 0.2 + (TCARDW + 0.1) * 2, TCARDY + 0.06, TCARDW, TCARDH - 0.12, "Punctuality", punctualityLabel(ws.punctuality), undefined, LGRAY, punctColor);
   }
 
   // ── SLIDE 7 — LIVE HOST OVERVIEW ────────────────────────────────────────
