@@ -739,6 +739,13 @@ async function injectTemplateSlide(generatedBuf: Buffer): Promise<Buffer> {
       return nb - na; // descending so we don't clobber
     });
 
+  // Build a map: old slide number → new slide number
+  const slideNumMap = new Map<number, number>();
+  for (const key of genSlideKeys) {
+    const num = parseInt(key.match(/\d+/)![0]);
+    slideNumMap.set(num, num + 1);
+  }
+
   for (const key of genSlideKeys) {
     const num = parseInt(key.match(/\d+/)![0]);
     const newKey = `ppt/slides/slide${num + 1}.xml`;
@@ -760,51 +767,81 @@ async function injectTemplateSlide(generatedBuf: Buffer): Promise<Buffer> {
   genZip.file("ppt/slides/slide2.xml", tplSlideXml);
   genZip.file("ppt/slides/_rels/slide2.xml.rels", tplRelsXml);
 
+  // ── Update presentation.xml.rels — fix shifted targets + add template ────
+  const presRelsKey = "ppt/_rels/presentation.xml.rels";
+  let presRelsXml = await genZip.files[presRelsKey].async("string");
+
+  const SLIDE_REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide";
+
+  // Collect all existing slide relationships (rId → old slide number)
+  const slideRelMatches = [...presRelsXml.matchAll(
+    /(<Relationship\s[^>]*Id="([^"]+)"[^>]*Type="[^"]*\/slide"[^>]*Target="slides\/slide(\d+)\.xml"[^/]*\/>)/g
+  )];
+
+  // Re-number targets to match renamed files (slideN → slideN+1)
+  for (const m of slideRelMatches) {
+    const [fullMatch, , rId, numStr] = m;
+    const oldNum = parseInt(numStr);
+    const newNum = slideNumMap.get(oldNum);
+    if (newNum !== undefined) {
+      const updated = fullMatch.replace(
+        `Target="slides/slide${oldNum}.xml"`,
+        `Target="slides/slide${newNum}.xml"`
+      );
+      presRelsXml = presRelsXml.replace(fullMatch, updated);
+    }
+  }
+
+  // Find a safe unique rId for the template slide
+  const usedRIds = new Set([...presRelsXml.matchAll(/Id="([^"]+)"/g)].map(m => m[1]));
+  let tplRId = "rIdTpl2";
+  let tplRIdCounter = 0;
+  while (usedRIds.has(tplRId)) { tplRId = `rIdTpl2_${++tplRIdCounter}`; }
+
+  // Insert relationship for template slide after the first slide rel (cover slide)
+  // so the order in rels matches the order in sldIdLst
+  const firstSlideRelMatch = presRelsXml.match(/<Relationship\s[^>]*Type="[^"]*\/slide"[^>]*\/>/);
+  const newRel = `<Relationship Id="${tplRId}" Type="${SLIDE_REL_TYPE}" Target="slides/slide2.xml"/>`;
+  if (firstSlideRelMatch) {
+    presRelsXml = presRelsXml.replace(firstSlideRelMatch[0], firstSlideRelMatch[0] + newRel);
+  } else {
+    presRelsXml = presRelsXml.replace("</Relationships>", newRel + "</Relationships>");
+  }
+  genZip.file(presRelsKey, presRelsXml);
+
   // ── Update presentation.xml sldIdLst ─────────────────────────────────────
   const presKey = "ppt/presentation.xml";
   let presXml = await genZip.files[presKey].async("string");
 
-  // Find the highest sldId in use and determine the max id
-  const existingIds = [...presXml.matchAll(/id="(\d+)"/g)].map(m => parseInt(m[1]));
+  // Find the highest p:sldId id value in use
+  const existingIds = [...presXml.matchAll(/<p:sldId[^>]*\bid="(\d+)"/g)].map(m => parseInt(m[1]));
   const maxId = existingIds.length > 0 ? Math.max(...existingIds) : 256;
   const newSlideId = maxId + 1;
 
-  // Find the first sld:sld entry (which is now slide2 after shifting) and insert before it
-  // We need to insert slide2 as the second entry in the sldIdLst
-  // Find the first <p:sldId> entry after the cover slide
-  const firstSldIdMatch = presXml.match(/<p:sldId\s[^/]*/);
+  // Insert template slide entry as the second <p:sldId> (after the cover slide)
+  const firstSldIdMatch = presXml.match(/<p:sldId\b[^/]*\/>/);
   if (firstSldIdMatch) {
-    const insertAfter = firstSldIdMatch[0] + "/>";
-    const newEntry = `<p:sldId id="${newSlideId}" r:id="rId_tpl_slide2"/>`;
-    presXml = presXml.replace(insertAfter, insertAfter + newEntry);
+    const newEntry = `<p:sldId id="${newSlideId}" r:id="${tplRId}"/>`;
+    presXml = presXml.replace(firstSldIdMatch[0], firstSldIdMatch[0] + newEntry);
   }
   genZip.file(presKey, presXml);
 
-  // ── Update presentation.xml.rels ──────────────────────────────────────────
-  const presRelsKey = "ppt/_rels/presentation.xml.rels";
-  let presRelsXml = await genZip.files[presRelsKey].async("string");
-
-  // Shift existing rId references for slides (rId2, rId3... → rId3, rId4...)
-  // Find the max rId number currently in use
-  const rIdNums = [...presRelsXml.matchAll(/Id="rId(\d+)"/g)].map(m => parseInt(m[1]));
-  const maxRId = rIdNums.length > 0 ? Math.max(...rIdNums) : 10;
-
-  // Insert new relationship for template slide
-  presRelsXml = presRelsXml.replace(
-    "</Relationships>",
-    `<Relationship Id="rId_tpl_slide2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`
-  );
-  genZip.file(presRelsKey, presRelsXml);
-
-  // ── Update [Content_Types].xml ────────────────────────────────────────────
+  // ── Update [Content_Types].xml — ensure all shifted slides are registered ─
   const ctKey = "[Content_Types].xml";
   let ctXml = await genZip.files[ctKey].async("string");
-  if (!ctXml.includes('PartName="/ppt/slides/slide2.xml"')) {
-    ctXml = ctXml.replace(
-      "</Types>",
-      `<Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>`
-    );
-    genZip.file(ctKey, ctXml);
+  const SLIDE_CT = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml";
+
+  // Re-register each shifted slide (oldNum → newNum) and add template slide2
+  const slideNums = [...slideNumMap.values()].sort((a, b) => a - b);
+  slideNums.unshift(2); // template slide
+  for (const n of [...new Set(slideNums)]) {
+    const partName = `/ppt/slides/slide${n}.xml`;
+    if (!ctXml.includes(`PartName="${partName}"`)) {
+      ctXml = ctXml.replace(
+        "</Types>",
+        `<Override PartName="${partName}" ContentType="${SLIDE_CT}"/></Types>`
+      );
+    }
   }
 
   const finalBuf = await genZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
